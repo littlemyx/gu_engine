@@ -1,4 +1,6 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { listImages } from '@root/image_server/generated-client';
+import type { ImageName } from '@root/image_server/generated-client';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -111,6 +113,59 @@ const nodeTypes = { scene: SceneNode };
 
 let nextId = 0;
 let nextOutputId = 0;
+
+const IMAGE_SERVER_BASE = 'http://localhost:3007';
+
+const ImageGallery = () => {
+  const [images, setImages] = useState<ImageName[]>([]);
+  const [open, setOpen] = useState(true);
+  const [loading, setLoading] = useState(false);
+
+  const fetchImages = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { data } = await listImages();
+      if (data) setImages(data);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchImages();
+  }, [fetchImages]);
+
+  return (
+    <div className={styles.foldableSection}>
+      <button
+        className={styles.foldableHeader}
+        onClick={() => setOpen(v => !v)}
+        type="button"
+      >
+        <span className={`${styles.foldableArrow} ${open ? styles.foldableArrowOpen : ''}`}>&#9654;</span>
+        Изображения
+      </button>
+      {open && (
+        <div className={styles.imageList}>
+          {loading && <span className={styles.imageListHint}>Загрузка…</span>}
+          {!loading && images.length === 0 && (
+            <span className={styles.imageListHint}>Нет изображений</span>
+          )}
+          {images.map(img => (
+            <div key={img.name} className={styles.imageItem} title={img.name}>
+              <img
+                src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(img.name)}/thumbnail`}
+                alt={img.name}
+                className={styles.imageThumb}
+              />
+              <span className={styles.imageName}>{img.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 const Flow = () => {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node<SceneNodeData>>([]);
@@ -241,6 +296,7 @@ const Flow = () => {
           <button className={styles.toolButton} onClick={onExport}>
             Экспорт в JSON
           </button>
+          <ImageGallery />
         </Panel>
       </ReactFlow>
     </FlowContext.Provider>
