@@ -1,7 +1,8 @@
-import { SceneGraph, SceneNode, SceneEdge } from "./types";
+import { SceneGraph, SceneNode, SceneEdge, ProjectSettings } from "./types";
 
 export class GameEngine {
   private graph: SceneGraph;
+  private settings: ProjectSettings;
   private nodeMap: Map<string, SceneNode>;
   private edgesBySource: Map<string, SceneEdge[]>;
   private incomingCount: Map<string, number>;
@@ -10,9 +11,11 @@ export class GameEngine {
 
   constructor(
     graph: SceneGraph,
+    settings: ProjectSettings,
     onSceneChange: (node: SceneNode, isEnd: boolean) => void,
   ) {
     this.graph = graph;
+    this.settings = settings;
     this.onSceneChange = onSceneChange;
 
     this.nodeMap = new Map();
@@ -39,6 +42,10 @@ export class GameEngine {
     }
   }
 
+  getSettings(): ProjectSettings {
+    return this.settings;
+  }
+
   start(): void {
     const startNode = this.findStartNode();
     if (!startNode) {
@@ -52,7 +59,6 @@ export class GameEngine {
 
     const edges = this.edgesBySource.get(this.currentNode.id) ?? [];
     const edge = edges.find((e) => e.sourceHandle === outputId);
-
     if (!edge) return;
 
     this.goTo(edge.target);
@@ -62,12 +68,17 @@ export class GameEngine {
     return this.currentNode;
   }
 
+  getConnectedOutputIds(): Set<string> {
+    if (!this.currentNode) return new Set();
+    const edges = this.edgesBySource.get(this.currentNode.id) ?? [];
+    return new Set(edges.map((e) => e.sourceHandle));
+  }
+
   private goTo(nodeId: string): void {
     const node = this.nodeMap.get(nodeId);
     if (!node) return;
 
     this.currentNode = node;
-
     const hasConnectedOutputs = this.hasOutgoingEdges(node);
     this.onSceneChange(node, !hasConnectedOutputs);
   }
@@ -78,19 +89,11 @@ export class GameEngine {
   }
 
   private findStartNode(): SceneNode | null {
-    // Стартовая сцена — та, в которую не ведёт ни одно ребро
     for (const node of this.graph.nodes) {
       if ((this.incomingCount.get(node.id) ?? 0) === 0) {
         return node;
       }
     }
-    // Fallback: первый узел
     return this.graph.nodes[0] ?? null;
-  }
-
-  getConnectedOutputIds(): Set<string> {
-    if (!this.currentNode) return new Set();
-    const edges = this.edgesBySource.get(this.currentNode.id) ?? [];
-    return new Set(edges.map((e) => e.sourceHandle));
   }
 }

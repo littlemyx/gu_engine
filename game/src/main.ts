@@ -1,111 +1,206 @@
 import { GameEngine } from "./engine";
-import { SceneGraph, SceneNode } from "./types";
+import { GameRenderer } from "./renderer";
+import {
+  ResolvedProject,
+  ProjectFile,
+  ProjectSettings,
+  SceneGraph,
+  DEFAULT_SETTINGS,
+} from "./types";
 import "./style.css";
 
+declare const __GU_PROJECT__: ResolvedProject | undefined;
+
 const app = document.getElementById("app")!;
+const renderer = new GameRenderer(app);
 
-let engine: GameEngine | null = null;
+let currentProject: ResolvedProject | null = null;
 
-function showLoadScreen(): void {
+if (typeof __GU_PROJECT__ !== "undefined") {
+  launchGame(__GU_PROJECT__);
+} else {
+  showStartScreen();
+}
+
+// ── Стартовый экран ──
+
+function showStartScreen(): void {
   app.innerHTML = `
     <div class="load-screen">
-      <h1>Интерактивная новелла</h1>
-      <p>Загрузите файл сцен, экспортированный из редактора</p>
-      <button class="load-btn" id="load-btn">Загрузить файл</button>
-      <input type="file" id="file-input" accept=".json" hidden />
+      <h1>Движок новелл</h1>
+      <div class="load-actions">
+        <button class="load-btn" id="open-btn">Открыть проект</button>
+        <button class="load-btn load-btn--secondary" id="new-btn">Новый проект</button>
+      </div>
+      <input type="file" id="file-input" accept=".json,.gu.json" hidden />
     </div>
   `;
 
-  const btn = document.getElementById("load-btn")!;
+  const openBtn = document.getElementById("open-btn")!;
+  const newBtn = document.getElementById("new-btn")!;
   const input = document.getElementById("file-input") as HTMLInputElement;
 
-  btn.addEventListener("click", () => input.click());
+  openBtn.addEventListener("click", () => input.click());
 
-  input.addEventListener("change", () => {
+  input.addEventListener("change", async () => {
     const file = input.files?.[0];
     if (!file) return;
+    try {
+      const text = await file.text();
+      const projectFile: ProjectFile = JSON.parse(text);
+      currentProject = {
+        title: projectFile.title ?? "Новелла",
+        scenes: { nodes: [], edges: [] },
+        settings: { ...DEFAULT_SETTINGS, ...projectFile.settings },
+      };
+      showProjectScreen();
+    } catch (e) {
+      alert(`Ошибка чтения файла: ${(e as Error).message}`);
+    }
+  });
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const graph: SceneGraph = JSON.parse(reader.result as string);
-        startGame(graph);
-      } catch {
-        alert("Не удалось прочитать файл сцен");
-      }
+  newBtn.addEventListener("click", () => {
+    currentProject = {
+      title: "Новая новелла",
+      scenes: { nodes: [], edges: [] },
+      settings: { ...DEFAULT_SETTINGS },
     };
-    reader.readAsText(file);
+    showProjectScreen();
   });
 }
 
-function startGame(graph: SceneGraph): void {
-  engine = new GameEngine(graph, renderScene);
-  engine.start();
-}
+// ── Экран проекта ──
 
-function renderScene(node: SceneNode, isEnd: boolean): void {
-  if (!engine) return;
+function showProjectScreen(): void {
+  if (!currentProject) return;
 
-  const connectedOutputs = engine.getConnectedOutputIds();
-
-  const activeOutputs = node.data.outputs.filter((o) =>
-    connectedOutputs.has(o.id),
-  );
-
-  const imageHtml = node.data.image
-    ? `<img class="scene-image" src="${escapeHtml(node.data.image)}" alt="" />`
-    : `<div class="scene-image-placeholder">Нет изображения</div>`;
-
-  const choicesHtml =
-    activeOutputs.length > 0
-      ? activeOutputs
-          .map(
-            (output) =>
-              `<button class="choice-btn" data-output-id="${escapeHtml(output.id)}">${escapeHtml(output.text)}</button>`,
-          )
-          .join("")
-      : "";
-
-  const endHtml =
-    isEnd || activeOutputs.length === 0
-      ? `<div class="scene-end">
-          <p>Конец</p>
-          <button class="restart-btn" id="restart-btn">Начать сначала</button>
-        </div>`
-      : "";
+  const p = currentProject;
+  const hasScenes = p.scenes.nodes.length > 0;
+  const scenesStatus = hasScenes
+    ? `${p.scenes.nodes.length} сцен, ${p.scenes.edges.length} связей`
+    : "Сцены не загружены";
 
   app.innerHTML = `
-    <div class="scene">
-      <div class="scene-image-container">
-        ${imageHtml}
+    <div class="project-screen">
+      <div class="project-header">
+        <input class="project-title-input" id="title-input" value="${escapeAttr(p.title)}" />
       </div>
-      <div class="scene-body">
-        <div class="scene-label">${escapeHtml(node.data.label)}</div>
-        <div class="scene-choices">
-          ${choicesHtml}
+
+      <div class="project-section">
+        <h2>Сцены</h2>
+        <p class="project-status">${scenesStatus}</p>
+        <button class="load-btn" id="load-scenes-btn">Загрузить scenes.json</button>
+        <input type="file" id="scenes-input" accept=".json" hidden />
+      </div>
+
+      <div class="project-section">
+        <h2>Настройки</h2>
+        <div class="settings-grid">
+          ${settingRow("sceneFadeInMs", "Появление сцены (мс)", p.settings.sceneFadeInMs)}
+          ${settingRow("choiceAppearDelayMs", "Задержка между вариантами (мс)", p.settings.choiceAppearDelayMs)}
+          ${settingRow("endFadeInMs", "Появление конца (мс)", p.settings.endFadeInMs)}
         </div>
-        ${endHtml}
+      </div>
+
+      <div class="project-actions">
+        <button class="load-btn" id="play-btn" ${hasScenes ? "" : "disabled"}>Играть</button>
+        <button class="load-btn load-btn--secondary" id="save-btn">Сохранить проект</button>
+        <button class="load-btn load-btn--secondary" id="back-btn">Назад</button>
       </div>
     </div>
   `;
 
-  document.querySelectorAll(".choice-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const outputId = (btn as HTMLElement).dataset.outputId!;
-      engine?.choose(outputId);
+  document.getElementById("title-input")!.addEventListener("input", (e) => {
+    p.title = (e.target as HTMLInputElement).value;
+  });
+
+  const loadScenesBtn = document.getElementById("load-scenes-btn")!;
+  const scenesInput = document.getElementById("scenes-input") as HTMLInputElement;
+  loadScenesBtn.addEventListener("click", () => scenesInput.click());
+  scenesInput.addEventListener("change", async () => {
+    const file = scenesInput.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      p.scenes = JSON.parse(text) as SceneGraph;
+      showProjectScreen();
+    } catch (e) {
+      alert(`Ошибка: ${(e as Error).message}`);
+    }
+  });
+
+  document.querySelectorAll<HTMLInputElement>(".setting-input").forEach((input) => {
+    input.addEventListener("change", () => {
+      const key = input.dataset.key as keyof ProjectSettings;
+      const val = parseInt(input.value, 10);
+      if (!isNaN(val) && val >= 0) {
+        (p.settings as Record<string, number>)[key] = val;
+      }
     });
   });
 
-  const restartBtn = document.getElementById("restart-btn");
-  if (restartBtn) {
-    restartBtn.addEventListener("click", () => engine?.start());
-  }
+  document.getElementById("play-btn")!.addEventListener("click", () => {
+    if (hasScenes) launchGame(p);
+  });
+
+  document.getElementById("save-btn")!.addEventListener("click", () => {
+    const projectFile: ProjectFile = {
+      title: p.title,
+      scenes: "./scenes.json",
+      settings: p.settings,
+    };
+    downloadJson(`${slugify(p.title)}.gu.json`, projectFile);
+    if (hasScenes) {
+      downloadJson("scenes.json", p.scenes);
+    }
+  });
+
+  document.getElementById("back-btn")!.addEventListener("click", showStartScreen);
 }
 
-function escapeHtml(str: string): string {
-  const div = document.createElement("div");
-  div.textContent = str;
-  return div.innerHTML;
+function settingRow(key: string, label: string, value: number): string {
+  return `
+    <label class="setting-row">
+      <span class="setting-label">${label}</span>
+      <input class="setting-input" type="number" min="0" step="50" data-key="${key}" value="${value}" />
+    </label>
+  `;
 }
 
-showLoadScreen();
+// ── Игра ──
+
+function launchGame(project: ResolvedProject): void {
+  document.title = project.title;
+
+  const engine = new GameEngine(project.scenes, project.settings, (node, isEnd) =>
+    renderer.renderScene(node, isEnd),
+  );
+  renderer.bind(engine);
+
+  renderer.onBack(() => {
+    document.title = "Движок новелл";
+    showProjectScreen();
+  });
+
+  engine.start();
+}
+
+// ── Утилиты ──
+
+function escapeAttr(str: string): string {
+  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+function slugify(str: string): string {
+  return str.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/(^-|-$)/g, "") || "project";
+}
+
+function downloadJson(filename: string, data: unknown): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}

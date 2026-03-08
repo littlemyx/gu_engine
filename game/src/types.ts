@@ -27,3 +27,27 @@ export type SceneGraph = {
   nodes: SceneNode[];
   edges: SceneEdge[];
 };
+
+export type ProjectSettings = {
+  sceneFadeInMs: number;
+  choiceAppearDelayMs: number;
+  endFadeInMs: number;
+};
+
+export type ProjectFile = {
+  title: string;
+  scenes: string;
+  settings: Partial<ProjectSettings>;
+};
+
+export type ResolvedProject = {
+  title: string;
+  scenes: SceneGraph;
+  settings: ProjectSettings;
+};
+
+export const DEFAULT_SETTINGS: ProjectSettings = {
+  sceneFadeInMs: 600,
+  choiceAppearDelayMs: 100,
+  endFadeInMs: 400,
+};

@@ -63,6 +63,120 @@ body {
   border-color: #555;
 }
 
+.load-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.load-btn--secondary {
+  background: transparent;
+  color: #888;
+}
+
+.load-btn--secondary:hover {
+  color: #c8c4b8;
+}
+
+.load-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* Экран проекта */
+.project-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  padding: 48px 32px;
+  min-height: 100vh;
+}
+
+.project-header {
+  border-bottom: 1px solid #1e1e2a;
+  padding-bottom: 20px;
+}
+
+.project-title-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1.8rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: #d4d0c6;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #333;
+  padding: 8px 0;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.project-title-input:focus {
+  border-color: #666;
+}
+
+.project-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.project-section h2 {
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: #999;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.project-status {
+  font-size: 0.95rem;
+  color: #666;
+}
+
+.settings-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.setting-label {
+  font-size: 0.95rem;
+  color: #999;
+}
+
+.setting-input {
+  width: 100px;
+  padding: 8px 12px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  color: #d4d0c6;
+  background: #12121a;
+  border: 1px solid #2a2a36;
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.setting-input:focus {
+  border-color: #555;
+}
+
+.project-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 24px;
+  border-top: 1px solid #1e1e2a;
+}
+
 /* Сцена */
 .scene {
   display: flex;
