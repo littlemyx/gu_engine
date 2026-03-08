@@ -37,9 +37,15 @@ export default defineConfig(({ mode }) => {
       checker({ typescript: true }),
     ],
     resolve: {
-      alias: { '@': path.resolve(__dirname, 'src/') },
+      alias: {
+        '@': path.resolve(__dirname, 'src/'),
+        '@root': path.resolve(__dirname, '..'),
+      },
     },
     css: {
+      modules: {
+        localsConvention: 'camelCase',
+      },
       postcss: ctx => ({
         parser: ctx.parser ? 'sugarss' : false,
         map: ctx.env === 'development' ? ctx.map : false,

@@ -1,0 +1,9 @@
+.a11y-hidden {
+  position: absolute;
+  left: -9999em;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  margin: -1px;
+  clip: rect(0, 0, 0, 0);
+}
