@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { listImages } from '@root/image_server/generated-client';
 import type { ImageName } from '@root/image_server/generated-client';
 import {
@@ -6,18 +6,19 @@ import {
   ReactFlowProvider,
   Background,
   Panel,
-  useNodesState,
-  useEdgesState,
   useReactFlow,
   addEdge,
+  applyNodeChanges,
+  applyEdgeChanges,
   MarkerType,
   Handle,
   Position,
   type NodeProps,
 } from '@xyflow/react';
-import type { Node, Edge, OnConnect, DefaultEdgeOptions } from '@xyflow/react';
+import type { Node, Edge, OnConnect, OnNodesChange, OnEdgesChange, DefaultEdgeOptions } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import styles from './main.module.css';
+import { usePrototypeStore } from '../../store/prototypeStore';
 
 export type SceneOutput = {
   id: string;
@@ -111,9 +112,6 @@ const SceneNode = ({ id, data }: NodeProps<Node<SceneNodeData>>) => {
 
 const nodeTypes = { scene: SceneNode };
 
-let nextId = 0;
-let nextOutputId = 0;
-
 const IMAGE_SERVER_BASE = 'http://localhost:3007';
 
 const ImageGallery = () => {
@@ -167,11 +165,45 @@ const ImageGallery = () => {
   );
 };
 
+const NewProjectDialog = ({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) => {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    dialogRef.current?.showModal();
+  }, []);
+
+  return (
+    <dialog ref={dialogRef} className={styles.dialog} onClose={onCancel}>
+      <form method="dialog" className={styles.dialogContent}>
+        <p className={styles.dialogText}>Создать новый проект? Текущий прототип будет очищен.</p>
+        <div className={styles.dialogActions}>
+          <button type="button" className={styles.toolButton} onClick={onCancel}>
+            Отмена
+          </button>
+          <button type="button" className={`${styles.toolButton} ${styles.danger}`} onClick={onConfirm}>
+            Создать
+          </button>
+        </div>
+      </form>
+    </dialog>
+  );
+};
+
 const Flow = () => {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<SceneNodeData>>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const { nodes, edges, setNodes, setEdges, bumpNodeId, bumpOutputId, reset } = usePrototypeStore();
   const [addMode, setAddMode] = useState(false);
+  const [showNewDialog, setShowNewDialog] = useState(false);
   const { screenToFlowPosition } = useReactFlow();
+
+  const onNodesChange: OnNodesChange = useCallback(
+    changes => setNodes(nds => applyNodeChanges(changes, nds) as Node<SceneNodeData>[]),
+    [setNodes],
+  );
+
+  const onEdgesChange: OnEdgesChange = useCallback(
+    changes => setEdges(eds => applyEdgeChanges(changes, eds)),
+    [setEdges],
+  );
 
   const defaultEdgeOptions: DefaultEdgeOptions = useMemo(
     () => ({
@@ -192,21 +224,23 @@ const Flow = () => {
         y: event.clientY,
       });
 
-      const id = `scene_${++nextId}`;
+      const nodeId = bumpNodeId();
+      const outputId = bumpOutputId();
+      const id = `scene_${nodeId}`;
       const newNode: Node<SceneNodeData> = {
         id,
         type: 'scene',
         position,
         data: {
-          label: `Сцена ${nextId}`,
+          label: `Сцена ${nodeId}`,
           image: '',
-          outputs: [{ id: `out_${++nextOutputId}`, text: '' }],
+          outputs: [{ id: `out_${outputId}`, text: '' }],
         },
       };
 
       setNodes(nds => [...nds, newNode]);
     },
-    [addMode, screenToFlowPosition, setNodes],
+    [addMode, screenToFlowPosition, setNodes, bumpNodeId, bumpOutputId],
   );
 
   const onExport = useCallback(() => {
@@ -224,14 +258,15 @@ const Flow = () => {
 
   const addOutput = useCallback(
     (nodeId: string) => {
-      const newOutput: SceneOutput = { id: `out_${++nextOutputId}`, text: '' };
+      const outputId = bumpOutputId();
+      const newOutput: SceneOutput = { id: `out_${outputId}`, text: '' };
       setNodes(nds =>
         nds.map(n =>
           n.id === nodeId ? { ...n, data: { ...n.data, outputs: [...(n.data.outputs || []), newOutput] } } : n,
         ),
       );
     },
-    [setNodes],
+    [setNodes, bumpOutputId],
   );
 
   const removeOutput = useCallback(
@@ -267,6 +302,11 @@ const Flow = () => {
     [setNodes],
   );
 
+  const handleNewProject = useCallback(() => {
+    reset();
+    setShowNewDialog(false);
+  }, [reset]);
+
   const flowContext = useMemo(
     () => ({ updateNodeData, addOutput, removeOutput, updateOutput }),
     [updateNodeData, addOutput, removeOutput, updateOutput],
@@ -287,6 +327,9 @@ const Flow = () => {
       >
         <Background />
         <Panel position="top-left" className={styles.sidePanel}>
+          <button className={styles.toolButton} onClick={() => setShowNewDialog(true)}>
+            Новый проект
+          </button>
           <button
             className={`${styles.toolButton} ${addMode ? styles.active : ''}`}
             onClick={() => setAddMode(v => !v)}
@@ -299,6 +342,9 @@ const Flow = () => {
           <ImageGallery />
         </Panel>
       </ReactFlow>
+      {showNewDialog && (
+        <NewProjectDialog onConfirm={handleNewProject} onCancel={() => setShowNewDialog(false)} />
+      )}
     </FlowContext.Provider>
   );
 };
