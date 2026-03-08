@@ -244,9 +244,23 @@ const Flow = () => {
   );
 
   const onExport = useCallback(() => {
-    const state = { nodes, edges };
-    const json = JSON.stringify(state, null, 2);
-    console.log(json);
+    const scenes = JSON.stringify({ nodes, edges }, null, 2);
+    const scenesBlob = new Blob([scenes], { type: 'application/json' });
+    const scenesUrl = URL.createObjectURL(scenesBlob);
+    const scenesLink = document.createElement('a');
+    scenesLink.href = scenesUrl;
+    scenesLink.download = 'scenes.json';
+    scenesLink.click();
+    URL.revokeObjectURL(scenesUrl);
+
+    const project = JSON.stringify({ title: 'Новелла', scenes: './scenes.json', settings: {} }, null, 2);
+    const projectBlob = new Blob([project], { type: 'application/json' });
+    const projectUrl = URL.createObjectURL(projectBlob);
+    const projectLink = document.createElement('a');
+    projectLink.href = projectUrl;
+    projectLink.download = 'project.gu.json';
+    projectLink.click();
+    URL.revokeObjectURL(projectUrl);
   }, [nodes, edges]);
 
   const updateNodeData = useCallback(
