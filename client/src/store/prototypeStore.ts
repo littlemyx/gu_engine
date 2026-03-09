@@ -1,28 +1,29 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { Node, Edge } from '@xyflow/react';
-import type { SceneNodeData } from '../pages/main/index';
+import type { CardNode, CardEdge, CardNodeData, SceneOutput } from '../pages/main/index';
 
 type PrototypeState = {
-  nodes: Node<SceneNodeData>[];
-  edges: Edge[];
-  nextNodeId: number;
-  nextOutputId: number;
+  nodes: CardNode[];
+  edges: CardEdge[];
 
-  setNodes: (nodes: Node<SceneNodeData>[] | ((prev: Node<SceneNodeData>[]) => Node<SceneNodeData>[])) => void;
-  setEdges: (edges: Edge[] | ((prev: Edge[]) => Edge[])) => void;
-  bumpNodeId: () => number;
-  bumpOutputId: () => number;
+  setNodes: (nodes: CardNode[] | ((prev: CardNode[]) => CardNode[])) => void;
+  setEdges: (edges: CardEdge[] | ((prev: CardEdge[]) => CardEdge[])) => void;
+
+  updateNodeData: (nodeId: string, data: Partial<CardNodeData>) => void;
+  addOutput: (nodeId: string) => void;
+  removeOutput: (nodeId: string, outputId: string) => void;
+  updateOutput: (nodeId: string, outputId: string, text: string) => void;
+  deleteNode: (nodeId: string) => void;
+
+  loadScenes: (nodes: CardNode[], edges: CardEdge[]) => void;
   reset: () => void;
 };
 
 export const usePrototypeStore = create<PrototypeState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       nodes: [],
       edges: [],
-      nextNodeId: 0,
-      nextOutputId: 0,
 
       setNodes: updater => {
         set(s => ({
@@ -36,20 +37,67 @@ export const usePrototypeStore = create<PrototypeState>()(
         }));
       },
 
-      bumpNodeId: () => {
-        const id = get().nextNodeId + 1;
-        set({ nextNodeId: id });
-        return id;
+      updateNodeData: (nodeId, data) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, ...(data.cardType ? { type: data.cardType } : {}), data: { ...n.data, ...data } }
+              : n,
+          ),
+        }));
       },
 
-      bumpOutputId: () => {
-        const id = get().nextOutputId + 1;
-        set({ nextOutputId: id });
-        return id;
+      addOutput: (nodeId) => {
+        const newOutput: SceneOutput = { id: crypto.randomUUID(), text: '' };
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, outputs: [...(n.data.outputs || []), newOutput] } }
+              : n,
+          ),
+        }));
+      },
+
+      removeOutput: (nodeId, outputId) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, outputs: (n.data.outputs || []).filter(o => o.id !== outputId) } }
+              : n,
+          ),
+          edges: s.edges.filter(e => !(e.source === nodeId && e.sourceHandle === outputId)),
+        }));
+      },
+
+      updateOutput: (nodeId, outputId, text) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    outputs: (n.data.outputs || []).map(o => (o.id === outputId ? { ...o, text } : o)),
+                  },
+                }
+              : n,
+          ),
+        }));
+      },
+
+      deleteNode: (nodeId) => {
+        set(s => ({
+          nodes: s.nodes.filter(n => n.id !== nodeId),
+          edges: s.edges.filter(e => e.source !== nodeId && e.target !== nodeId),
+        }));
+      },
+
+      loadScenes: (nodes, edges) => {
+        set({ nodes, edges });
       },
 
       reset: () => {
-        set({ nodes: [], edges: [], nextNodeId: 0, nextOutputId: 0 });
+        set({ nodes: [], edges: [] });
       },
     }),
     {

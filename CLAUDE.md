@@ -18,8 +18,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Game engine (novel player) — run from `game/`
 
-- `pnpm dev` — Start Vite dev server (port 5174)
-- `pnpm build` — Production build
+- `pnpm dev` — Dev-сервер (port 5174), открытие проекта через UI
+- `pnpm build` — Сборка dev-оболочки
+- `pnpm build:game <project.gu.json> [--out <dir>]` — CLI-сборка standalone-игры (HTML/JS/CSS с вшитыми данными)
 
 ### Auxiliary services
 
@@ -37,7 +38,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Scene node model:** Each node has `SceneNodeData` (label, image URL, outputs array). Outputs are connection points on the right side of a node. State is managed via `FlowContext` (React context providing `updateNodeData`, `addOutput`, `removeOutput`, `updateOutput`).
 
-**Game engine (`game/`)** — Vanilla TypeScript + Vite. Standalone player for interactive novels. Loads a scene-graph JSON file exported from the client editor and renders a playable game: sequential scenes with background images, text labels, and branching dialogue choices. Core logic in `game/src/engine.ts` (GameEngine class), UI rendering in `game/src/main.ts`.
+**Game engine (`game/`)** — Vanilla TypeScript + Vite. Движок интерактивных новелл с двумя режимами: (1) dev — Vite dev-сервер, где через UI загружается файл проекта `.gu.json`; (2) CLI-сборка — `pnpm build:game <project.gu.json>` генерирует standalone HTML/JS/CSS с вшитыми данными сцен. Проектный файл (`.gu.json`) содержит `title`, путь к `scenes` JSON и `settings` (тайминги анимаций). Core: `game/src/engine.ts` (GameEngine), `game/src/renderer.ts` (DOM-рендер), `game/src/cli.ts` (CLI-сборщик).
 
 **image_server/** — Standalone Express + Sharp service for image upload, listing (with base64 thumbnails), retrieval, deletion, and renaming. Stores files in `image_server/images/`.
 
