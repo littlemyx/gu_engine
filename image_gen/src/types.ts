@@ -24,3 +24,21 @@ export interface BatchState {
   createdAt: string;
   items: Record<string, ItemState>;
 }
+
+export interface CharacterGenerateRequest {
+  masterPrompt: string;
+  characterDescription: string;
+  poses?: string[];
+}
+
+export interface RegeneratePoseRequest {
+  masterPrompt: string;
+  characterDescription: string;
+  pose: string;
+  referenceImageUrl: string;
+}
+
+export interface BackgroundGenerateRequest {
+  masterPrompt: string;
+  sceneDescription: string;
+}

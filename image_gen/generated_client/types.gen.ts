@@ -21,6 +21,14 @@ export type GenerateResponse = {
     itemIds: Array<string>;
 };
 
+export type CompletedItem = {
+    id: string;
+    /**
+     * Generated image file name
+     */
+    file: string;
+};
+
 export type FailedItem = {
     id: string;
     error?: string;
@@ -30,7 +38,7 @@ export type BatchStatus = {
     batchId: string;
     createdAt: string;
     total: number;
-    completed: Array<string>;
+    completed: Array<CompletedItem>;
     pending: Array<string>;
     failed: Array<FailedItem>;
     done: boolean;
@@ -43,6 +51,51 @@ export type BatchSummary = {
     completed: number;
     pending: number;
     failed: number;
+};
+
+export type CharacterGenerateRequest = {
+    /**
+     * Global style/quality prompt applied to all generated images
+     */
+    masterPrompt: string;
+    /**
+     * Detailed description of the character appearance
+     */
+    characterDescription: string;
+    /**
+     * Optional list of poses/emotions to generate. Idle is always included automatically.
+     */
+    poses?: Array<string>;
+};
+
+export type RegeneratePoseRequest = {
+    /**
+     * Global style/quality prompt applied to the generated image
+     */
+    masterPrompt: string;
+    /**
+     * Detailed description of the character appearance
+     */
+    characterDescription: string;
+    /**
+     * The pose/emotion to generate
+     */
+    pose: string;
+    /**
+     * URL of the existing idle pose image to use as style reference
+     */
+    referenceImageUrl: string;
+};
+
+export type BackgroundGenerateRequest = {
+    /**
+     * Global style/quality prompt applied to the generated image
+     */
+    masterPrompt: string;
+    /**
+     * Detailed description of the background/environment scene
+     */
+    sceneDescription: string;
 };
 
 export type ErrorResponse = {
@@ -73,6 +126,81 @@ export type GenerateBatchResponses = {
 };
 
 export type GenerateBatchResponse = GenerateBatchResponses[keyof GenerateBatchResponses];
+
+export type GenerateCharacterData = {
+    body: CharacterGenerateRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/character';
+};
+
+export type GenerateCharacterErrors = {
+    /**
+     * Validation error
+     */
+    400: ErrorResponse;
+};
+
+export type GenerateCharacterError = GenerateCharacterErrors[keyof GenerateCharacterErrors];
+
+export type GenerateCharacterResponses = {
+    /**
+     * Character generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateCharacterResponse = GenerateCharacterResponses[keyof GenerateCharacterResponses];
+
+export type RegenerateCharacterPoseData = {
+    body: RegeneratePoseRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/character/pose';
+};
+
+export type RegenerateCharacterPoseErrors = {
+    /**
+     * Validation error
+     */
+    400: ErrorResponse;
+};
+
+export type RegenerateCharacterPoseError = RegenerateCharacterPoseErrors[keyof RegenerateCharacterPoseErrors];
+
+export type RegenerateCharacterPoseResponses = {
+    /**
+     * Pose regeneration batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type RegenerateCharacterPoseResponse = RegenerateCharacterPoseResponses[keyof RegenerateCharacterPoseResponses];
+
+export type GenerateBackgroundData = {
+    body: BackgroundGenerateRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/background';
+};
+
+export type GenerateBackgroundErrors = {
+    /**
+     * Validation error
+     */
+    400: ErrorResponse;
+};
+
+export type GenerateBackgroundError = GenerateBackgroundErrors[keyof GenerateBackgroundErrors];
+
+export type GenerateBackgroundResponses = {
+    /**
+     * Background generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateBackgroundResponse = GenerateBackgroundResponses[keyof GenerateBackgroundResponses];
 
 export type ListBatchesData = {
     body?: never;

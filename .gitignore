@@ -187,3 +187,5 @@ fastlane/test_output
 .DS_Store
 
 result-game/
+
+.cursorignore

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateBatchData, GenerateBatchErrors, GenerateBatchResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateBackgroundData, GenerateBackgroundErrors, GenerateBackgroundResponses, GenerateBatchData, GenerateBatchErrors, GenerateBatchResponses, GenerateCharacterData, GenerateCharacterErrors, GenerateCharacterResponses, RegenerateCharacterPoseData, RegenerateCharacterPoseErrors, RegenerateCharacterPoseResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -23,6 +23,48 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  */
 export const generateBatch = <ThrowOnError extends boolean = false>(options: Options<GenerateBatchData, ThrowOnError>) => (options.client ?? client).post<GenerateBatchResponses, GenerateBatchErrors, ThrowOnError>({
     url: '/generate',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate character images in multiple poses
+ *
+ * Generates character images. First creates an idle pose, then uses it as reference to generate all other requested poses in parallel. All poses are rendered on transparent background.
+ *
+ */
+export const generateCharacter = <ThrowOnError extends boolean = false>(options: Options<GenerateCharacterData, ThrowOnError>) => (options.client ?? client).post<GenerateCharacterResponses, GenerateCharacterErrors, ThrowOnError>({
+    url: '/generate/character',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Regenerate a single character pose using an existing reference image
+ */
+export const regenerateCharacterPose = <ThrowOnError extends boolean = false>(options: Options<RegenerateCharacterPoseData, ThrowOnError>) => (options.client ?? client).post<RegenerateCharacterPoseResponses, RegenerateCharacterPoseErrors, ThrowOnError>({
+    url: '/generate/character/pose',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate a background/environment scene
+ *
+ * Generates a single background image suitable as a visual novel backdrop. No characters are included — only environment and scenery.
+ *
+ */
+export const generateBackground = <ThrowOnError extends boolean = false>(options: Options<GenerateBackgroundData, ThrowOnError>) => (options.client ?? client).post<GenerateBackgroundResponses, GenerateBackgroundErrors, ThrowOnError>({
+    url: '/generate/background',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { listImages } from '@root/image_server/generated-client';
+import { createPortal } from 'react-dom';
+import { listImages, deleteImage } from '@root/image_server/generated-client';
 import type { ImageName } from '@root/image_server/generated-client';
+import { generateCharacter, regenerateCharacterPose, getBatchStatus } from '@root/image_gen/generated_client';
+import type { BatchStatus, FailedItem } from '@root/image_gen/generated_client';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -26,7 +29,23 @@ export type SceneOutput = {
   text: string;
 };
 
-export type CardType = 'scene' | 'character';
+export type CharacterPose = {
+  id: string;
+  description: string;
+  image?: string;
+};
+
+export type GenerationState = {
+  batchId: string;
+  status: 'generating' | 'done' | 'failed';
+  completedCount?: number;
+  totalCount?: number;
+  files?: string[];
+  errors?: FailedItem[];
+  itemIds?: string[];
+};
+
+export type CardType = 'scene' | 'character' | 'master_prompt';
 
 export type CardNodeData = {
   label: string;
@@ -34,6 +53,9 @@ export type CardNodeData = {
   cardType: CardType;
   description: string;
   outputs: SceneOutput[];
+  poses?: CharacterPose[];
+  generation?: GenerationState;
+  generatedImages?: string[];
 };
 
 export type CardNode = {
@@ -115,14 +137,324 @@ const ImagePicker = ({ onSelect, onClose }: { onSelect: (url: string) => void; o
 const CARD_TYPE_LABELS: Record<CardType, string> = {
   scene: 'Сцена',
   character: 'Персонаж',
+  master_prompt: 'Мастер-промпт',
 };
 
-const CardNode = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
-  const { updateNodeData, addOutput, removeOutput, updateOutput, deleteNode } = usePrototypeStore();
+const useGenerationPolling = (nodeId: string, generation?: GenerationState) => {
+  const { setGeneration, setGeneratedImages } = usePrototypeStore();
+
+  useEffect(() => {
+    if (!generation || generation.status !== 'generating') return;
+
+    const interval = setInterval(async () => {
+      try {
+        const { data } = await getBatchStatus({
+          path: { batchId: generation.batchId },
+        });
+        if (!data) return;
+        const status = data as BatchStatus;
+        const errors = status.failed.length > 0 ? status.failed : undefined;
+
+        // Map completed items to correct indices using itemIds order
+        let files: string[];
+        if (generation.itemIds) {
+          files = new Array(generation.itemIds.length).fill('');
+          for (const c of status.completed) {
+            const idx = generation.itemIds.indexOf(c.id);
+            if (idx !== -1 && c.file) files[idx] = c.file;
+          }
+        } else {
+          files = status.completed.map(c => c.file).filter(Boolean);
+        }
+
+        if (status.done) {
+          setGeneration(nodeId, {
+            ...generation,
+            status: errors && !files.some(f => f) ? 'failed' : 'done',
+            completedCount: status.completed.length,
+            totalCount: status.total,
+            files,
+            errors,
+          });
+          if (files.some(f => f)) {
+            setGeneratedImages(nodeId, files);
+          }
+        } else {
+          setGeneration(nodeId, {
+            ...generation,
+            completedCount: status.completed.length,
+            totalCount: status.total,
+            files,
+            errors,
+          });
+          if (files.some(f => f)) {
+            setGeneratedImages(nodeId, files);
+          }
+        }
+      } catch {
+        clearInterval(interval);
+        setGeneration(nodeId, {
+          ...generation,
+          status: 'failed',
+          errors: [{ id: '', error: 'Сервер генерации недоступен' }],
+        });
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [nodeId, generation, setGeneration, setGeneratedImages]);
+};
+
+const getMasterPromptForCharacter = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
+  const incoming = edges.filter(e => e.target === nodeId);
+  for (const edge of incoming) {
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    if (sourceNode && sourceNode.data.cardType === 'master_prompt') {
+      return sourceNode.data.description ?? '';
+    }
+  }
+  return '';
+};
+
+const PoseInput = ({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (val: string) => void;
+}) => {
+  const [focused, setFocused] = useState(false);
+
+  if (focused) {
+    return (
+      <textarea
+        autoFocus
+        className={`nodrag nopan ${styles.poseTextarea}`}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        onBlur={() => setFocused(false)}
+      />
+    );
+  }
+
+  return (
+    <div
+      className={`nodrag nopan ${styles.poseCollapsed}`}
+      onClick={() => setFocused(true)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => {
+        if (e.key === 'Enter') setFocused(true);
+      }}
+    >
+      {value || <span className={styles.posePlaceholder}>{placeholder}</span>}
+    </div>
+  );
+};
+
+const PosesSection = ({
+  nodeId,
+  poses,
+  generatedImages,
+  onRegeneratePose,
+}: {
+  nodeId: string;
+  poses: CharacterPose[];
+  generatedImages?: string[];
+  onRegeneratePose?: (poseIndex: number, poseDescription: string) => Promise<void>;
+}) => {
+  const { addPose, removePose, updatePose } = usePrototypeStore();
+  const [open, setOpen] = useState(true);
+  const [deletingPoseId, setDeletingPoseId] = useState<string | null>(null);
+  const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
+  const [hoverPreview, setHoverPreview] = useState<{ image: string; x: number; y: number } | null>(null);
+
+  const posesList = poses || [];
+
+  const handleDeletePose = (poseId: string, poseIndex: number, poseImage?: string) => {
+    if (poseImage) {
+      deleteImage({ path: { name: poseImage } }).catch(() => {});
+    }
+    removePose(nodeId, poseId, poseIndex);
+    setDeletingPoseId(null);
+  };
+
+  return (
+    <div className={styles.posesSection}>
+      <button className={`nodrag nopan ${styles.foldableHeader}`} onClick={() => setOpen(v => !v)} type="button">
+        <span className={`${styles.foldableArrow} ${open ? styles.foldableArrowOpen : ''}`}>&#9654;</span>
+        Позы ({posesList.length})
+      </button>
+      {open && (
+        <div className={styles.posesList}>
+          {posesList.map((pose, index) => {
+            const poseImage = generatedImages?.[index];
+            return (
+              <div key={pose.id} className={styles.poseRow}>
+                <div className={styles.poseContent}>
+                  <PoseInput
+                    value={pose.description}
+                    placeholder="Описание позы (напр. грустный, боевая стойка)"
+                    onChange={val => updatePose(nodeId, pose.id, val)}
+                  />
+                  <button
+                    type="button"
+                    className={`nodrag nopan ${styles.outputDelete}`}
+                    onClick={() => {
+                      if (!pose.description && !poseImage) {
+                        handleDeletePose(pose.id, index, poseImage);
+                      } else {
+                        setDeletingPoseId(pose.id);
+                      }
+                    }}
+                    title="Удалить"
+                  >
+                    ×
+                  </button>
+                </div>
+                {deletingPoseId === pose.id && (
+                  <div className={`nodrag nopan ${styles.deleteConfirm}`}>
+                    <p>Удалить позу?</p>
+                    <div className={styles.deleteConfirmActions}>
+                      <button type="button" className={styles.deleteConfirmCancel} onClick={() => setDeletingPoseId(null)}>
+                        Отмена
+                      </button>
+                      <button type="button" className={styles.deleteConfirmSubmit} onClick={() => handleDeletePose(pose.id, index, poseImage)}>
+                        Удалить
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {poseImage ? (
+                  <div className={`${styles.poseThumbnailWrap} ${regeneratingIndex === index ? styles.poseThumbnailRegenerating : ''}`}>
+                    <img
+                      src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(poseImage)}/thumbnail`}
+                      alt={pose.description}
+                      className={styles.poseThumbnail}
+                      onMouseEnter={e =>
+                        setHoverPreview({ image: poseImage, x: e.clientX, y: e.clientY })
+                      }
+                      onMouseMove={e =>
+                        setHoverPreview(prev => (prev ? { ...prev, x: e.clientX, y: e.clientY } : null))
+                      }
+                      onMouseLeave={() => setHoverPreview(null)}
+                    />
+                    {onRegeneratePose && (
+                      <button
+                        type="button"
+                        className={`nodrag nopan ${styles.poseRegenBtn} ${regeneratingIndex === index ? styles.poseRegenSpinning : ''}`}
+                        title="Перегенерировать"
+                        disabled={regeneratingIndex === index}
+                        onClick={() => {
+                          setRegeneratingIndex(index);
+                          onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
+                        }}
+                      >
+                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <path d="M1 8a7 7 0 0 1 12.07-4.83" /><path d="M13.07 0v3.17H9.9" />
+                          <path d="M15 8A7 7 0 0 1 2.93 12.83" /><path d="M2.93 16v-3.17H6.1" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                ) : onRegeneratePose && (
+                  <button
+                    type="button"
+                    className={`nodrag nopan ${styles.poseGenerateBtn} ${regeneratingIndex === index ? styles.poseGenerateBtnSpinning : ''}`}
+                    title="Сгенерировать позу"
+                    disabled={regeneratingIndex === index}
+                    onClick={() => {
+                      setRegeneratingIndex(index);
+                      onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
+                    }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="none">
+                      <path d="M4.5 1l.5 1.5L6.5 3l-1.5.5L4.5 5l-.5-1.5L2.5 3l1.5-.5zM11 4l.7 2.3L14 7l-2.3.7L11 10l-.7-2.3L8 7l2.3-.7zM4.5 10l.5 1.5L6.5 12l-1.5.5-.5 1.5-.5-1.5L2.5 12l1.5-.5z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          <button type="button" className={`nodrag nopan ${styles.addOutput}`} onClick={() => addPose(nodeId)}>
+            + Добавить позу
+          </button>
+        </div>
+      )}
+      {hoverPreview &&
+        createPortal(
+          <div
+            className={styles.posePreview}
+            style={{ left: hoverPreview.x + 16, top: hoverPreview.y + 16 }}
+          >
+            <img
+              src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(hoverPreview.image)}`}
+              alt="Preview"
+            />
+          </div>,
+          document.body,
+        )}
+    </div>
+  );
+};
+
+const GenerationErrors = ({ errors }: { errors: FailedItem[] }) => (
+  <div className={styles.generationErrors}>
+    {errors.map(e => (
+      <div key={e.id} className={styles.generationErrorItem}>
+        <span className={styles.generationErrorId}>{e.id}:</span>{' '}
+        <span className={styles.generationErrorMsg}>{e.error ?? 'неизвестная ошибка'}</span>
+      </div>
+    ))}
+  </div>
+);
+
+const GenerationStatus = ({ generation }: { generation: GenerationState }) => {
+  if (generation.status === 'generating') {
+    const pct = generation.totalCount
+      ? Math.round(((generation.completedCount ?? 0) / generation.totalCount) * 100)
+      : 0;
+    return (
+      <div className={styles.generationStatus}>
+        <div className={styles.loader} />
+        <span className={styles.generationText}>Генерация… {pct}%</span>
+        {generation.errors && <GenerationErrors errors={generation.errors} />}
+      </div>
+    );
+  }
+  if (generation.status === 'done') {
+    return (
+      <div className={styles.generationStatus}>
+        <span className={styles.generationDone}>Готово</span>
+        {generation.errors && <GenerationErrors errors={generation.errors} />}
+      </div>
+    );
+  }
+  if (generation.status === 'failed') {
+    return (
+      <div className={styles.generationStatus}>
+        <span className={styles.generationFailed}>Ошибка</span>
+        {generation.errors && <GenerationErrors errors={generation.errors} />}
+      </div>
+    );
+  }
+  return null;
+};
+
+const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
+  const store = usePrototypeStore();
+  const { updateNodeData, addOutput, removeOutput, updateOutput, deleteNode, setGeneration } = store;
+  const nodes = store.nodes;
+  const edges = store.edges;
   const outputs = getOutputs(data);
   const [showPicker, setShowPicker] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const cardType = data.cardType ?? 'scene';
+
+  useGenerationPolling(id, data.generation);
 
   const onSelectImage = useCallback(
     (url: string) => {
@@ -147,11 +479,119 @@ const CardNode = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
   );
 
   const isCharacter = cardType === 'character';
+  const isMasterPrompt = cardType === 'master_prompt';
+
+  const onGenerate = useCallback(async () => {
+    const masterPrompt = getMasterPromptForCharacter(id, edges, nodes);
+    const characterDescription = data.description ?? '';
+    if (!characterDescription.trim()) return;
+
+    // Ensure idle pose exists before generation
+    const currentPoses = data.poses || [];
+    const hasIdle = currentPoses.some(p => p.description.toLowerCase().trim() === 'idle');
+    if (!hasIdle) {
+      const idlePose: CharacterPose = { id: crypto.randomUUID(), description: 'idle' };
+      store.updateNodeData(id, { poses: [idlePose, ...currentPoses] });
+    }
+
+    const posesForGen = hasIdle ? currentPoses : [{ id: '', description: 'idle' }, ...currentPoses];
+    const poseDescriptions = posesForGen.map(p => p.description).filter(d => d.trim());
+
+    try {
+      const { data: respData } = await generateCharacter({
+        body: {
+          masterPrompt: masterPrompt || 'high quality digital art',
+          characterDescription,
+          poses: poseDescriptions.length > 0 ? poseDescriptions : undefined,
+        },
+      });
+      if (respData) {
+        const resp = respData as { batchId: string; itemIds: string[] };
+        setGeneration(id, {
+          batchId: resp.batchId,
+          status: 'generating',
+          completedCount: 0,
+          totalCount: resp.itemIds.length,
+          itemIds: resp.itemIds,
+        });
+      }
+    } catch {
+      setGeneration(id, {
+        batchId: '',
+        status: 'failed',
+      });
+    }
+  }, [id, data.description, data.poses, edges, nodes, setGeneration, store]);
+
+  const { updateGeneratedImage } = store;
+
+  const onRegeneratePose = useCallback(
+    (poseIndex: number, poseDescription: string): Promise<void> => {
+      const masterPrompt = getMasterPromptForCharacter(id, edges, nodes);
+      const characterDescription = data.description ?? '';
+      if (!characterDescription.trim() || !poseDescription.trim()) return Promise.resolve();
+
+      // Find existing idle image to use as reference
+      const poses = data.poses || [];
+      const idleIndex = poses.findIndex(p => p.description.toLowerCase().trim() === 'idle');
+      const idleImage = idleIndex >= 0 ? data.generatedImages?.[idleIndex] : undefined;
+      if (!idleImage) return Promise.resolve(); // Can't regenerate without idle reference
+
+      const oldImage = data.generatedImages?.[poseIndex];
+      const referenceImageUrl = `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(idleImage)}`;
+
+      return regenerateCharacterPose({
+        body: {
+          masterPrompt: masterPrompt || 'high quality digital art',
+          characterDescription,
+          pose: poseDescription,
+          referenceImageUrl,
+        },
+      })
+        .then(({ data: respData }) => {
+          if (!respData) return;
+          const resp = respData as { batchId: string; itemIds: string[] };
+
+          return new Promise<void>(resolve => {
+            const poll = setInterval(async () => {
+              try {
+                const { data: statusData } = await getBatchStatus({
+                  path: { batchId: resp.batchId },
+                });
+                if (!statusData) return;
+                const status = statusData as BatchStatus;
+                if (!status.done) return;
+
+                clearInterval(poll);
+                const poseId = poseDescription.toLowerCase().trim();
+                const match = status.completed.find((c: { id: string; file: string }) => c.id === poseId);
+                const file = match?.file;
+                if (file) {
+                  updateGeneratedImage(id, poseIndex, file);
+                  if (oldImage) {
+                    deleteImage({ path: { name: oldImage } }).catch(() => {});
+                  }
+                }
+                resolve();
+              } catch {
+                clearInterval(poll);
+                resolve();
+              }
+            }, 5000);
+          });
+        })
+        .catch(() => {});
+    },
+    [id, data.description, data.generatedImages, data.poses, edges, nodes, updateGeneratedImage],
+  );
+
+  const cardClass = isCharacter ? styles.characterCard : isMasterPrompt ? styles.masterPromptCard : '';
 
   return (
     <>
-      {!isCharacter && <Handle type="target" position={Position.Top} />}
-      <div className={`${styles.sceneCard} ${isCharacter ? styles.characterCard : ''}`}>
+      {!isCharacter && !isMasterPrompt && <Handle type="target" position={Position.Top} />}
+      {isMasterPrompt && <Handle type="source" position={Position.Right} id="prompt_out" />}
+      <div className={`${styles.sceneCard} ${cardClass}`}>
         <div className={styles.cardHeader}>
           <select className={`nodrag nopan ${styles.cardTypeSelect}`} value={cardType} onChange={onCardTypeChange}>
             {(Object.keys(CARD_TYPE_LABELS) as CardType[]).map(t => (
@@ -182,20 +622,59 @@ const CardNode = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
             </div>
           </div>
         )}
-        <div
-          className={`nodrag nopan ${styles.sceneImage} ${styles.sceneImageClickable}`}
-          onClick={() => setShowPicker(v => !v)}
-        >
-          {data.image ? <img src={data.image} alt="" /> : <span>Выбрать изображение</span>}
-        </div>
-        {showPicker && <ImagePicker onSelect={onSelectImage} onClose={() => setShowPicker(false)} />}
-        {isCharacter ? (
+        {!isMasterPrompt && (
+          <>
+            <div
+              className={`nodrag nopan ${styles.sceneImage} ${styles.sceneImageClickable}`}
+              onClick={() => setShowPicker(v => !v)}
+            >
+              {data.image ? <img src={data.image} alt="" /> : <span>Выбрать изображение</span>}
+            </div>
+            {showPicker && <ImagePicker onSelect={onSelectImage} onClose={() => setShowPicker(false)} />}
+          </>
+        )}
+        {isMasterPrompt ? (
           <textarea
             className={`nodrag nopan ${styles.descriptionInput}`}
-            placeholder="Описание персонажа"
+            placeholder="Мастер-промпт (стиль, качество)"
             value={data.description ?? ''}
             onChange={e => updateNodeData(id, { description: e.target.value })}
           />
+        ) : isCharacter ? (
+          <>
+            <div className={styles.masterPromptSection}>
+              <Handle
+                type="target"
+                position={Position.Left}
+                id="style"
+                className={styles.styleHandle}
+                isValidConnection={() => {
+                  const currentEdges = store.edges;
+                  const alreadyConnected = currentEdges.some(
+                    e => e.target === id && e.targetHandle === 'style'
+                  );
+                  return !alreadyConnected;
+                }}
+              />
+              <span className={styles.masterPromptLabel}>Мастер-промпт</span>
+            </div>
+            <textarea
+              className={`nodrag nopan ${styles.descriptionInput}`}
+              placeholder="Описание персонажа"
+              value={data.description ?? ''}
+              onChange={e => updateNodeData(id, { description: e.target.value })}
+            />
+            <PosesSection nodeId={id} poses={data.poses || []} generatedImages={data.generatedImages} onRegeneratePose={onRegeneratePose} />
+            {data.generation && <GenerationStatus generation={data.generation} />}
+            <button
+              type="button"
+              className={`nodrag nopan ${styles.generateBtn}`}
+              onClick={onGenerate}
+              disabled={data.generation?.status === 'generating'}
+            >
+              {data.generation?.status === 'generating' ? 'Генерация…' : 'Сгенерировать'}
+            </button>
+          </>
         ) : (
           <div className={styles.outputsBlock}>
             {outputs.map(output => (
@@ -228,7 +707,11 @@ const CardNode = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
   );
 };
 
-const nodeTypes = { scene: CardNode, character: CardNode };
+const nodeTypes = {
+  scene: CardNodeComponent,
+  character: CardNodeComponent,
+  master_prompt: CardNodeComponent,
+};
 
 const ImageGallery = () => {
   const [images, setImages] = useState<ImageName[]>([]);
@@ -322,9 +805,7 @@ const Flow = () => {
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
           const { x, y } = change.position;
-          setNodes(nds =>
-            nds.map(n => (n.id === change.id ? { ...n, position: { x, y } } : n)),
-          );
+          setNodes(nds => nds.map(n => (n.id === change.id ? { ...n, position: { x, y } } : n)));
         } else if (change.type === 'remove') {
           deleteNode(change.id);
         }
@@ -347,8 +828,16 @@ const Flow = () => {
   );
 
   const onConnect: OnConnect = useCallback(
-    connection => setEdges(eds => addEdge(connection, eds as Edge[]).map(toCardEdge)),
-    [setEdges],
+    connection => {
+      if (connection.targetHandle === 'style') {
+        const alreadyConnected = edges.some(
+          e => e.target === connection.target && e.targetHandle === 'style'
+        );
+        if (alreadyConnected) return;
+      }
+      setEdges(eds => addEdge(connection, eds as Edge[]).map(toCardEdge));
+    },
+    [setEdges, edges],
   );
 
   const onPaneClick = useCallback(

@@ -32,6 +32,87 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /generate/character:
+    post:
+      operationId: generateCharacter
+      summary: Generate character images in multiple poses
+      description: >
+        Generates character images. First creates an idle pose, then uses it as reference
+        to generate all other requested poses in parallel. All poses are rendered on transparent background.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CharacterGenerateRequest'
+      responses:
+        '200':
+          description: Character generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /generate/character/pose:
+    post:
+      operationId: regenerateCharacterPose
+      summary: Regenerate a single character pose using an existing reference image
+      description: >
+        Generates a single pose image using a provided reference image (e.g. the existing idle pose).
+        Does not generate idle — uses the supplied referenceImageUrl as-is.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegeneratePoseRequest'
+      responses:
+        '200':
+          description: Pose regeneration batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /generate/background:
+    post:
+      operationId: generateBackground
+      summary: Generate a background/environment scene
+      description: >
+        Generates a single background image suitable as a visual novel backdrop.
+        No characters are included — only environment and scenery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackgroundGenerateRequest'
+      responses:
+        '200':
+          description: Background generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+        '400':
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -118,6 +199,18 @@ components:
           items:
             type: string
 
+    CompletedItem:
+      type: object
+      required:
+        - id
+        - file
+      properties:
+        id:
+          type: string
+        file:
+          type: string
+          description: Generated image file name
+
     FailedItem:
       type: object
       required:
@@ -150,7 +243,7 @@ components:
         completed:
           type: array
           items:
-            type: string
+            $ref: '#/components/schemas/CompletedItem'
         pending:
           type: array
           items:
@@ -186,6 +279,59 @@ components:
           type: integer
         failed:
           type: integer
+
+    CharacterGenerateRequest:
+      type: object
+      required:
+        - masterPrompt
+        - characterDescription
+      properties:
+        masterPrompt:
+          type: string
+          description: Global style/quality prompt applied to all generated images
+        characterDescription:
+          type: string
+          description: Detailed description of the character appearance
+        poses:
+          type: array
+          description: Optional list of poses/emotions to generate. Idle is always included automatically.
+          items:
+            type: string
+
+    RegeneratePoseRequest:
+      type: object
+      required:
+        - masterPrompt
+        - characterDescription
+        - pose
+        - referenceImageUrl
+      properties:
+        masterPrompt:
+          type: string
+          description: Global style/quality prompt applied to the generated image
+        characterDescription:
+          type: string
+          description: Detailed description of the character appearance
+        pose:
+          type: string
+          description: The pose/emotion to generate
+        referenceImageUrl:
+          type: string
+          format: uri
+          description: URL of the existing idle pose image to use as style reference
+
+    BackgroundGenerateRequest:
+      type: object
+      required:
+        - masterPrompt
+        - sceneDescription
+      properties:
+        masterPrompt:
+          type: string
+          description: Global style/quality prompt applied to the generated image
+        sceneDescription:
+          type: string
+          description: Detailed description of the background/environment scene
 
     ErrorResponse:
       type: object
