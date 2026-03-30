@@ -1,0 +1,124 @@
+.imageArea {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.bgHandle {
+  position: absolute !important;
+  top: 50% !important;
+  left: -13px !important;
+  transform: translateY(-50%) !important;
+  background: #10b981 !important;
+}
+
+.sceneImage {
+  width: 140px;
+  height: 80px;
+  background: #f3f4f6;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.sceneImage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.sceneImageClickable {
+  cursor: pointer;
+  transition: border-color 0.15s;
+  border: 1px solid transparent;
+}
+
+.sceneImageClickable:hover {
+  border-color: #4f46e5;
+}
+
+.clearImageBtn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.clearImageBtn:hover {
+  background: #ef4444;
+}
+
+.sceneText {
+  width: 100%;
+  min-height: 60px;
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  resize: vertical;
+  font-family: inherit;
+}
+
+.sceneText:focus {
+  outline: none;
+  border-color: #4f46e5;
+  background: #fff;
+}
+
+.outputsBlock {
+  margin-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.outputRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  position: relative;
+}
+
+.outputHandle {
+  position: absolute !important;
+  top: 50% !important;
+  right: -13px !important;
+  transform: translateY(-50%) !important;
+}
+
+.duplicateBtn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #6b7280;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+}
+
+.duplicateBtn:hover {
+  color: #4f46e5;
+  background: #eef2ff;
+  border-color: #c7d2fe;
+}

@@ -1,0 +1,71 @@
+.body {
+  border: 1px solid #10b981;
+  background: #f0fdf4;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.nameInput {
+  width: 100%;
+  padding: 4px 6px;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  border: 1px solid #d4d4d8;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+
+.nameInput:focus {
+  outline: none;
+  border-color: #10b981;
+}
+
+.bgOutHandle {
+  background: #10b981 !important;
+}
+
+.bgImagePreview {
+  margin-top: 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.bgImagePreview img {
+  width: 100%;
+  display: block;
+  cursor: pointer;
+}
+
+.imagePreview {
+  position: fixed;
+  z-index: 10000;
+  width: 600px;
+  height: 400px;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+  background: #1e1e1e;
+  pointer-events: none;
+  overflow: hidden;
+  animation: previewFadeIn 0.15s ease-out;
+}
+
+.imagePreview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+@keyframes previewFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

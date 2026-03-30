@@ -1,0 +1,22 @@
+.generateBtn {
+  width: 100%;
+  margin-top: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #a78bfa;
+  border-radius: 4px;
+  background: #7c3aed;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.generateBtn:hover {
+  background: #6d28d9;
+}
+
+.generateBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

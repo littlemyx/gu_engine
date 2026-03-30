@@ -1,0 +1,27 @@
+.body {
+  border: 1px solid #a78bfa;
+  background: #faf5ff;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.nameInput {
+  width: 100%;
+  padding: 4px 6px;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  border: 1px solid #d4d4d8;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  box-sizing: border-box;
+}
+
+.nameInput:focus {
+  outline: none;
+  border-color: #a78bfa;
+}
+
+.charOutHandle {
+  background: #a78bfa !important;
+}

@@ -1,0 +1,186 @@
+.posesSection {
+  margin-top: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.posesList {
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.poseRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.poseContent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.poseCollapsed {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background: #fff;
+  cursor: text;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.4;
+  color: #374151;
+}
+
+.poseCollapsed:hover {
+  border-color: #a78bfa;
+}
+
+.posePlaceholder {
+  color: #9ca3af;
+}
+
+.poseTextarea {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  border: 1px solid #a78bfa;
+  border-radius: 4px;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.4;
+  color: #374151;
+  font-family: inherit;
+  outline: none;
+}
+
+.poseThumbnailWrap {
+  position: relative;
+  display: inline-block;
+}
+
+.poseThumbnail {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #e5e7eb;
+  cursor: pointer;
+}
+
+.poseThumbnailRegenerating .poseThumbnail {
+  opacity: 0.4;
+}
+
+.poseRegenBtn {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.poseRegenBtn:hover {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #9ca3af;
+}
+
+.poseRegenBtn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+@keyframes poseRegenSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.poseRegenSpinning {
+  animation: poseRegenSpin 1s linear infinite;
+}
+
+.poseGenerateBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #6b7280;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.poseGenerateBtn:hover {
+  background: #f3f4f6;
+  color: #7c3aed;
+  border-color: #a78bfa;
+}
+
+.poseGenerateBtn:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.poseGenerateBtnSpinning svg {
+  animation: poseRegenSpin 1s linear infinite;
+}
+
+.posePreview {
+  position: fixed;
+  z-index: 10000;
+  width: 600px;
+  height: 400px;
+  border-radius: 8px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.24);
+  background: #1e1e1e;
+  pointer-events: none;
+  overflow: hidden;
+  animation: posePreviewFadeIn 0.15s ease-out;
+}
+
+.posePreview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+@keyframes posePreviewFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
