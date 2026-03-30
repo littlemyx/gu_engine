@@ -1,44 +1,58 @@
-import { GoogleGenAI } from '@google/genai';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
-import sharp from 'sharp';
-import type { GenerateItem, BatchState, CharacterGenerateRequest, RegeneratePoseRequest, BackgroundGenerateRequest } from './types.js';
-import { logger } from './logger.js';
+import { GoogleGenAI } from "@google/genai";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import sharp from "sharp";
+import type {
+  GenerateItem,
+  BatchState,
+  CharacterGenerateRequest,
+  RegeneratePoseRequest,
+  BackgroundGenerateRequest
+} from "./types.js";
+import { logger } from "./logger.js";
 
 const API_KEY = process.env.GOOGLE_API_KEY;
 
 if (!API_KEY) {
-  logger.error('GOOGLE_API_KEY environment variable is required');
+  logger.error("GOOGLE_API_KEY environment variable is required");
   process.exit(1);
 }
 
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 
-const RESULT_DIR = path.resolve('result_images');
+const RESULT_DIR = path.resolve("result_images");
 fs.mkdirSync(RESULT_DIR, { recursive: true });
 
-const IMAGE_SERVER_BASE = process.env.IMAGE_SERVER_URL || 'http://localhost:3007';
+const IMAGE_SERVER_BASE =
+  process.env.IMAGE_SERVER_URL || "http://localhost:3007";
 
-async function uploadToImageServer(filePath: string, originalName: string): Promise<string> {
+async function uploadToImageServer(
+  filePath: string,
+  originalName: string
+): Promise<string> {
   const fileBuffer = fs.readFileSync(filePath);
-  const blob = new Blob([fileBuffer], { type: 'image/png' });
+  const blob = new Blob([fileBuffer], { type: "image/png" });
   const formData = new FormData();
-  formData.append('image', blob, originalName);
+  formData.append("image", blob, originalName);
 
   const res = await fetch(`${IMAGE_SERVER_BASE}/images`, {
-    method: 'POST',
-    body: formData,
+    method: "POST",
+    body: formData
   });
 
   if (!res.ok) {
-    throw new Error(`Failed to upload to image server: ${res.status} ${res.statusText}`);
+    throw new Error(
+      `Failed to upload to image server: ${res.status} ${res.statusText}`
+    );
   }
 
   const data = (await res.json()) as { name: string };
   return data.name;
 }
 
-async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType: string }> {
+async function fetchImageAsBase64(
+  url: string
+): Promise<{ data: string; mimeType: string }> {
   // Handle data URIs directly
   const dataUriMatch = url.match(/^data:([^;]+);base64,(.+)$/);
   if (dataUriMatch) {
@@ -47,34 +61,44 @@ async function fetchImageAsBase64(url: string): Promise<{ data: string; mimeType
 
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch image: ${url} (${res.status})`);
-  const contentType = res.headers.get('content-type') || 'image/png';
+  const contentType = res.headers.get("content-type") || "image/png";
   const buffer = Buffer.from(await res.arrayBuffer());
-  return { data: buffer.toString('base64'), mimeType: contentType };
+  return { data: buffer.toString("base64"), mimeType: contentType };
 }
 
-function buildPrompt(item: GenerateItem, masterPrompt?: string, negativePrompt?: string): string {
+function buildPrompt(
+  item: GenerateItem,
+  masterPrompt?: string,
+  negativePrompt?: string
+): string {
   const parts: string[] = [];
   if (masterPrompt) parts.push(masterPrompt);
   parts.push(item.description);
   if (negativePrompt) parts.push(`Avoid the following: ${negativePrompt}`);
-  return parts.join('\n\n');
+  return parts.join("\n\n");
 }
 
 export async function generateImage(
   item: GenerateItem,
   masterPrompt?: string,
-  negativePrompt?: string,
+  negativePrompt?: string
 ): Promise<string> {
   const promptText = buildPrompt(item, masterPrompt, negativePrompt);
 
-  const contentParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
+  const contentParts: Array<
+    { text: string } | { inlineData: { mimeType: string; data: string } }
+  > = [];
   contentParts.push({ text: promptText });
 
   if (item.referenceImages?.length) {
-    logger.log(`[generateImage] id=${item.id} — attaching ${item.referenceImages.length} reference image(s)`);
+    logger.log(
+      `[generateImage] id=${item.id} — attaching ${item.referenceImages.length} reference image(s)`
+    );
     for (const url of item.referenceImages) {
       const img = await fetchImageAsBase64(url);
-      contentParts.push({ inlineData: { mimeType: img.mimeType, data: img.data } });
+      contentParts.push({
+        inlineData: { mimeType: img.mimeType, data: img.data }
+      });
     }
   }
 
@@ -82,47 +106,58 @@ export async function generateImage(
   const startTime = Date.now();
 
   const response = await ai.models.generateContent({
-    model: 'gemini-3.1-flash-image-preview',
-    contents: contentParts,
+    model: "gemini-3.1-flash-image-preview",
+    contents: contentParts
   });
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   const parts = response.candidates?.[0]?.content?.parts;
-  if (!parts) throw new Error('No response parts from API');
+  if (!parts) throw new Error("No response parts from API");
 
   for (const part of parts) {
-    if ((part as any).inlineData) {
-      const imageData = (part as any).inlineData.data;
+    if (part.inlineData) {
+      const imageData = part.inlineData.data;
+      if (!imageData) continue;
       const filePath = path.join(RESULT_DIR, `${item.id}.png`);
-      fs.writeFileSync(filePath, Buffer.from(imageData, 'base64'));
-      logger.log(`[generateImage] id=${item.id} — saved locally to ${filePath} (${elapsed}s)`);
+      fs.writeFileSync(filePath, Buffer.from(imageData, "base64"));
+      logger.log(
+        `[generateImage] id=${item.id} — saved locally to ${filePath} (${elapsed}s)`
+      );
       return filePath;
     }
   }
 
-  throw new Error('No image data in API response');
+  throw new Error("No image data in API response");
 }
 
 export async function processBatch(
   batch: BatchState,
   items: GenerateItem[],
   masterPrompt?: string,
-  negativePrompt?: string,
+  negativePrompt?: string
 ) {
-  logger.log(`[processBatch] batch=${batch.batchId} — starting ${items.length} item(s)`);
+  logger.log(
+    `[processBatch] batch=${batch.batchId} — starting ${items.length} item(s)`
+  );
   for (const item of items) {
-    batch.items[item.id].status = 'processing';
-    logger.log(`[processBatch] batch=${batch.batchId} item=${item.id} — processing`);
+    batch.items[item.id].status = "processing";
+    logger.log(
+      `[processBatch] batch=${batch.batchId} item=${item.id} — processing`
+    );
     try {
       const localPath = await generateImage(item, masterPrompt, negativePrompt);
       const serverName = await uploadToImageServer(localPath, `${item.id}.png`);
-      batch.items[item.id].status = 'completed';
+      batch.items[item.id].status = "completed";
       batch.items[item.id].filePath = serverName;
-      logger.log(`[processBatch] batch=${batch.batchId} item=${item.id} — completed (${serverName})`);
+      logger.log(
+        `[processBatch] batch=${batch.batchId} item=${item.id} — completed (${serverName})`
+      );
     } catch (err: any) {
-      batch.items[item.id].status = 'failed';
+      batch.items[item.id].status = "failed";
       batch.items[item.id].error = err.message ?? String(err);
-      logger.error(`[processBatch] batch=${batch.batchId} item=${item.id} — failed: ${err.message ?? err}`);
+      logger.error(
+        `[processBatch] batch=${batch.batchId} item=${item.id} — failed: ${err.message ?? err}`
+      );
     }
   }
   logger.log(`[processBatch] batch=${batch.batchId} — done`);
@@ -132,16 +167,18 @@ export async function processBatch(
  * Convert RGB to HSV. Returns [h (0-360), s (0-1), v (0-1)].
  */
 function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
-  const rn = r / 255, gn = g / 255, bn = b / 255;
+  const rn = r / 255,
+    gn = g / 255,
+    bn = b / 255;
   const max = Math.max(rn, gn, bn);
   const min = Math.min(rn, gn, bn);
   const delta = max - min;
 
   let h = 0;
   if (delta > 0) {
-    if (max === gn) h = 60 * (((bn - rn) / delta) + 2);
+    if (max === gn) h = 60 * ((bn - rn) / delta + 2);
     else if (max === rn) h = 60 * (((gn - bn) / delta) % 6);
-    else h = 60 * (((rn - gn) / delta) + 4);
+    else h = 60 * ((rn - gn) / delta + 4);
     if (h < 0) h += 360;
   }
   const s = max === 0 ? 0 : delta / max;
@@ -156,10 +193,10 @@ function isGreenish(r: number, g: number, b: number): boolean {
   const HUE_CENTER = 120;
   const HUE_RANGE = 50;
   const SAT_MIN = 0.08;
-  const VAL_MIN = 0.20;
+  const VAL_MIN = 0.2;
 
   const hueDist = Math.abs(h - HUE_CENTER);
-  const isGreenHue = hueDist <= HUE_RANGE || hueDist >= (360 - HUE_RANGE);
+  const isGreenHue = hueDist <= HUE_RANGE || hueDist >= 360 - HUE_RANGE;
   return isGreenHue && s >= SAT_MIN && v >= VAL_MIN;
 }
 
@@ -172,9 +209,12 @@ function isGreenish(r: number, g: number, b: number): boolean {
 async function removeChromakeyGreen(inputPath: string): Promise<void> {
   const image = sharp(inputPath);
   const { width, height } = await image.metadata();
-  if (!width || !height) throw new Error('Cannot read image dimensions');
+  if (!width || !height) throw new Error("Cannot read image dimensions");
 
-  const { data } = await image.raw().ensureAlpha().toBuffer({ resolveWithObject: true });
+  const { data } = await image
+    .raw()
+    .ensureAlpha()
+    .toBuffer({ resolveWithObject: true });
   const totalPixels = width * height;
 
   // 1. Flood-fill from all border pixels to find connected green background
@@ -223,10 +263,10 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     const y = (idx - x) / width;
 
     const neighbors = [
-      y > 0 ? idx - width : -1,             // up
-      y < height - 1 ? idx + width : -1,     // down
-      x > 0 ? idx - 1 : -1,                 // left
-      x < width - 1 ? idx + 1 : -1,         // right
+      y > 0 ? idx - width : -1, // up
+      y < height - 1 ? idx + width : -1, // down
+      x > 0 ? idx - 1 : -1, // left
+      x < width - 1 ? idx + 1 : -1 // right
     ];
 
     for (const nIdx of neighbors) {
@@ -253,47 +293,51 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     // Compute soft alpha for anti-aliased edges
     const hueDist = Math.abs(h - HUE_CENTER);
     const hueAlpha = Math.max(0, hueDist / HUE_RANGE);
-    const satAlpha = Math.max(0, 1 - ((s - SAT_MIN) / (1 - SAT_MIN)));
+    const satAlpha = Math.max(0, 1 - (s - SAT_MIN) / (1 - SAT_MIN));
     const alpha = Math.min(hueAlpha, satAlpha);
     data[off + 3] = Math.round(alpha * 255);
   }
 
   await sharp(data, { raw: { width, height, channels: 4 } })
     .png()
-    .toFile(inputPath + '.tmp');
+    .toFile(inputPath + ".tmp");
 
-  fs.renameSync(inputPath + '.tmp', inputPath);
+  fs.renameSync(inputPath + ".tmp", inputPath);
 }
 
 function buildCharacterPosePrompt(
   masterPrompt: string,
   characterDescription: string,
-  pose: string,
+  pose: string
 ): string {
   const parts = [
     masterPrompt,
     characterDescription,
-    `Generate ONLY the character in a "${pose}" pose/emotion. The character must be rendered on a solid bright chromakey green (#00FF00) background. The entire background must be uniform pure green with no gradients, no shadows, no environment, no ground. The character should have a thin clean white outline (2-3 pixels) separating it from the green background. Crisp sharp edges, no blur or feathering at the borders. Maintain consistent character design, proportions, and art style.`,
+    `Generate ONLY the character in a "${pose}" pose/emotion. The character must be rendered on a solid bright chromakey green (#00FF00) background. The entire background must be uniform pure green with no gradients, no shadows, no environment, no ground. The character should have a thin clean white outline (2-3 pixels) separating it from the green background. Crisp sharp edges, no blur or feathering at the borders. Maintain consistent character design, proportions, and art style.`
   ];
-  return parts.join('\n\n');
+  return parts.join("\n\n");
 }
 
 export async function processCharacterBatch(
   batch: BatchState,
-  request: CharacterGenerateRequest,
+  request: CharacterGenerateRequest
 ) {
   const { masterPrompt, characterDescription } = request;
 
   // Deduplicate and normalize poses, ensure idle is first
   const rawPoses = request.poses ?? [];
-  const uniquePoses = [...new Set(rawPoses.map(p => p.toLowerCase().trim()))].filter(p => p !== 'idle');
-  const allPoses = ['idle', ...uniquePoses];
+  const uniquePoses = [
+    ...new Set(rawPoses.map(p => p.toLowerCase().trim()))
+  ].filter(p => p !== "idle");
+  const allPoses = ["idle", ...uniquePoses];
 
-  logger.log(`[processCharacterBatch] batch=${batch.batchId} — generating idle pose first, then ${uniquePoses.length} additional pose(s)`);
+  logger.log(
+    `[processCharacterBatch] batch=${batch.batchId} — generating idle pose first, then ${uniquePoses.length} additional pose(s)`
+  );
 
   // 1. Generate idle pose first
-  const idleId = 'idle';
-  batch.items[idleId].status = 'processing';
+  const idleId = "idle";
+  batch.items[idleId].status = "processing";
 
   let idleLocalPath: string;
   try {
@@ -302,24 +346,30 @@ export async function processCharacterBatch(
       description: buildCharacterPosePrompt(
         masterPrompt,
         characterDescription,
-        'idle — neutral standing pose, relaxed, facing the viewer',
-      ),
+        "idle — neutral standing pose, relaxed, facing the viewer"
+      )
     };
     idleLocalPath = await generateImage(idleItem);
-    logger.log(`[processCharacterBatch] batch=${batch.batchId} — removing chromakey from idle pose`);
+    logger.log(
+      `[processCharacterBatch] batch=${batch.batchId} — removing chromakey from idle pose`
+    );
     await removeChromakeyGreen(idleLocalPath);
-    const idleServerName = await uploadToImageServer(idleLocalPath, 'idle.png');
-    batch.items[idleId].status = 'completed';
+    const idleServerName = await uploadToImageServer(idleLocalPath, "idle.png");
+    batch.items[idleId].status = "completed";
     batch.items[idleId].filePath = idleServerName;
-    logger.log(`[processCharacterBatch] batch=${batch.batchId} — idle pose completed (${idleServerName})`);
+    logger.log(
+      `[processCharacterBatch] batch=${batch.batchId} — idle pose completed (${idleServerName})`
+    );
   } catch (err: any) {
-    batch.items[idleId].status = 'failed';
+    batch.items[idleId].status = "failed";
     batch.items[idleId].error = err.message ?? String(err);
-    logger.error(`[processCharacterBatch] batch=${batch.batchId} — idle pose failed: ${err.message ?? err}`);
+    logger.error(
+      `[processCharacterBatch] batch=${batch.batchId} — idle pose failed: ${err.message ?? err}`
+    );
     // Mark all remaining as failed since we need idle as reference
     for (const pose of uniquePoses) {
-      batch.items[pose].status = 'failed';
-      batch.items[pose].error = 'Skipped: idle pose generation failed';
+      batch.items[pose].status = "failed";
+      batch.items[pose].error = "Skipped: idle pose generation failed";
     }
     return;
   }
@@ -327,30 +377,42 @@ export async function processCharacterBatch(
   // 2. Generate remaining poses in parallel, using idle as reference
   if (uniquePoses.length === 0) return;
 
-  logger.log(`[processCharacterBatch] batch=${batch.batchId} — generating ${uniquePoses.length} pose(s) in parallel: [${uniquePoses.join(', ')}]`);
+  logger.log(
+    `[processCharacterBatch] batch=${batch.batchId} — generating ${uniquePoses.length} pose(s) in parallel: [${uniquePoses.join(", ")}]`
+  );
 
   const idleImageBase64 = fs.readFileSync(idleLocalPath);
-  const idleDataUri = `data:image/png;base64,${idleImageBase64.toString('base64')}`;
+  const idleDataUri = `data:image/png;base64,${idleImageBase64.toString("base64")}`;
 
-  const posePromises = uniquePoses.map(async (pose) => {
-    batch.items[pose].status = 'processing';
+  const posePromises = uniquePoses.map(async pose => {
+    batch.items[pose].status = "processing";
     try {
       const poseItem: GenerateItem = {
         id: pose,
-        description: buildCharacterPosePrompt(masterPrompt, characterDescription, pose),
-        referenceImages: [idleDataUri],
+        description: buildCharacterPosePrompt(
+          masterPrompt,
+          characterDescription,
+          pose
+        ),
+        referenceImages: [idleDataUri]
       };
       const localPath = await generateImage(poseItem);
-      logger.log(`[processCharacterBatch] batch=${batch.batchId} pose=${pose} — removing chromakey`);
+      logger.log(
+        `[processCharacterBatch] batch=${batch.batchId} pose=${pose} — removing chromakey`
+      );
       await removeChromakeyGreen(localPath);
       const serverName = await uploadToImageServer(localPath, `${pose}.png`);
-      batch.items[pose].status = 'completed';
+      batch.items[pose].status = "completed";
       batch.items[pose].filePath = serverName;
-      logger.log(`[processCharacterBatch] batch=${batch.batchId} pose=${pose} — completed (${serverName})`);
+      logger.log(
+        `[processCharacterBatch] batch=${batch.batchId} pose=${pose} — completed (${serverName})`
+      );
     } catch (err: any) {
-      batch.items[pose].status = 'failed';
+      batch.items[pose].status = "failed";
       batch.items[pose].error = err.message ?? String(err);
-      logger.error(`[processCharacterBatch] batch=${batch.batchId} pose=${pose} — failed: ${err.message ?? err}`);
+      logger.error(
+        `[processCharacterBatch] batch=${batch.batchId} pose=${pose} — failed: ${err.message ?? err}`
+      );
     }
   });
 
@@ -360,13 +422,16 @@ export async function processCharacterBatch(
 
 export async function processRegeneratePose(
   batch: BatchState,
-  request: RegeneratePoseRequest,
+  request: RegeneratePoseRequest
 ) {
-  const { masterPrompt, characterDescription, pose, referenceImageUrl } = request;
+  const { masterPrompt, characterDescription, pose, referenceImageUrl } =
+    request;
   const poseId = pose.toLowerCase().trim();
 
-  batch.items[poseId].status = 'processing';
-  logger.log(`[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — fetching reference image from ${referenceImageUrl}`);
+  batch.items[poseId].status = "processing";
+  logger.log(
+    `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — fetching reference image from ${referenceImageUrl}`
+  );
 
   try {
     // Fetch existing idle image and convert to data URI for reference
@@ -375,47 +440,63 @@ export async function processRegeneratePose(
 
     const poseItem: GenerateItem = {
       id: poseId,
-      description: buildCharacterPosePrompt(masterPrompt, characterDescription, pose),
-      referenceImages: [refDataUri],
+      description: buildCharacterPosePrompt(
+        masterPrompt,
+        characterDescription,
+        pose
+      ),
+      referenceImages: [refDataUri]
     };
     const localPath = await generateImage(poseItem);
-    logger.log(`[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — removing chromakey`);
+    logger.log(
+      `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — removing chromakey`
+    );
     await removeChromakeyGreen(localPath);
     const serverName = await uploadToImageServer(localPath, `${poseId}.png`);
-    batch.items[poseId].status = 'completed';
+    batch.items[poseId].status = "completed";
     batch.items[poseId].filePath = serverName;
-    logger.log(`[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — completed (${serverName})`);
+    logger.log(
+      `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — completed (${serverName})`
+    );
   } catch (err: any) {
-    batch.items[poseId].status = 'failed';
+    batch.items[poseId].status = "failed";
     batch.items[poseId].error = err.message ?? String(err);
-    logger.error(`[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — failed: ${err.message ?? err}`);
+    logger.error(
+      `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — failed: ${err.message ?? err}`
+    );
   }
 }
 
 export async function processBackgroundBatch(
   batch: BatchState,
-  request: BackgroundGenerateRequest,
+  request: BackgroundGenerateRequest
 ) {
-  const itemId = 'background';
-  batch.items[itemId].status = 'processing';
-  logger.log(`[processBackgroundBatch] batch=${batch.batchId} — generating background`);
+  const itemId = "background";
+  batch.items[itemId].status = "processing";
+  logger.log(
+    `[processBackgroundBatch] batch=${batch.batchId} — generating background`
+  );
   try {
     const item: GenerateItem = {
       id: itemId,
       description: [
         request.masterPrompt,
         request.sceneDescription,
-        'Generate a detailed background/environment scene. No characters or people should be present — only the environment, scenery, and atmosphere. The image should work as a backdrop for a visual novel.',
-      ].join('\n\n'),
+        "Generate a detailed background/environment scene. No characters or people should be present — only the environment, scenery, and atmosphere. The image should work as a backdrop for a visual novel."
+      ].join("\n\n")
     };
     const localPath = await generateImage(item);
-    const serverName = await uploadToImageServer(localPath, 'background.png');
-    batch.items[itemId].status = 'completed';
+    const serverName = await uploadToImageServer(localPath, "background.png");
+    batch.items[itemId].status = "completed";
     batch.items[itemId].filePath = serverName;
-    logger.log(`[processBackgroundBatch] batch=${batch.batchId} — completed (${serverName})`);
+    logger.log(
+      `[processBackgroundBatch] batch=${batch.batchId} — completed (${serverName})`
+    );
   } catch (err: any) {
-    batch.items[itemId].status = 'failed';
+    batch.items[itemId].status = "failed";
     batch.items[itemId].error = err.message ?? String(err);
-    logger.error(`[processBackgroundBatch] batch=${batch.batchId} — failed: ${err.message ?? err}`);
+    logger.error(
+      `[processBackgroundBatch] batch=${batch.batchId} — failed: ${err.message ?? err}`
+    );
   }
 }
