@@ -22,6 +22,8 @@ type PrototypeState = {
   removeOutput: (nodeId: string, outputId: string) => void;
   updateOutput: (nodeId: string, outputId: string, text: string) => void;
   deleteNode: (nodeId: string) => void;
+  duplicateNode: (nodeId: string) => void;
+  changeNodeType: (nodeId: string, newType: CardNodeData['cardType']) => void;
 
   addCharacter: (nodeId: string) => void;
   removeCharacter: (nodeId: string, characterId: string) => void;
@@ -104,6 +106,86 @@ export const usePrototypeStore = create<PrototypeState>()(
       deleteNode: nodeId => {
         set(s => ({
           nodes: s.nodes.filter(n => n.id !== nodeId),
+          edges: s.edges.filter(e => e.source !== nodeId && e.target !== nodeId),
+        }));
+      },
+
+      duplicateNode: nodeId => {
+        set(s => {
+          const original = s.nodes.find(n => n.id === nodeId);
+          if (!original) return s;
+
+          const newId = crypto.randomUUID();
+
+          const outputIdMap = new Map<string, string>();
+          const newOutputs = (original.data.outputs || []).map(o => {
+            const newOutputId = crypto.randomUUID();
+            outputIdMap.set(o.id, newOutputId);
+            return { ...o, id: newOutputId };
+          });
+
+          const characterIdMap = new Map<string, string>();
+          const newCharacters = (original.data.characters || []).map(c => {
+            const newCharId = crypto.randomUUID();
+            characterIdMap.set(c.id, newCharId);
+            return { ...c, id: newCharId };
+          });
+
+          const newPoses = (original.data.poses || []).map(p => ({ ...p, id: crypto.randomUUID() }));
+
+          const newNode: CardNode = {
+            id: newId,
+            type: original.type,
+            position: { x: original.position.x + 300, y: original.position.y },
+            data: {
+              ...original.data,
+              outputs: newOutputs,
+              characters: newCharacters.length > 0 ? newCharacters : original.data.characters,
+              poses: newPoses.length > 0 ? newPoses : original.data.poses,
+            },
+          };
+
+          const incomingEdges = s.edges.filter(e => e.target === nodeId && e.targetHandle !== 'scene_in');
+          const newEdges = incomingEdges.map(e => {
+            let targetHandle = e.targetHandle;
+            if (targetHandle) {
+              const charMatch = targetHandle.match(/^char-(.+)$/);
+              if (charMatch && characterIdMap.has(charMatch[1])) {
+                targetHandle = `char-${characterIdMap.get(charMatch[1])}`;
+              }
+            }
+            return {
+              ...e,
+              id: crypto.randomUUID(),
+              target: newId,
+              targetHandle,
+            };
+          });
+
+          return {
+            nodes: [...s.nodes, newNode],
+            edges: [...s.edges, ...newEdges],
+          };
+        });
+      },
+
+      changeNodeType: (nodeId, newType) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  type: newType,
+                  data: {
+                    label: '',
+                    image: '',
+                    cardType: newType,
+                    description: '',
+                    outputs: newType === 'scene' ? [{ id: crypto.randomUUID(), text: '' }] : [],
+                  },
+                }
+              : n,
+          ),
           edges: s.edges.filter(e => e.source !== nodeId && e.target !== nodeId),
         }));
       },
