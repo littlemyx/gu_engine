@@ -5,6 +5,7 @@ import type {
   CardEdge,
   CardNodeData,
   SceneOutput,
+  SceneCharacter,
   CharacterPose,
   GenerationState,
 } from '../pages/main/index';
@@ -21,6 +22,9 @@ type PrototypeState = {
   removeOutput: (nodeId: string, outputId: string) => void;
   updateOutput: (nodeId: string, outputId: string, text: string) => void;
   deleteNode: (nodeId: string) => void;
+
+  addCharacter: (nodeId: string) => void;
+  removeCharacter: (nodeId: string, characterId: string) => void;
 
   addPose: (nodeId: string) => void;
   removePose: (nodeId: string, poseId: string, poseIndex: number) => void;
@@ -101,6 +105,27 @@ export const usePrototypeStore = create<PrototypeState>()(
         set(s => ({
           nodes: s.nodes.filter(n => n.id !== nodeId),
           edges: s.edges.filter(e => e.source !== nodeId && e.target !== nodeId),
+        }));
+      },
+
+      addCharacter: nodeId => {
+        const newCharacter: SceneCharacter = { id: crypto.randomUUID(), name: '' };
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, characters: [...(n.data.characters || []), newCharacter] } }
+              : n,
+          ),
+        }));
+      },
+
+      removeCharacter: (nodeId, characterId) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, characters: (n.data.characters || []).filter(c => c.id !== characterId) } }
+              : n,
+          ),
         }));
       },
 

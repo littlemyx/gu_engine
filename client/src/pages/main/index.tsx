@@ -45,7 +45,12 @@ export type GenerationState = {
   itemIds?: string[];
 };
 
-export type CardType = 'scene' | 'character' | 'master_prompt';
+export type CardType = 'scene' | 'character' | 'master_prompt' | 'background';
+
+export type SceneCharacter = {
+  id: string;
+  name: string;
+};
 
 export type CardNodeData = {
   label: string;
@@ -54,6 +59,7 @@ export type CardNodeData = {
   description: string;
   outputs: SceneOutput[];
   poses?: CharacterPose[];
+  characters?: SceneCharacter[];
   generation?: GenerationState;
   generatedImages?: string[];
 };
@@ -108,7 +114,7 @@ const ImagePicker = ({ onSelect, onClose }: { onSelect: (url: string) => void; o
   }, []);
 
   return (
-    <div className={`nodrag nopan ${styles.imagePicker}`}>
+    <div className={`nodrag nopan nowheel ${styles.imagePicker}`}>
       <div className={styles.imagePickerHeader}>
         <span>Выберите изображение</span>
         <button type="button" className={styles.imagePickerClose} onClick={onClose}>
@@ -138,6 +144,7 @@ const CARD_TYPE_LABELS: Record<CardType, string> = {
   scene: 'Сцена',
   character: 'Персонаж',
   master_prompt: 'Мастер-промпт',
+  background: 'Бэкграунд',
 };
 
 const useGenerationPolling = (nodeId: string, generation?: GenerationState) => {
@@ -205,7 +212,7 @@ const useGenerationPolling = (nodeId: string, generation?: GenerationState) => {
   }, [nodeId, generation, setGeneration, setGeneratedImages]);
 };
 
-const getMasterPromptForCharacter = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
+const getMasterPromptForNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
   const incoming = edges.filter(e => e.target === nodeId);
   for (const edge of incoming) {
     const sourceNode = nodes.find(n => n.id === edge.source);
@@ -319,24 +326,34 @@ const PosesSection = ({
                   <div className={`nodrag nopan ${styles.deleteConfirm}`}>
                     <p>Удалить позу?</p>
                     <div className={styles.deleteConfirmActions}>
-                      <button type="button" className={styles.deleteConfirmCancel} onClick={() => setDeletingPoseId(null)}>
+                      <button
+                        type="button"
+                        className={styles.deleteConfirmCancel}
+                        onClick={() => setDeletingPoseId(null)}
+                      >
                         Отмена
                       </button>
-                      <button type="button" className={styles.deleteConfirmSubmit} onClick={() => handleDeletePose(pose.id, index, poseImage)}>
+                      <button
+                        type="button"
+                        className={styles.deleteConfirmSubmit}
+                        onClick={() => handleDeletePose(pose.id, index, poseImage)}
+                      >
                         Удалить
                       </button>
                     </div>
                   </div>
                 )}
                 {poseImage ? (
-                  <div className={`${styles.poseThumbnailWrap} ${regeneratingIndex === index ? styles.poseThumbnailRegenerating : ''}`}>
+                  <div
+                    className={`${styles.poseThumbnailWrap} ${
+                      regeneratingIndex === index ? styles.poseThumbnailRegenerating : ''
+                    }`}
+                  >
                     <img
                       src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(poseImage)}/thumbnail`}
                       alt={pose.description}
                       className={styles.poseThumbnail}
-                      onMouseEnter={e =>
-                        setHoverPreview({ image: poseImage, x: e.clientX, y: e.clientY })
-                      }
+                      onMouseEnter={e => setHoverPreview({ image: poseImage, x: e.clientX, y: e.clientY })}
                       onMouseMove={e =>
                         setHoverPreview(prev => (prev ? { ...prev, x: e.clientX, y: e.clientY } : null))
                       }
@@ -345,7 +362,9 @@ const PosesSection = ({
                     {onRegeneratePose && (
                       <button
                         type="button"
-                        className={`nodrag nopan ${styles.poseRegenBtn} ${regeneratingIndex === index ? styles.poseRegenSpinning : ''}`}
+                        className={`nodrag nopan ${styles.poseRegenBtn} ${
+                          regeneratingIndex === index ? styles.poseRegenSpinning : ''
+                        }`}
                         title="Перегенерировать"
                         disabled={regeneratingIndex === index}
                         onClick={() => {
@@ -353,28 +372,42 @@ const PosesSection = ({
                           onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
                         }}
                       >
-                        <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                          <path d="M1 8a7 7 0 0 1 12.07-4.83" /><path d="M13.07 0v3.17H9.9" />
-                          <path d="M15 8A7 7 0 0 1 2.93 12.83" /><path d="M2.93 16v-3.17H6.1" />
+                        <svg
+                          width="10"
+                          height="10"
+                          viewBox="0 0 16 16"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                        >
+                          <path d="M1 8a7 7 0 0 1 12.07-4.83" />
+                          <path d="M13.07 0v3.17H9.9" />
+                          <path d="M15 8A7 7 0 0 1 2.93 12.83" />
+                          <path d="M2.93 16v-3.17H6.1" />
                         </svg>
                       </button>
                     )}
                   </div>
-                ) : onRegeneratePose && (
-                  <button
-                    type="button"
-                    className={`nodrag nopan ${styles.poseGenerateBtn} ${regeneratingIndex === index ? styles.poseGenerateBtnSpinning : ''}`}
-                    title="Сгенерировать позу"
-                    disabled={regeneratingIndex === index}
-                    onClick={() => {
-                      setRegeneratingIndex(index);
-                      onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
-                    }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="none">
-                      <path d="M4.5 1l.5 1.5L6.5 3l-1.5.5L4.5 5l-.5-1.5L2.5 3l1.5-.5zM11 4l.7 2.3L14 7l-2.3.7L11 10l-.7-2.3L8 7l2.3-.7zM4.5 10l.5 1.5L6.5 12l-1.5.5-.5 1.5-.5-1.5L2.5 12l1.5-.5z" />
-                    </svg>
-                  </button>
+                ) : (
+                  onRegeneratePose && (
+                    <button
+                      type="button"
+                      className={`nodrag nopan ${styles.poseGenerateBtn} ${
+                        regeneratingIndex === index ? styles.poseGenerateBtnSpinning : ''
+                      }`}
+                      title="Сгенерировать позу"
+                      disabled={regeneratingIndex === index}
+                      onClick={() => {
+                        setRegeneratingIndex(index);
+                        onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
+                      }}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="none">
+                        <path d="M4.5 1l.5 1.5L6.5 3l-1.5.5L4.5 5l-.5-1.5L2.5 3l1.5-.5zM11 4l.7 2.3L14 7l-2.3.7L11 10l-.7-2.3L8 7l2.3-.7zM4.5 10l.5 1.5L6.5 12l-1.5.5-.5 1.5-.5-1.5L2.5 12l1.5-.5z" />
+                      </svg>
+                    </button>
+                  )
                 )}
               </div>
             );
@@ -386,14 +419,8 @@ const PosesSection = ({
       )}
       {hoverPreview &&
         createPortal(
-          <div
-            className={styles.posePreview}
-            style={{ left: hoverPreview.x + 16, top: hoverPreview.y + 16 }}
-          >
-            <img
-              src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(hoverPreview.image)}`}
-              alt="Preview"
-            />
+          <div className={styles.posePreview} style={{ left: hoverPreview.x + 16, top: hoverPreview.y + 16 }}>
+            <img src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(hoverPreview.image)}`} alt="Preview" />
           </div>,
           document.body,
         )}
@@ -444,6 +471,146 @@ const GenerationStatus = ({ generation }: { generation: GenerationState }) => {
   return null;
 };
 
+const MasterPromptHandle = ({
+  nodeId,
+  edges,
+  variant = 'character',
+}: {
+  nodeId: string;
+  edges: CardEdge[];
+  variant?: 'character' | 'background';
+}) => (
+  <div className={`${styles.masterPromptSection} ${variant === 'background' ? styles.masterPromptSectionBg : ''}`}>
+    <Handle
+      type="target"
+      position={Position.Left}
+      id="style"
+      className={variant === 'background' ? styles.styleHandleBg : styles.styleHandle}
+      isValidConnection={() => {
+        const alreadyConnected = edges.some(e => e.target === nodeId && e.targetHandle === 'style');
+        return !alreadyConnected;
+      }}
+    />
+    <span className={`${styles.masterPromptLabel} ${variant === 'background' ? styles.masterPromptLabelBg : ''}`}>
+      Мастер-промпт
+    </span>
+  </div>
+);
+
+const DescriptionTextarea = ({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) => (
+  <textarea
+    className={`nodrag nopan ${styles.descriptionInput}`}
+    placeholder={placeholder}
+    value={value}
+    onChange={e => onChange(e.target.value)}
+  />
+);
+
+const GenerateControls = ({
+  generation,
+  onGenerate,
+  disabled,
+}: {
+  generation?: GenerationState;
+  onGenerate: () => void;
+  disabled?: boolean;
+}) => (
+  <>
+    {generation && <GenerationStatus generation={generation} />}
+    <button
+      type="button"
+      className={`nodrag nopan ${styles.generateBtn}`}
+      onClick={onGenerate}
+      disabled={disabled || generation?.status === 'generating'}
+    >
+      {generation?.status === 'generating' ? 'Генерация…' : 'Сгенерировать'}
+    </button>
+  </>
+);
+
+const CharactersSection = ({ nodeId, characters }: { nodeId: string; characters: SceneCharacter[] }) => {
+  const { addCharacter, removeCharacter, nodes } = usePrototypeStore();
+  const [open, setOpen] = useState(false);
+
+  const isValidCharConnection = useCallback(
+    (connection: { source: string | null }) => {
+      if (!connection.source) return false;
+      const sourceNode = nodes.find(n => n.id === connection.source);
+      return sourceNode?.data?.cardType === 'character';
+    },
+    [nodes],
+  );
+
+  return (
+    <div className={styles.charactersSection}>
+      <button
+        className={`nodrag nopan ${styles.foldableHeader} ${styles.charactersFoldableHeader}`}
+        onClick={() => setOpen(v => !v)}
+        type="button"
+      >
+        <span className={`${styles.foldableArrow} ${open ? styles.foldableArrowOpen : ''}`}>&#9654;</span>
+        Персонажи ({characters.length})
+        {!open &&
+          characters.map(ch => (
+            <Handle
+              key={ch.id}
+              type="target"
+              id={`char-${ch.id}`}
+              position={Position.Left}
+              className={styles.characterHandle}
+              isValidConnection={isValidCharConnection}
+            />
+          ))}
+      </button>
+      {open && (
+        <div className={styles.charactersList}>
+          {characters.map(ch => (
+            <div key={ch.id} className={styles.characterRow}>
+              <Handle
+                type="target"
+                id={`char-${ch.id}`}
+                position={Position.Left}
+                className={styles.characterHandle}
+                isValidConnection={isValidCharConnection}
+              />
+              <input
+                type="text"
+                className={`nodrag nopan ${styles.outputInput}`}
+                placeholder="Имя персонажа"
+                value={ch.name}
+                readOnly
+              />
+              <button
+                type="button"
+                className={`nodrag nopan ${styles.outputDelete}`}
+                onClick={() => removeCharacter(nodeId, ch.id)}
+                title="Удалить"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {open && (
+        <div className={styles.charactersAdd}>
+          <button type="button" className={`nodrag nopan ${styles.addOutput}`} onClick={() => addCharacter(nodeId)}>
+            + Добавить персонажа
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
   const store = usePrototypeStore();
   const { updateNodeData, addOutput, removeOutput, updateOutput, deleteNode, setGeneration } = store;
@@ -480,9 +647,10 @@ const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
 
   const isCharacter = cardType === 'character';
   const isMasterPrompt = cardType === 'master_prompt';
+  const isBackground = cardType === 'background';
 
   const onGenerate = useCallback(async () => {
-    const masterPrompt = getMasterPromptForCharacter(id, edges, nodes);
+    const masterPrompt = getMasterPromptForNode(id, edges, nodes);
     const characterDescription = data.description ?? '';
     if (!characterDescription.trim()) return;
 
@@ -527,7 +695,7 @@ const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
 
   const onRegeneratePose = useCallback(
     (poseIndex: number, poseDescription: string): Promise<void> => {
-      const masterPrompt = getMasterPromptForCharacter(id, edges, nodes);
+      const masterPrompt = getMasterPromptForNode(id, edges, nodes);
       const characterDescription = data.description ?? '';
       if (!characterDescription.trim() || !poseDescription.trim()) return Promise.resolve();
 
@@ -585,12 +753,50 @@ const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
     [id, data.description, data.generatedImages, data.poses, edges, nodes, updateGeneratedImage],
   );
 
-  const cardClass = isCharacter ? styles.characterCard : isMasterPrompt ? styles.masterPromptCard : '';
+  const onGenerateBackground = useCallback(async () => {
+    const masterPrompt = getMasterPromptForNode(id, edges, nodes);
+    const backgroundDescription = data.description ?? '';
+    if (!backgroundDescription.trim()) return;
+
+    try {
+      const { data: respData } = await generateCharacter({
+        body: {
+          masterPrompt: masterPrompt || 'high quality digital art',
+          characterDescription: backgroundDescription,
+        },
+      });
+      if (respData) {
+        const resp = respData as { batchId: string; itemIds: string[] };
+        setGeneration(id, {
+          batchId: resp.batchId,
+          status: 'generating',
+          completedCount: 0,
+          totalCount: resp.itemIds.length,
+          itemIds: resp.itemIds,
+        });
+      }
+    } catch {
+      setGeneration(id, {
+        batchId: '',
+        status: 'failed',
+      });
+    }
+  }, [id, data.description, edges, nodes, setGeneration]);
+
+  const cardClass = isCharacter
+    ? styles.characterCard
+    : isMasterPrompt
+    ? styles.masterPromptCard
+    : isBackground
+    ? styles.backgroundCard
+    : '';
 
   return (
     <>
-      {!isCharacter && !isMasterPrompt && <Handle type="target" position={Position.Top} />}
+      {!isCharacter && !isMasterPrompt && !isBackground && <Handle type="target" position={Position.Top} />}
       {isMasterPrompt && <Handle type="source" position={Position.Right} id="prompt_out" />}
+      {isCharacter && <Handle type="source" position={Position.Right} id="char_out" className={styles.charOutHandle} />}
+      {isBackground && <Handle type="source" position={Position.Right} id="bg_out" className={styles.bgOutHandle} />}
       <div className={`${styles.sceneCard} ${cardClass}`}>
         <div className={styles.cardHeader}>
           <select className={`nodrag nopan ${styles.cardTypeSelect}`} value={cardType} onChange={onCardTypeChange}>
@@ -622,7 +828,7 @@ const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
             </div>
           </div>
         )}
-        {!isMasterPrompt && (
+        {!isMasterPrompt && !isBackground && (
           <>
             <div
               className={`nodrag nopan ${styles.sceneImage} ${styles.sceneImageClickable}`}
@@ -634,73 +840,74 @@ const CardNodeComponent = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
           </>
         )}
         {isMasterPrompt ? (
-          <textarea
-            className={`nodrag nopan ${styles.descriptionInput}`}
-            placeholder="Мастер-промпт (стиль, качество)"
+          <DescriptionTextarea
             value={data.description ?? ''}
-            onChange={e => updateNodeData(id, { description: e.target.value })}
+            placeholder="Мастер-промпт (стиль, качество)"
+            onChange={val => updateNodeData(id, { description: val })}
           />
         ) : isCharacter ? (
           <>
-            <div className={styles.masterPromptSection}>
-              <Handle
-                type="target"
-                position={Position.Left}
-                id="style"
-                className={styles.styleHandle}
-                isValidConnection={() => {
-                  const currentEdges = store.edges;
-                  const alreadyConnected = currentEdges.some(
-                    e => e.target === id && e.targetHandle === 'style'
-                  );
-                  return !alreadyConnected;
-                }}
-              />
-              <span className={styles.masterPromptLabel}>Мастер-промпт</span>
-            </div>
-            <textarea
-              className={`nodrag nopan ${styles.descriptionInput}`}
-              placeholder="Описание персонажа"
+            <MasterPromptHandle nodeId={id} edges={edges} />
+            <DescriptionTextarea
               value={data.description ?? ''}
-              onChange={e => updateNodeData(id, { description: e.target.value })}
+              placeholder="Описание персонажа"
+              onChange={val => updateNodeData(id, { description: val })}
             />
-            <PosesSection nodeId={id} poses={data.poses || []} generatedImages={data.generatedImages} onRegeneratePose={onRegeneratePose} />
-            {data.generation && <GenerationStatus generation={data.generation} />}
-            <button
-              type="button"
-              className={`nodrag nopan ${styles.generateBtn}`}
-              onClick={onGenerate}
-              disabled={data.generation?.status === 'generating'}
-            >
-              {data.generation?.status === 'generating' ? 'Генерация…' : 'Сгенерировать'}
-            </button>
+            <PosesSection
+              nodeId={id}
+              poses={data.poses || []}
+              generatedImages={data.generatedImages}
+              onRegeneratePose={onRegeneratePose}
+            />
+            <GenerateControls generation={data.generation} onGenerate={onGenerate} />
+          </>
+        ) : isBackground ? (
+          <>
+            <MasterPromptHandle nodeId={id} edges={edges} variant="background" />
+            <DescriptionTextarea
+              value={data.description ?? ''}
+              placeholder="Описание бэкграунда"
+              onChange={val => updateNodeData(id, { description: val })}
+            />
+            {data.generatedImages?.[0] && (
+              <div className={styles.bgImagePreview}>
+                <img
+                  src={`${IMAGE_SERVER_BASE}/images/${encodeURIComponent(data.generatedImages[0])}/thumbnail`}
+                  alt="Бэкграунд"
+                />
+              </div>
+            )}
+            <GenerateControls generation={data.generation} onGenerate={onGenerateBackground} />
           </>
         ) : (
-          <div className={styles.outputsBlock}>
-            {outputs.map(output => (
-              <div key={output.id} className={styles.outputRow}>
-                <input
-                  type="text"
-                  className={`nodrag nopan ${styles.outputInput}`}
-                  placeholder="Текст выхода"
-                  value={output.text}
-                  onChange={e => onOutputChange(output.id, e)}
-                />
-                <Handle type="source" id={output.id} position={Position.Right} className={styles.outputHandle} />
-                <button
-                  type="button"
-                  className={`nodrag nopan ${styles.outputDelete}`}
-                  onClick={() => removeOutput(id, output.id)}
-                  title="Удалить"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-            <button type="button" className={`nodrag nopan ${styles.addOutput}`} onClick={() => addOutput(id)}>
-              + Добавить выход
-            </button>
-          </div>
+          <>
+            <CharactersSection nodeId={id} characters={data.characters || []} />
+            <div className={styles.outputsBlock}>
+              {outputs.map(output => (
+                <div key={output.id} className={styles.outputRow}>
+                  <input
+                    type="text"
+                    className={`nodrag nopan ${styles.outputInput}`}
+                    placeholder="Текст выхода"
+                    value={output.text}
+                    onChange={e => onOutputChange(output.id, e)}
+                  />
+                  <Handle type="source" id={output.id} position={Position.Right} className={styles.outputHandle} />
+                  <button
+                    type="button"
+                    className={`nodrag nopan ${styles.outputDelete}`}
+                    onClick={() => removeOutput(id, output.id)}
+                    title="Удалить"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              <button type="button" className={`nodrag nopan ${styles.addOutput}`} onClick={() => addOutput(id)}>
+                + Добавить выход
+              </button>
+            </div>
+          </>
         )}
       </div>
     </>
@@ -711,6 +918,7 @@ const nodeTypes = {
   scene: CardNodeComponent,
   character: CardNodeComponent,
   master_prompt: CardNodeComponent,
+  background: CardNodeComponent,
 };
 
 const ImageGallery = () => {
@@ -788,6 +996,10 @@ const Flow = () => {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [leftPanelOpen, setLeftPanelOpen] = useState(true);
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [pendingReplace, setPendingReplace] = useState<{
+    connection: Parameters<OnConnect>[0];
+    existingEdgeId: string;
+  } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const jsonViewerRef = useCallback(
     (el: JsonViewer | null) => {
@@ -823,22 +1035,63 @@ const Flow = () => {
     () => ({
       type: 'smoothstep',
       markerEnd: { type: MarkerType.ArrowClosed },
+      interactionWidth: 20,
     }),
     [],
   );
 
+  const [pendingDeleteEdge, setPendingDeleteEdge] = useState<string | null>(null);
+
+  const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+    setPendingDeleteEdge(edge.id);
+  }, []);
+
+  const onConfirmDeleteEdge = useCallback(() => {
+    if (!pendingDeleteEdge) return;
+    setEdges(eds => eds.filter(e => e.id !== pendingDeleteEdge));
+    setPendingDeleteEdge(null);
+  }, [pendingDeleteEdge, setEdges]);
+
+  const onCancelDeleteEdge = useCallback(() => {
+    setPendingDeleteEdge(null);
+  }, []);
+
   const onConnect: OnConnect = useCallback(
     connection => {
       if (connection.targetHandle === 'style') {
-        const alreadyConnected = edges.some(
-          e => e.target === connection.target && e.targetHandle === 'style'
-        );
+        const alreadyConnected = edges.some(e => e.target === connection.target && e.targetHandle === 'style');
         if (alreadyConnected) return;
       }
+
+      // Character handle: only one connection allowed per handle
+      if (connection.targetHandle?.startsWith('char-')) {
+        const existing = edges.find(e => e.target === connection.target && e.targetHandle === connection.targetHandle);
+        if (existing) {
+          // Already connected to same source — ignore
+          if (existing.source === connection.source) return;
+          // Different source — ask user to replace
+          setPendingReplace({ connection, existingEdgeId: existing.id });
+          return;
+        }
+      }
+
       setEdges(eds => addEdge(connection, eds as Edge[]).map(toCardEdge));
     },
     [setEdges, edges],
   );
+
+  const onConfirmReplace = useCallback(() => {
+    if (!pendingReplace) return;
+    setEdges(eds => {
+      const filtered = eds.filter(e => e.id !== pendingReplace.existingEdgeId);
+      return addEdge(pendingReplace.connection, filtered as Edge[]).map(toCardEdge);
+    });
+    setPendingReplace(null);
+  }, [pendingReplace, setEdges]);
+
+  const onCancelReplace = useCallback(() => {
+    setPendingReplace(null);
+  }, []);
 
   const onPaneClick = useCallback(
     (event: React.MouseEvent) => {
@@ -923,6 +1176,7 @@ const Flow = () => {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
         className={addMode ? styles.addMode : undefined}
@@ -983,6 +1237,40 @@ const Flow = () => {
         </Panel>
       </ReactFlow>
       {showNewDialog && <NewProjectDialog onConfirm={handleNewProject} onCancel={() => setShowNewDialog(false)} />}
+      {pendingReplace &&
+        createPortal(
+          <div className={styles.modalOverlay}>
+            <div className={styles.modalContent}>
+              <p>К этому слоту уже подключён персонаж. Заменить?</p>
+              <div className={styles.deleteConfirmActions}>
+                <button type="button" className={styles.deleteConfirmCancel} onClick={onCancelReplace}>
+                  Отмена
+                </button>
+                <button type="button" className={`${styles.deleteConfirmSubmit}`} onClick={onConfirmReplace}>
+                  Заменить
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+      {pendingDeleteEdge &&
+        createPortal(
+          <div className={styles.modalOverlay}>
+            <div className={styles.modalContent}>
+              <p>Удалить соединение?</p>
+              <div className={styles.deleteConfirmActions}>
+                <button type="button" className={styles.deleteConfirmCancel} onClick={onCancelDeleteEdge}>
+                  Отмена
+                </button>
+                <button type="button" className={styles.deleteConfirmSubmit} onClick={onConfirmDeleteEdge}>
+                  Удалить
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )}
     </>
   );
 };

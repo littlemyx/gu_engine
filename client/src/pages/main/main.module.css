@@ -443,6 +443,41 @@
   transform: translateY(-50%) !important;
 }
 
+.characterHandle {
+  position: absolute !important;
+  top: 50% !important;
+  left: -13px !important;
+  transform: translateY(-50%) !important;
+}
+
+.charactersSection {
+  margin-top: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: visible;
+}
+
+.charactersFoldableHeader {
+  position: relative;
+}
+
+.charactersList {
+  display: flex;
+  flex-direction: column;
+}
+
+.characterRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+}
+
+.charactersAdd {
+  padding: 6px;
+}
+
 .outputDelete {
   flex-shrink: 0;
   width: 24px;
@@ -599,6 +634,11 @@
   gap: 8px;
 }
 
+.backgroundCard {
+  border-color: #10b981;
+  background: #f0fdf4;
+}
+
 .masterPromptCard {
   border-color: #f59e0b;
   background: #fffbeb;
@@ -606,6 +646,26 @@
 
 .styleHandle {
   background: #a78bfa !important;
+}
+
+.charOutHandle {
+  background: #a78bfa !important;
+}
+
+.bgOutHandle {
+  background: #10b981 !important;
+}
+
+.bgImagePreview {
+  margin-top: 6px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+}
+
+.bgImagePreview img {
+  width: 100%;
+  display: block;
 }
 
 .masterPromptSection {
@@ -624,6 +684,19 @@
   font-size: 11px;
   color: #7c3aed;
   font-weight: 500;
+}
+
+.masterPromptSectionBg {
+  border-color: #10b981;
+  background: #ecfdf5;
+}
+
+.styleHandleBg {
+  background: #10b981 !important;
+}
+
+.masterPromptLabelBg {
+  color: #059669;
 }
 
 .posesSection {
@@ -921,4 +994,36 @@
 .toolButton.danger:hover {
   background: #dc2626;
   border-color: #dc2626;
+}
+
+:global(.react-flow__edge:hover .react-flow__edge-path) {
+  stroke: #dc2626;
+  cursor: pointer;
+}
+
+:global(.react-flow__edge:hover .react-flow__edge-path + .react-flow__edge-interaction) {
+  cursor: pointer;
+}
+
+:global(.react-flow__edge:hover marker path) {
+  fill: #dc2626;
+}
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modalContent {
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px 28px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+  min-width: 280px;
+  text-align: center;
 }
