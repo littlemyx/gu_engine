@@ -32,3 +32,16 @@
 .masterPromptLabelBg {
   color: #059669;
 }
+
+.masterPromptSectionStory {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.styleHandleStory {
+  background: #f59e0b !important;
+}
+
+.masterPromptLabelStory {
+  color: #d97706;
+}

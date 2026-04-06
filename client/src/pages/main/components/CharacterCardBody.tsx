@@ -5,7 +5,7 @@ import type { BatchStatus } from '@root/image_gen/generated_client';
 import { deleteImage } from '@root/image_server/generated-client';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import { IMAGE_SERVER_BASE } from '../constants';
-import { getMasterPromptForNode } from '../utils';
+import { getVisualMasterPromptForNode, getStoryMasterPromptForNode } from '../utils';
 import type { CardNodeData, CharacterPose } from '../types';
 import { useGenerationPolling } from '../hooks/useGenerationPolling';
 import { MasterPromptHandle } from './MasterPromptHandle';
@@ -23,7 +23,8 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
   useGenerationPolling(id, data.generation);
 
   const onGenerate = useCallback(async () => {
-    const masterPrompt = getMasterPromptForNode(id, edges, nodes);
+    const masterPrompt = getVisualMasterPromptForNode(id, edges, nodes);
+    const storyMasterPrompt = getStoryMasterPromptForNode(id, edges, nodes);
     const characterDescription = data.description ?? '';
     if (!characterDescription.trim()) return;
 
@@ -41,6 +42,7 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
       const { data: respData } = await generateCharacter({
         body: {
           masterPrompt: masterPrompt || 'high quality digital art',
+          storyMasterPrompt: storyMasterPrompt || undefined,
           characterDescription,
           poses: poseDescriptions.length > 0 ? poseDescriptions : undefined,
         },
@@ -62,7 +64,8 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
 
   const onRegeneratePose = useCallback(
     (poseIndex: number, poseDescription: string): Promise<void> => {
-      const masterPrompt = getMasterPromptForNode(id, edges, nodes);
+      const masterPrompt = getVisualMasterPromptForNode(id, edges, nodes);
+      const storyMasterPrompt = getStoryMasterPromptForNode(id, edges, nodes);
       const characterDescription = data.description ?? '';
       if (!characterDescription.trim() || !poseDescription.trim()) return Promise.resolve();
 
@@ -77,16 +80,17 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
       return regenerateCharacterPose({
         body: {
           masterPrompt: masterPrompt || 'high quality digital art',
+          storyMasterPrompt: storyMasterPrompt || undefined,
           characterDescription,
           pose: poseDescription,
           referenceImageUrl,
         },
       })
         .then(({ data: respData }) => {
-          if (!respData) return;
+          if (!respData) throw new Error('Нет ответа от сервера');
           const resp = respData as { batchId: string; itemIds: string[] };
 
-          return new Promise<void>(resolve => {
+          return new Promise<void>((resolve, reject) => {
             const poll = setInterval(async () => {
               try {
                 const { data: statusData } = await getBatchStatus({
@@ -105,16 +109,18 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
                   if (oldImage) {
                     deleteImage({ path: { name: oldImage } }).catch(() => {});
                   }
+                  resolve();
+                } else {
+                  const failed = status.failed.find(f => f.id === poseId);
+                  reject(new Error(failed?.error ?? 'Генерация позы не удалась'));
                 }
-                resolve();
               } catch {
                 clearInterval(poll);
-                resolve();
+                reject(new Error('Сервер генерации недоступен'));
               }
             }, 5000);
           });
-        })
-        .catch(() => {});
+        });
     },
     [id, data.description, data.generatedImages, data.poses, edges, nodes, updateGeneratedImage],
   );

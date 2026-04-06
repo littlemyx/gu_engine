@@ -4,7 +4,7 @@ import { Handle, Position } from '@xyflow/react';
 import { generateBackground } from '@root/image_gen/generated_client';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import { IMAGE_SERVER_BASE } from '../constants';
-import { getMasterPromptForNode } from '../utils';
+import { getVisualMasterPromptForNode } from '../utils';
 import type { CardNodeData } from '../types';
 import { useGenerationPolling } from '../hooks/useGenerationPolling';
 import { MasterPromptHandle } from './MasterPromptHandle';
@@ -25,7 +25,7 @@ export const BackgroundCardBody = ({ id, data }: { id: string; data: CardNodeDat
   const bgImage = data.generatedImages?.[0];
 
   const onGenerate = useCallback(async () => {
-    const masterPrompt = getMasterPromptForNode(id, edges, nodes);
+    const masterPrompt = getVisualMasterPromptForNode(id, edges, nodes);
     const backgroundDescription = data.description ?? '';
     if (!backgroundDescription.trim()) return;
 

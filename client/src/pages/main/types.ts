@@ -21,7 +21,7 @@ export type GenerationState = {
   itemIds?: string[];
 };
 
-export type CardType = 'scene' | 'character' | 'master_prompt' | 'background';
+export type CardType = 'scene' | 'character' | 'visual_master_prompt' | 'story_master_prompt' | 'background';
 
 export type SceneCharacter = {
   id: string;

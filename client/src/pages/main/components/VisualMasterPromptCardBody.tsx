@@ -2,9 +2,9 @@ import { Handle, Position } from '@xyflow/react';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import type { CardNodeData } from '../types';
 import { DescriptionTextarea } from './DescriptionTextarea';
-import styles from './MasterPromptCardBody.module.css';
+import styles from './VisualMasterPromptCardBody.module.css';
 
-export const MasterPromptCardBody = ({ id, data }: { id: string; data: CardNodeData }) => {
+export const VisualMasterPromptCardBody = ({ id, data }: { id: string; data: CardNodeData }) => {
   const { updateNodeData } = usePrototypeStore();
 
   return (

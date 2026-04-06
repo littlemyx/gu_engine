@@ -1,7 +1,15 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ReactFlow, Background, Panel, useReactFlow, addEdge, applyEdgeChanges, MarkerType } from '@xyflow/react';
-import type { Node, Edge, OnConnect, OnNodesChange, OnEdgesChange, DefaultEdgeOptions } from '@xyflow/react';
+import type {
+  Node,
+  Edge,
+  OnConnect,
+  OnNodesChange,
+  OnEdgesChange,
+  OnConnectEnd,
+  DefaultEdgeOptions,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import '@alenaksu/json-viewer';
 import type { JsonViewer } from '@alenaksu/json-viewer/dist/JsonViewer';
@@ -12,12 +20,14 @@ import styles from '../main.module.css';
 import common from '../common.module.css';
 import { CardShell } from './CardShell';
 import { ImageGallery } from './ImageGallery';
+import { SettingsPanel } from './SettingsPanel';
 import { NewProjectDialog } from './NewProjectDialog';
 
 const nodeTypes = {
   scene: CardShell,
   character: CardShell,
-  master_prompt: CardShell,
+  visual_master_prompt: CardShell,
+  story_master_prompt: CardShell,
   background: CardShell,
 };
 
@@ -41,7 +51,6 @@ export const Flow = () => {
     [nodes, edges],
   );
   const { screenToFlowPosition } = useReactFlow();
-
   const rfNodes = nodes as Node<CardNodeData>[];
   const rfEdges = edges as Edge[];
 
@@ -91,8 +100,17 @@ export const Flow = () => {
 
   const onConnect: OnConnect = useCallback(
     connection => {
-      if (connection.targetHandle === 'style') {
-        const alreadyConnected = edges.some(e => e.target === connection.target && e.targetHandle === 'style');
+      // Enforce exclusive master prompt connection rules
+      if (connection.targetHandle === 'visual_style' || connection.targetHandle === 'story_style') {
+        const sourceNode = nodes.find(n => n.id === connection.source);
+        if (sourceNode) {
+          const sourceType = sourceNode.data.cardType;
+          if (connection.targetHandle === 'visual_style' && sourceType !== 'visual_master_prompt') return;
+          if (connection.targetHandle === 'story_style' && sourceType !== 'story_master_prompt') return;
+        }
+        const alreadyConnected = edges.some(
+          e => e.target === connection.target && e.targetHandle === connection.targetHandle,
+        );
         if (alreadyConnected) return;
       }
 
@@ -183,6 +201,50 @@ export const Flow = () => {
     [addMode, screenToFlowPosition, setNodes],
   );
 
+  const onConnectEnd: OnConnectEnd = useCallback(
+    (event, connectionState) => {
+      // Only act when connection was dropped on empty space (not on a valid target)
+      if (connectionState.isValid || connectionState.toNode) return;
+
+      const fromHandle = connectionState.fromHandle;
+      const fromNode = connectionState.fromNode;
+      if (!fromHandle || !fromNode || !fromHandle.id) return;
+
+      // Only create nodes when dragging from a source (output) handle of a scene node
+      if (fromHandle.type !== 'source') return;
+      const sourceData = fromNode.data as CardNodeData;
+      if (sourceData.cardType !== 'scene') return;
+
+      const { clientX, clientY } = event instanceof MouseEvent ? event : (event as TouchEvent).changedTouches[0];
+      const position = screenToFlowPosition({ x: clientX, y: clientY });
+
+      const newNodeId = crypto.randomUUID();
+      const newNode: CardNode = {
+        id: newNodeId,
+        type: 'scene',
+        position,
+        data: {
+          label: '',
+          image: '',
+          cardType: 'scene',
+          description: '',
+          outputs: [{ id: crypto.randomUUID(), text: '' }],
+        },
+      };
+
+      setNodes(nds => [...nds, newNode]);
+      const connection: Parameters<OnConnect>[0] = {
+        source: fromNode.id,
+        sourceHandle: fromHandle.id!,
+        target: newNodeId,
+        targetHandle: 'scene_in',
+      };
+
+      setEdges(eds => addEdge(connection, eds as Edge[]).map(toCardEdge));
+    },
+    [screenToFlowPosition, setNodes, setEdges],
+  );
+
   const onExport = useCallback(() => {
     const scenes = JSON.stringify({ nodes, edges }, null, 2);
     const scenesBlob = new Blob([scenes], { type: 'application/json' });
@@ -238,6 +300,7 @@ export const Flow = () => {
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={onConnectEnd}
         onEdgeClick={onEdgeClick}
         onPaneClick={onPaneClick}
         defaultEdgeOptions={defaultEdgeOptions}
@@ -271,6 +334,7 @@ export const Flow = () => {
                 + Добавить
               </button>
               <ImageGallery />
+              <SettingsPanel />
             </>
           )}
         </Panel>

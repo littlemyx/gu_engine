@@ -282,6 +282,45 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: 'gu-prototype',
+      version: 3,
+      migrate: (persisted: unknown, version: number) => {
+        const state = persisted as { nodes?: CardNode[]; edges?: CardEdge[] };
+        let nodes = state.nodes || [];
+        let edges = state.edges || [];
+
+        if (version < 1) {
+          nodes = nodes.map(n => ({
+            ...n,
+            data: {
+              ...n.data,
+              cardType: n.data.cardType || (n.type as CardNodeData['cardType']),
+            },
+          }));
+        }
+
+        if (version < 2) {
+          nodes = nodes.map(n => {
+            const needsMigration = (n.type as string) === 'master_prompt' || (n.data.cardType as string) === 'master_prompt';
+            if (!needsMigration) return n;
+            return {
+              ...n,
+              type: 'visual_master_prompt' as const,
+              data: { ...n.data, cardType: 'visual_master_prompt' as const },
+            };
+          });
+        }
+
+        if (version < 3) {
+          edges = edges.map(e => {
+            if (e.targetHandle === 'style') {
+              return { ...e, targetHandle: 'visual_style' };
+            }
+            return e;
+          });
+        }
+
+        return { ...state, nodes, edges };
+      },
     },
   ),
 );

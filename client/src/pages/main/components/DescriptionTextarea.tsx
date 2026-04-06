@@ -10,7 +10,7 @@ export const DescriptionTextarea = ({
   onChange: (value: string) => void;
 }) => (
   <textarea
-    className={`nodrag nopan ${common.descriptionInput}`}
+    className={`nodrag nopan nowheel ${common.descriptionInput}`}
     placeholder={placeholder}
     value={value}
     onChange={e => onChange(e.target.value)}

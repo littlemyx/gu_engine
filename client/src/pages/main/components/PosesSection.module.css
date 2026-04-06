@@ -154,6 +154,17 @@
   animation: poseRegenSpin 1s linear infinite;
 }
 
+.poseError {
+  font-size: 11px;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 4px;
+  padding: 4px 8px;
+  cursor: pointer;
+  line-height: 1.3;
+}
+
 .posePreview {
   position: fixed;
   z-index: 10000;

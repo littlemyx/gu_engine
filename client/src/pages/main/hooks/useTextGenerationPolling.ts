@@ -1,11 +1,11 @@
 import { useEffect } from 'react';
-import { getBatchStatus } from '@root/image_gen/generated_client';
-import type { BatchStatus } from '@root/image_gen/generated_client';
+import { getBatchStatus } from '@root/text_gen/generated_client';
+import type { BatchStatus } from '@root/text_gen/generated_client';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import type { GenerationState } from '../types';
 
-export const useGenerationPolling = (nodeId: string, generation?: GenerationState) => {
-  const { setGeneration, setGeneratedImages } = usePrototypeStore();
+export const useTextGenerationPolling = (nodeId: string, generation?: GenerationState) => {
+  const { setGeneration, updateNodeData } = usePrototypeStore();
 
   useEffect(() => {
     if (!generation || generation.status !== 'generating') return;
@@ -27,41 +27,25 @@ export const useGenerationPolling = (nodeId: string, generation?: GenerationStat
         const status = data as BatchStatus;
         const errors = status.failed.length > 0 ? status.failed : undefined;
 
-        // Map completed items to correct indices using itemIds order
-        let files: string[];
-        if (generation.itemIds) {
-          files = new Array(generation.itemIds.length).fill('');
-          for (const c of status.completed) {
-            const idx = generation.itemIds.indexOf(c.id);
-            if (idx !== -1 && c.file) files[idx] = c.file;
-          }
-        } else {
-          files = status.completed.map(c => c.file).filter(Boolean);
-        }
-
         if (status.done) {
+          const result = status.completed[0]?.result;
           setGeneration(nodeId, {
             ...generation,
-            status: errors && !files.some(f => f) ? 'failed' : 'done',
+            status: errors && !result ? 'failed' : 'done',
             completedCount: status.completed.length,
             totalCount: status.total,
-            files,
             errors,
           });
-          if (files.some(f => f)) {
-            setGeneratedImages(nodeId, files);
+          if (result) {
+            updateNodeData(nodeId, { description: result });
           }
         } else {
           setGeneration(nodeId, {
             ...generation,
             completedCount: status.completed.length,
             totalCount: status.total,
-            files,
             errors,
           });
-          if (files.some(f => f)) {
-            setGeneratedImages(nodeId, files);
-          }
         }
       } catch {
         clearInterval(interval);
@@ -71,8 +55,8 @@ export const useGenerationPolling = (nodeId: string, generation?: GenerationStat
           errors: [{ id: '', error: 'Сервер генерации недоступен' }],
         });
       }
-    }, 10000);
+    }, 3000);
 
     return () => clearInterval(interval);
-  }, [nodeId, generation, setGeneration, setGeneratedImages]);
+  }, [nodeId, generation, setGeneration, updateNodeData]);
 };

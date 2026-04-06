@@ -7,7 +7,8 @@ import type { CardNodeData, CardType } from '../types';
 import { SceneCardBody } from './SceneCardBody';
 import { CharacterCardBody } from './CharacterCardBody';
 import { BackgroundCardBody } from './BackgroundCardBody';
-import { MasterPromptCardBody } from './MasterPromptCardBody';
+import { VisualMasterPromptCardBody } from './VisualMasterPromptCardBody';
+import { StoryMasterPromptCardBody } from './StoryMasterPromptCardBody';
 import common from '../common.module.css';
 import styles from './CardShell.module.css';
 
@@ -43,7 +44,9 @@ export const CardShell = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
   );
 
   const isCharacter = cardType === 'character';
-  const isMasterPrompt = cardType === 'master_prompt';
+  const isVisualMasterPrompt = cardType === 'visual_master_prompt';
+  const isStoryMasterPrompt = cardType === 'story_master_prompt';
+  const isMasterPrompt = isVisualMasterPrompt || isStoryMasterPrompt;
   const isBackground = cardType === 'background';
   const isScene = !isCharacter && !isMasterPrompt && !isBackground;
 
@@ -104,7 +107,8 @@ export const CardShell = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
         {isScene && <SceneCardBody id={id} data={data} />}
         {isCharacter && <CharacterCardBody id={id} data={data} />}
         {isBackground && <BackgroundCardBody id={id} data={data} />}
-        {isMasterPrompt && <MasterPromptCardBody id={id} data={data} />}
+        {isVisualMasterPrompt && <VisualMasterPromptCardBody id={id} data={data} />}
+        {isStoryMasterPrompt && <StoryMasterPromptCardBody id={id} data={data} />}
       </div>
     </>
   );

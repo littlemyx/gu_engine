@@ -17,11 +17,22 @@ export const toCardEdge = ({ id, source, target, sourceHandle, targetHandle }: E
   ...(targetHandle != null ? { targetHandle } : {}),
 });
 
-export const getMasterPromptForNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
-  const incoming = edges.filter(e => e.target === nodeId);
+export const getVisualMasterPromptForNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
+  const incoming = edges.filter(e => e.target === nodeId && e.targetHandle === 'visual_style');
   for (const edge of incoming) {
     const sourceNode = nodes.find(n => n.id === edge.source);
-    if (sourceNode && sourceNode.data.cardType === 'master_prompt') {
+    if (sourceNode && sourceNode.data.cardType === 'visual_master_prompt') {
+      return sourceNode.data.description ?? '';
+    }
+  }
+  return '';
+};
+
+export const getStoryMasterPromptForNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
+  const incoming = edges.filter(e => e.target === nodeId && e.targetHandle === 'story_style');
+  for (const edge of incoming) {
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    if (sourceNode && sourceNode.data.cardType === 'story_master_prompt') {
       return sourceNode.data.description ?? '';
     }
   }

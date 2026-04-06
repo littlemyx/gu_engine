@@ -61,6 +61,7 @@ export const PosesSection = ({
   const [open, setOpen] = useState(true);
   const [deletingPoseId, setDeletingPoseId] = useState<string | null>(null);
   const [regeneratingIndex, setRegeneratingIndex] = useState<number | null>(null);
+  const [poseError, setPoseError] = useState<{ index: number; message: string } | null>(null);
   const [hoverPreview, setHoverPreview] = useState<{ image: string; x: number; y: number } | null>(null);
 
   const posesList = poses || [];
@@ -153,7 +154,10 @@ export const PosesSection = ({
                         disabled={regeneratingIndex === index}
                         onClick={() => {
                           setRegeneratingIndex(index);
-                          onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
+                          setPoseError(null);
+                          onRegeneratePose(index, pose.description)
+                            .catch((err: Error) => setPoseError({ index, message: err.message }))
+                            .finally(() => setRegeneratingIndex(null));
                         }}
                       >
                         <svg
@@ -184,7 +188,10 @@ export const PosesSection = ({
                       disabled={regeneratingIndex === index}
                       onClick={() => {
                         setRegeneratingIndex(index);
-                        onRegeneratePose(index, pose.description).finally(() => setRegeneratingIndex(null));
+                        setPoseError(null);
+                        onRegeneratePose(index, pose.description)
+                          .catch((err: Error) => setPoseError({ index, message: err.message }))
+                          .finally(() => setRegeneratingIndex(null));
                       }}
                     >
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" stroke="none">
@@ -192,6 +199,11 @@ export const PosesSection = ({
                       </svg>
                     </button>
                   )
+                )}
+                {poseError?.index === index && (
+                  <div className={styles.poseError} onClick={() => setPoseError(null)} role="button" tabIndex={0}>
+                    {poseError.message}
+                  </div>
                 )}
               </div>
             );
