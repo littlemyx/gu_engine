@@ -39,6 +39,7 @@
 .imagePickerGrid {
   display: grid;
   grid-template-columns: 1fr 1fr;
+  grid-auto-rows: 56px;
   gap: 4px;
   padding: 6px;
   max-height: 240px;
@@ -52,7 +53,7 @@
   background: #f3f4f6;
   cursor: pointer;
   overflow: hidden;
-  aspect-ratio: 3 / 2;
+  height: 100%;
   transition: border-color 0.1s;
 }
 
