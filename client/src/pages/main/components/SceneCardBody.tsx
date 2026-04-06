@@ -1,11 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
+import { generateSceneText } from '@root/text_gen/generated_client';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import { IMAGE_SERVER_BASE } from '../constants';
 import type { CardNodeData } from '../types';
-import { getOutputs } from '../utils';
+import { getOutputs, getSceneContext, getMaxDepthFromNode, getStoryMasterPromptForNode } from '../utils';
+import { useSceneTextPolling } from '../hooks/useSceneTextPolling';
 import { ImagePicker } from './ImagePicker';
 import { CharactersSection } from './CharactersSection';
+import { GenerateControls } from './GenerateControls';
 import common from '../common.module.css';
 import styles from './SceneCardBody.module.css';
 
@@ -23,12 +26,69 @@ const getConnectedBgImage = (
 
 export const SceneCardBody = ({ id, data }: { id: string; data: CardNodeData }) => {
   const store = usePrototypeStore();
-  const { updateNodeData, addOutput, removeOutput, updateOutput, setEdges, duplicateNode } = store;
+  const { updateNodeData, addOutput, removeOutput, updateOutput, setEdges, duplicateNode, setGeneration } = store;
   const nodes = store.nodes;
   const edges = store.edges;
   const outputs = getOutputs(data);
   const [showPicker, setShowPicker] = useState(false);
   const [pendingManualImage, setPendingManualImage] = useState<string | null>(null);
+  const [showGenerateConfirm, setShowGenerateConfirm] = useState(false);
+
+  useSceneTextPolling(id, data.generation);
+
+  const onGenerateScene = useCallback(async () => {
+    const cardEdges = edges.map(e => ({
+      id: e.id,
+      source: e.source,
+      target: e.target,
+      sourceHandle: e.sourceHandle,
+      targetHandle: e.targetHandle,
+    }));
+    const cardNodes = nodes.map(n => ({
+      id: n.id,
+      type: n.data.cardType,
+      position: n.position,
+      data: n.data,
+    }));
+
+    const ctx = getSceneContext(id, cardEdges, cardNodes);
+    const maxDepth = getMaxDepthFromNode(id, cardEdges, cardNodes);
+    const storyMasterPrompt = getStoryMasterPromptForNode(id, cardEdges, cardNodes);
+
+    try {
+      const { data: respData } = await generateSceneText({
+        body: {
+          storyMasterPrompt: storyMasterPrompt || '',
+          sceneChain: ctx.chain,
+          depth: ctx.depth,
+          maxDepth,
+          incomingOutputText: ctx.incomingOutputText,
+        },
+      });
+      if (respData) {
+        const resp = respData as { batchId: string; itemIds: string[] };
+        setGeneration(id, {
+          batchId: resp.batchId,
+          status: 'generating',
+          completedCount: 0,
+          totalCount: resp.itemIds.length,
+          itemIds: resp.itemIds,
+        });
+      }
+    } catch {
+      setGeneration(id, { batchId: '', status: 'failed' });
+    }
+  }, [id, edges, nodes, setGeneration]);
+
+  const hasSceneContent = !!(data.sceneText || (data.outputs?.length && data.outputs.some(o => o.text)));
+
+  const onRequestGenerate = useCallback(() => {
+    if (hasSceneContent) {
+      setShowGenerateConfirm(true);
+    } else {
+      onGenerateScene();
+    }
+  }, [hasSceneContent, onGenerateScene]);
 
   const bgEdge = edges.find(e => e.target === id && e.targetHandle === 'bg');
   const connectedBgImage = getConnectedBgImage(id, edges, nodes);
@@ -132,6 +192,27 @@ export const SceneCardBody = ({ id, data }: { id: string; data: CardNodeData }) 
         value={data.sceneText || ''}
         onChange={e => updateNodeData(id, { sceneText: e.target.value })}
       />
+      <GenerateControls generation={data.generation} onGenerate={onRequestGenerate} />
+      {showGenerateConfirm && (
+        <div className={`nodrag nopan ${common.deleteConfirm}`}>
+          <p>Сцена уже содержит данные. Перегенерировать?</p>
+          <div className={common.deleteConfirmActions}>
+            <button type="button" className={common.deleteConfirmCancel} onClick={() => setShowGenerateConfirm(false)}>
+              Отмена
+            </button>
+            <button
+              type="button"
+              className={common.deleteConfirmSubmit}
+              onClick={() => {
+                setShowGenerateConfirm(false);
+                onGenerateScene();
+              }}
+            >
+              Перегенерировать
+            </button>
+          </div>
+        </div>
+      )}
       <div className={styles.outputsBlock}>
         {outputs.map(output => (
           <div key={output.id} className={styles.outputRow}>
