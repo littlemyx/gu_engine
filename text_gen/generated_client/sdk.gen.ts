@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateSceneTextData, GenerateSceneTextResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -23,6 +23,18 @@ export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends 
  */
 export const generateStoryMasterPrompt = <ThrowOnError extends boolean = false>(options: Options<GenerateStoryMasterPromptData, ThrowOnError>) => (options.client ?? client).post<GenerateStoryMasterPromptResponses, unknown, ThrowOnError>({
     url: '/generate/storyMasterPrompt',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate scene text and outputs for a visual novel scene
+ */
+export const generateSceneText = <ThrowOnError extends boolean = false>(options: Options<GenerateSceneTextData, ThrowOnError>) => (options.client ?? client).post<GenerateSceneTextResponses, unknown, ThrowOnError>({
+    url: '/generate/sceneText',
     ...options,
     headers: {
         'Content-Type': 'application/json',

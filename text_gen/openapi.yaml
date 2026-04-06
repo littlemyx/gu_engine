@@ -26,6 +26,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/sceneText:
+    post:
+      operationId: generateSceneText
+      summary: Generate scene text and outputs for a visual novel scene
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SceneTextRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -167,6 +185,46 @@ components:
           type: integer
         failed:
           type: integer
+
+    SceneChainItem:
+      type: object
+      required:
+        - sceneText
+        - outputText
+      properties:
+        sceneText:
+          type: string
+          description: Text of a previous scene
+        outputText:
+          type: string
+          description: The choice/output text that led from this scene to the next
+
+    SceneTextRequest:
+      type: object
+      required:
+        - storyMasterPrompt
+        - sceneChain
+        - depth
+        - maxDepth
+        - incomingOutputText
+      properties:
+        storyMasterPrompt:
+          type: string
+          description: The story master prompt (backbone of the story)
+        sceneChain:
+          type: array
+          items:
+            $ref: '#/components/schemas/SceneChainItem'
+          description: Chain of previous scenes leading to this one
+        depth:
+          type: integer
+          description: Depth of this scene from the root (0-based)
+        maxDepth:
+          type: integer
+          description: Estimated maximum depth of the story tree
+        incomingOutputText:
+          type: string
+          description: The output/choice text that leads into this scene
 
     ErrorResponse:
       type: object

@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt } from './text-generator.js';
-import type { StoryMasterPromptRequest, ItemState, BatchState } from './types.js';
+import { processStoryMasterPrompt, processSceneText } from './text-generator.js';
+import type { StoryMasterPromptRequest, SceneTextRequest, ItemState, BatchState } from './types.js';
 import { logger } from './logger.js';
 
 const PORT = Number(process.env.PORT) || 3200;
@@ -42,6 +42,30 @@ app.post('/generate/storyMasterPrompt', (req, res) => {
   logger.log(`[POST /generate/storyMasterPrompt] batch=${batchId} userHint=${body.userHint ? '"' + body.userHint.substring(0, 50) + '..."' : '(none)'}`);
 
   processStoryMasterPrompt(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/sceneText', (req, res) => {
+  const body = req.body as SceneTextRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'sceneText';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/sceneText] batch=${batchId} depth=${body.depth}/${body.maxDepth} chain=${body.sceneChain?.length ?? 0}`);
+
+  processSceneText(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

@@ -48,6 +48,40 @@ export type BatchSummary = {
     failed: number;
 };
 
+export type SceneChainItem = {
+    /**
+     * Text of a previous scene
+     */
+    sceneText: string;
+    /**
+     * The choice/output text that led from this scene to the next
+     */
+    outputText: string;
+};
+
+export type SceneTextRequest = {
+    /**
+     * The story master prompt (backbone of the story)
+     */
+    storyMasterPrompt: string;
+    /**
+     * Chain of previous scenes leading to this one
+     */
+    sceneChain: Array<SceneChainItem>;
+    /**
+     * Depth of this scene from the root (0-based)
+     */
+    depth: number;
+    /**
+     * Estimated maximum depth of the story tree
+     */
+    maxDepth: number;
+    /**
+     * The output/choice text that leads into this scene
+     */
+    incomingOutputText: string;
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -67,6 +101,22 @@ export type GenerateStoryMasterPromptResponses = {
 };
 
 export type GenerateStoryMasterPromptResponse = GenerateStoryMasterPromptResponses[keyof GenerateStoryMasterPromptResponses];
+
+export type GenerateSceneTextData = {
+    body: SceneTextRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/sceneText';
+};
+
+export type GenerateSceneTextResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateSceneTextResponse = GenerateSceneTextResponses[keyof GenerateSceneTextResponses];
 
 export type ListBatchesData = {
     body?: never;
