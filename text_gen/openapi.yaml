@@ -1,0 +1,177 @@
+openapi: 3.1.0
+info:
+  title: Text Generation API
+  description: Async text generation for visual novel prototyping
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:3200
+
+paths:
+  /generate/storyMasterPrompt:
+    post:
+      operationId: generateStoryMasterPrompt
+      summary: Generate a story master prompt (backbone) for a visual novel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryMasterPromptRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
+  /status:
+    get:
+      operationId: listBatches
+      summary: List all batches with summary stats
+      responses:
+        '200':
+          description: List of batch summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BatchSummary'
+
+  /status/{batchId}:
+    get:
+      operationId: getBatchStatus
+      summary: Get detailed status of a batch
+      parameters:
+        - name: batchId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchStatus'
+        '404':
+          description: Batch not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    StoryMasterPromptRequest:
+      type: object
+      properties:
+        userHint:
+          type: string
+          description: Optional author wishes / theme hint for the story generation
+
+    GenerateResponse:
+      type: object
+      required:
+        - batchId
+        - itemIds
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        itemIds:
+          type: array
+          items:
+            type: string
+
+    CompletedTextItem:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        result:
+          type: string
+          description: Generated text content
+
+    FailedItem:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        error:
+          type: string
+
+    BatchStatus:
+      type: object
+      required:
+        - batchId
+        - createdAt
+        - total
+        - completed
+        - pending
+        - failed
+        - done
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        total:
+          type: integer
+        completed:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletedTextItem'
+        pending:
+          type: array
+          items:
+            type: string
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedItem'
+        done:
+          type: boolean
+
+    BatchSummary:
+      type: object
+      required:
+        - batchId
+        - createdAt
+        - total
+        - completed
+        - pending
+        - failed
+      properties:
+        batchId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        total:
+          type: integer
+        completed:
+          type: integer
+        pending:
+          type: integer
+        failed:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
