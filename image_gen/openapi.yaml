@@ -335,6 +335,9 @@ components:
         masterPrompt:
           type: string
           description: Global style/quality prompt applied to the generated image
+        storyMasterPrompt:
+          type: string
+          description: Optional story/narrative context prompt for the background
         sceneDescription:
           type: string
           description: Detailed description of the background/environment scene

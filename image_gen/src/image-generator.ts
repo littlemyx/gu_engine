@@ -512,13 +512,19 @@ export async function processBackgroundBatch(
     `[processBackgroundBatch] batch=${batch.batchId} — generating background`
   );
   try {
+    const parts = [
+      request.masterPrompt,
+    ];
+    if (request.storyMasterPrompt) {
+      parts.push(`Story context:\n${request.storyMasterPrompt}`);
+    }
+    parts.push(
+      request.sceneDescription,
+      "Generate a detailed background/environment scene. No characters or people should be present — only the environment, scenery, and atmosphere. The image should work as a backdrop for a visual novel."
+    );
     const item: GenerateItem = {
       id: itemId,
-      description: [
-        request.masterPrompt,
-        request.sceneDescription,
-        "Generate a detailed background/environment scene. No characters or people should be present — only the environment, scenery, and atmosphere. The image should work as a backdrop for a visual novel."
-      ].join("\n\n")
+      description: parts.join("\n\n")
     };
     const localPath = await generateImage(item);
     const serverName = await uploadToImageServer(localPath, "background.png");

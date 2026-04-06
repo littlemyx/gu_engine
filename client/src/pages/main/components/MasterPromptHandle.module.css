@@ -4,44 +4,31 @@
   align-items: center;
   padding: 6px 8px 6px 16px;
   margin-top: 4px;
-  border: 1px dashed #a78bfa;
+  border: 1px dashed #f59e0b;
   border-radius: 6px;
-  background: #f3eaff;
+  background: #fffbeb;
   min-height: 28px;
 }
 
 .masterPromptLabel {
   font-size: 11px;
-  color: #7c3aed;
+  color: #d97706;
   font-weight: 500;
 }
 
 .styleHandle {
-  background: #a78bfa !important;
-}
-
-.masterPromptSectionBg {
-  border-color: #10b981;
-  background: #ecfdf5;
-}
-
-.styleHandleBg {
-  background: #10b981 !important;
-}
-
-.masterPromptLabelBg {
-  color: #059669;
-}
-
-.masterPromptSectionStory {
-  border-color: #f59e0b;
-  background: #fffbeb;
-}
-
-.styleHandleStory {
   background: #f59e0b !important;
 }
 
+.masterPromptSectionStory {
+  border-color: #0891b2;
+  background: #ecfeff;
+}
+
+.styleHandleStory {
+  background: #0891b2 !important;
+}
+
 .masterPromptLabelStory {
-  color: #d97706;
+  color: #0e7490;
 }

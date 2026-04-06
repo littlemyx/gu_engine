@@ -101,6 +101,10 @@ export type BackgroundGenerateRequest = {
      */
     masterPrompt: string;
     /**
+     * Optional story/narrative context prompt for the background
+     */
+    storyMasterPrompt?: string;
+    /**
      * Detailed description of the background/environment scene
      */
     sceneDescription: string;

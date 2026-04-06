@@ -42,5 +42,6 @@ export interface RegeneratePoseRequest {
 
 export interface BackgroundGenerateRequest {
   masterPrompt: string;
+  storyMasterPrompt?: string;
   sceneDescription: string;
 }
