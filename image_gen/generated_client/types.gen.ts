@@ -55,9 +55,13 @@ export type BatchSummary = {
 
 export type CharacterGenerateRequest = {
     /**
-     * Global style/quality prompt applied to all generated images
+     * Visual style/quality prompt applied to all generated images
      */
     masterPrompt: string;
+    /**
+     * Story context prompt (world, characters, plot) to inform character visual generation
+     */
+    storyMasterPrompt?: string;
     /**
      * Detailed description of the character appearance
      */
@@ -70,9 +74,13 @@ export type CharacterGenerateRequest = {
 
 export type RegeneratePoseRequest = {
     /**
-     * Global style/quality prompt applied to the generated image
+     * Visual style/quality prompt applied to the generated image
      */
     masterPrompt: string;
+    /**
+     * Story context prompt (world, characters, plot) to inform character visual generation
+     */
+    storyMasterPrompt?: string;
     /**
      * Detailed description of the character appearance
      */

@@ -288,7 +288,10 @@ components:
       properties:
         masterPrompt:
           type: string
-          description: Global style/quality prompt applied to all generated images
+          description: Visual style/quality prompt applied to all generated images
+        storyMasterPrompt:
+          type: string
+          description: Story context prompt (world, characters, plot) to inform character visual generation
         characterDescription:
           type: string
           description: Detailed description of the character appearance
@@ -308,7 +311,10 @@ components:
       properties:
         masterPrompt:
           type: string
-          description: Global style/quality prompt applied to the generated image
+          description: Visual style/quality prompt applied to the generated image
+        storyMasterPrompt:
+          type: string
+          description: Story context prompt (world, characters, plot) to inform character visual generation
         characterDescription:
           type: string
           description: Detailed description of the character appearance

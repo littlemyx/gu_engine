@@ -279,7 +279,27 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     }
   }
 
-  // 2. Apply transparency only to background pixels
+  // 2. Find border pixels (background pixels adjacent to non-background)
+  const isBorder = new Uint8Array(totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    if (!isBackground[i]) continue;
+    const x = i % width;
+    const y = (i - x) / width;
+    const neighbors = [
+      y > 0 ? i - width : -1,
+      y < height - 1 ? i + width : -1,
+      x > 0 ? i - 1 : -1,
+      x < width - 1 ? i + 1 : -1
+    ];
+    for (const nIdx of neighbors) {
+      if (nIdx >= 0 && !isBackground[nIdx]) {
+        isBorder[i] = 1;
+        break;
+      }
+    }
+  }
+
+  // 3. Apply transparency: fully transparent for interior, soft alpha for borders
   const HUE_CENTER = 120;
   const HUE_RANGE = 50;
   const SAT_MIN = 0.08;
@@ -288,9 +308,15 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     if (!isBackground[i]) continue;
 
     const off = i * 4;
-    const [h, s] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
 
-    // Compute soft alpha for anti-aliased edges
+    if (!isBorder[i]) {
+      // Interior background pixel — fully transparent
+      data[off + 3] = 0;
+      continue;
+    }
+
+    // Border pixel — soft alpha for anti-aliasing
+    const [h, s] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
     const hueDist = Math.abs(h - HUE_CENTER);
     const hueAlpha = Math.max(0, hueDist / HUE_RANGE);
     const satAlpha = Math.max(0, 1 - (s - SAT_MIN) / (1 - SAT_MIN));
@@ -308,13 +334,19 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
 function buildCharacterPosePrompt(
   masterPrompt: string,
   characterDescription: string,
-  pose: string
+  pose: string,
+  storyMasterPrompt?: string
 ): string {
   const parts = [
     masterPrompt,
+  ];
+  if (storyMasterPrompt) {
+    parts.push(`Story context:\n${storyMasterPrompt}`);
+  }
+  parts.push(
     characterDescription,
     `Generate ONLY the character in a "${pose}" pose/emotion. The character must be rendered on a solid bright chromakey green (#00FF00) background. The entire background must be uniform pure green with no gradients, no shadows, no environment, no ground. The character should have a thin clean white outline (2-3 pixels) separating it from the green background. Crisp sharp edges, no blur or feathering at the borders. Maintain consistent character design, proportions, and art style.`
-  ];
+  );
   return parts.join("\n\n");
 }
 
@@ -322,7 +354,7 @@ export async function processCharacterBatch(
   batch: BatchState,
   request: CharacterGenerateRequest
 ) {
-  const { masterPrompt, characterDescription } = request;
+  const { masterPrompt, storyMasterPrompt, characterDescription } = request;
 
   // Deduplicate and normalize poses, ensure idle is first
   const rawPoses = request.poses ?? [];
@@ -346,7 +378,8 @@ export async function processCharacterBatch(
       description: buildCharacterPosePrompt(
         masterPrompt,
         characterDescription,
-        "idle — neutral standing pose, relaxed, facing the viewer"
+        "idle — neutral standing pose, relaxed, facing the viewer",
+        storyMasterPrompt
       )
     };
     idleLocalPath = await generateImage(idleItem);
@@ -392,7 +425,8 @@ export async function processCharacterBatch(
         description: buildCharacterPosePrompt(
           masterPrompt,
           characterDescription,
-          pose
+          pose,
+          storyMasterPrompt
         ),
         referenceImages: [idleDataUri]
       };
@@ -424,7 +458,7 @@ export async function processRegeneratePose(
   batch: BatchState,
   request: RegeneratePoseRequest
 ) {
-  const { masterPrompt, characterDescription, pose, referenceImageUrl } =
+  const { masterPrompt, storyMasterPrompt, characterDescription, pose, referenceImageUrl } =
     request;
   const poseId = pose.toLowerCase().trim();
 
@@ -443,7 +477,8 @@ export async function processRegeneratePose(
       description: buildCharacterPosePrompt(
         masterPrompt,
         characterDescription,
-        pose
+        pose,
+        storyMasterPrompt
       ),
       referenceImages: [refDataUri]
     };

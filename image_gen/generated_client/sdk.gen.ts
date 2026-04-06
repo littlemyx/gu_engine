@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateBackgroundData, GenerateBackgroundErrors, GenerateBackgroundResponses, GenerateBatchData, GenerateBatchErrors, GenerateBatchResponses, GenerateCharacterData, GenerateCharacterErrors, GenerateCharacterResponses, RegenerateCharacterPoseData, RegenerateCharacterPoseErrors, RegenerateCharacterPoseResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateBackgroundData, GenerateBackgroundErrors, GenerateBackgroundResponses, GenerateBatchData, GenerateBatchErrors, GenerateBatchResponses, GenerateCharacterData, GenerateCharacterErrors, GenerateCharacterResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses, RegenerateCharacterPoseData, RegenerateCharacterPoseErrors, RegenerateCharacterPoseResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -47,6 +47,9 @@ export const generateCharacter = <ThrowOnError extends boolean = false>(options:
 
 /**
  * Regenerate a single character pose using an existing reference image
+ *
+ * Generates a single pose image using a provided reference image (e.g. the existing idle pose). Does not generate idle — uses the supplied referenceImageUrl as-is.
+ *
  */
 export const regenerateCharacterPose = <ThrowOnError extends boolean = false>(options: Options<RegenerateCharacterPoseData, ThrowOnError>) => (options.client ?? client).post<RegenerateCharacterPoseResponses, RegenerateCharacterPoseErrors, ThrowOnError>({
     url: '/generate/character/pose',

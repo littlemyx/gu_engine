@@ -27,12 +27,14 @@ export interface BatchState {
 
 export interface CharacterGenerateRequest {
   masterPrompt: string;
+  storyMasterPrompt?: string;
   characterDescription: string;
   poses?: string[];
 }
 
 export interface RegeneratePoseRequest {
   masterPrompt: string;
+  storyMasterPrompt?: string;
   characterDescription: string;
   pose: string;
   referenceImageUrl: string;
