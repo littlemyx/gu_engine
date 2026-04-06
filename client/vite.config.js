@@ -34,7 +34,7 @@ export default defineConfig(({ mode }) => {
           },
         },
       }),
-      checker({ typescript: true }),
+      checker({ typescript: { tsconfigPath: './tsconfig.json' } }),
     ],
     resolve: {
       alias: {
