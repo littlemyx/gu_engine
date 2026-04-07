@@ -81,53 +81,14 @@ export const getSceneContext = (nodeId: string, edges: CardEdge[], nodes: CardNo
   };
 };
 
-export const getMaxDepthFromNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): number => {
-  // BFS/DFS to find the longest path from the root of the chain
-  const visited = new Set<string>();
-  let maxDepth = 0;
+const DEFAULT_MAX_DEPTH = 10;
 
-  const dfs = (id: string, depth: number) => {
-    if (visited.has(id)) return;
-    visited.add(id);
-    maxDepth = Math.max(maxDepth, depth);
-
-    // Find all scene_in edges where this node is the source
-    const outEdges = edges.filter(e => e.source === id);
-    for (const edge of outEdges) {
-      const targetNode = nodes.find(n => n.id === edge.target);
-      if (targetNode && targetNode.data.cardType === 'scene' && edge.targetHandle === 'scene_in') {
-        dfs(targetNode.id, depth + 1);
-      }
-    }
-  };
-
-  // Walk to the root first
-  let rootId = nodeId;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
-    const inEdge = edges.find(e => e.target === rootId && e.targetHandle === 'scene_in');
-    if (!inEdge) break;
-    const sourceNode = nodes.find(n => n.id === inEdge.source);
-    if (!sourceNode || sourceNode.data.cardType !== 'scene') break;
-    rootId = sourceNode.id;
-  }
-
-  dfs(rootId, 0);
-  // Return at least 10 as default max depth estimate
-  return Math.max(maxDepth, 10);
+export const getMaxDepthFromNode = (_nodeId: string, _edges: CardEdge[], _nodes: CardNode[]): number => {
+  return DEFAULT_MAX_DEPTH;
 };
 
 export const getStoryMasterPromptForNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {
-  // Check direct connection first
-  const incoming = edges.filter(e => e.target === nodeId && e.targetHandle === 'story_style');
-  for (const edge of incoming) {
-    const sourceNode = nodes.find(n => n.id === edge.source);
-    if (sourceNode && sourceNode.data.cardType === 'story_master_prompt') {
-      return sourceNode.data.description ?? '';
-    }
-  }
-
-  // Walk up the scene chain to find an ancestor with a story master prompt
+  // Walk up the scene chain; if a story_master_prompt node is at the top, use its description
   let currentId = nodeId;
   const visited = new Set<string>();
   while (!visited.has(currentId)) {
@@ -135,15 +96,13 @@ export const getStoryMasterPromptForNode = (nodeId: string, edges: CardEdge[], n
     const inEdge = edges.find(e => e.target === currentId && e.targetHandle === 'scene_in');
     if (!inEdge) break;
     const sourceNode = nodes.find(n => n.id === inEdge.source);
-    if (!sourceNode || sourceNode.data.cardType !== 'scene') break;
+    if (!sourceNode) break;
 
-    const parentPrompt = edges.filter(e => e.target === sourceNode.id && e.targetHandle === 'story_style');
-    for (const edge of parentPrompt) {
-      const promptNode = nodes.find(n => n.id === edge.source);
-      if (promptNode && promptNode.data.cardType === 'story_master_prompt') {
-        return promptNode.data.description ?? '';
-      }
+    if (sourceNode.data.cardType === 'story_master_prompt') {
+      return sourceNode.data.description ?? '';
     }
+    if (sourceNode.data.cardType !== 'scene') break;
+
     currentId = sourceNode.id;
   }
 

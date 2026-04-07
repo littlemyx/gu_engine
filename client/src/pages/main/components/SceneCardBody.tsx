@@ -55,6 +55,19 @@ export const SceneCardBody = ({ id, data }: { id: string; data: CardNodeData }) 
     const maxDepth = getMaxDepthFromNode(id, cardEdges, cardNodes);
     const storyMasterPrompt = getStoryMasterPromptForNode(id, cardEdges, cardNodes);
 
+    const characters = (data.characters || [])
+      .map(ch => {
+        const charEdge = cardEdges.find(e => e.target === id && e.targetHandle === `char-${ch.id}`);
+        if (!charEdge) return null;
+        const charNode = cardNodes.find(n => n.id === charEdge.source);
+        if (!charNode || charNode.data.cardType !== 'character') return null;
+        return {
+          name: charNode.data.name || '',
+          description: charNode.data.description || undefined,
+        };
+      })
+      .filter((c): c is NonNullable<typeof c> => c !== null && c.name !== '');
+
     try {
       const { data: respData } = await generateSceneText({
         body: {
@@ -63,6 +76,7 @@ export const SceneCardBody = ({ id, data }: { id: string; data: CardNodeData }) 
           depth: ctx.depth,
           maxDepth,
           incomingOutputText: ctx.incomingOutputText,
+          characters: characters.length > 0 ? characters : undefined,
         },
       });
       if (respData) {
@@ -187,7 +201,7 @@ export const SceneCardBody = ({ id, data }: { id: string; data: CardNodeData }) 
       )}
       <CharactersSection nodeId={id} characters={data.characters || []} />
       <textarea
-        className={`nodrag nopan ${styles.sceneText}`}
+        className={`nodrag nopan nowheel ${styles.sceneText}`}
         placeholder="Текст сцены..."
         value={data.sceneText || ''}
         onChange={e => updateNodeData(id, { sceneText: e.target.value })}

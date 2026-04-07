@@ -7,12 +7,18 @@ export interface SceneChainItem {
   outputText: string;
 }
 
+export interface SceneCharacter {
+  name: string;
+  description?: string;
+}
+
 export interface SceneTextRequest {
   storyMasterPrompt: string;
   sceneChain: SceneChainItem[];
   depth: number;
   maxDepth: number;
   incomingOutputText: string;
+  characters?: SceneCharacter[];
 }
 
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';

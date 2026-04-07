@@ -199,6 +199,18 @@ components:
           type: string
           description: The choice/output text that led from this scene to the next
 
+    SceneCharacter:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: Character name
+        description:
+          type: string
+          description: Character description (appearance, personality, role)
+
     SceneTextRequest:
       type: object
       required:
@@ -225,6 +237,11 @@ components:
         incomingOutputText:
           type: string
           description: The output/choice text that leads into this scene
+        characters:
+          type: array
+          items:
+            $ref: '#/components/schemas/SceneCharacter'
+          description: Characters present in this scene
 
     ErrorResponse:
       type: object

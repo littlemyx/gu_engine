@@ -59,6 +59,17 @@ export type SceneChainItem = {
     outputText: string;
 };
 
+export type SceneCharacter = {
+    /**
+     * Character name
+     */
+    name: string;
+    /**
+     * Character description (appearance, personality, role)
+     */
+    description?: string;
+};
+
 export type SceneTextRequest = {
     /**
      * The story master prompt (backbone of the story)
@@ -80,6 +91,10 @@ export type SceneTextRequest = {
      * The output/choice text that leads into this scene
      */
     incomingOutputText: string;
+    /**
+     * Characters present in this scene
+     */
+    characters?: Array<SceneCharacter>;
 };
 
 export type ErrorResponse = {
