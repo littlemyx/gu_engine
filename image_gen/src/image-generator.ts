@@ -81,7 +81,8 @@ function buildPrompt(
 export async function generateImage(
   item: GenerateItem,
   masterPrompt?: string,
-  negativePrompt?: string
+  negativePrompt?: string,
+  aspectRatio?: string
 ): Promise<string> {
   const promptText = buildPrompt(item, masterPrompt, negativePrompt);
 
@@ -107,7 +108,11 @@ export async function generateImage(
 
   const response = await ai.models.generateContent({
     model: "gemini-3.1-flash-image-preview",
-    contents: contentParts
+    contents: contentParts,
+    config: {
+      responseModalities: ["IMAGE", "TEXT"],
+      imageConfig: aspectRatio ? { aspectRatio } : undefined
+    }
   });
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -279,7 +284,51 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     }
   }
 
-  // 2. Find border pixels (background pixels adjacent to non-background)
+  // 2. Find enclosed green areas: seed with strict-green pixels, then flood-fill
+  // outward with the loose threshold to capture anti-aliased edges.
+  const STRICT_HUE_RANGE = 20;
+  const STRICT_SAT_MIN = 0.6;
+  const STRICT_VAL_MIN = 0.4;
+  const enclosedQueue: number[] = [];
+  for (let i = 0; i < totalPixels; i++) {
+    if (isBackground[i]) continue;
+    const off = i * 4;
+    const [h, s, v] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
+    const hueDist = Math.abs(h - 120);
+    const isStrictGreen =
+      (hueDist <= STRICT_HUE_RANGE || hueDist >= 360 - STRICT_HUE_RANGE) &&
+      s >= STRICT_SAT_MIN &&
+      v >= STRICT_VAL_MIN;
+    if (isStrictGreen) {
+      isBackground[i] = 1;
+      enclosedQueue.push(i);
+    }
+  }
+
+  let enclosedHead = 0;
+  while (enclosedHead < enclosedQueue.length) {
+    const idx = enclosedQueue[enclosedHead++];
+    const x = idx % width;
+    const y = (idx - x) / width;
+
+    const neighbors = [
+      y > 0 ? idx - width : -1,
+      y < height - 1 ? idx + width : -1,
+      x > 0 ? idx - 1 : -1,
+      x < width - 1 ? idx + 1 : -1
+    ];
+
+    for (const nIdx of neighbors) {
+      if (nIdx < 0 || isBackground[nIdx]) continue;
+      const nOff = nIdx * 4;
+      if (isGreenish(data[nOff], data[nOff + 1], data[nOff + 2])) {
+        isBackground[nIdx] = 1;
+        enclosedQueue.push(nIdx);
+      }
+    }
+  }
+
+  // 3. Find border pixels (background pixels adjacent to non-background)
   const isBorder = new Uint8Array(totalPixels);
   for (let i = 0; i < totalPixels; i++) {
     if (!isBackground[i]) continue;
@@ -299,7 +348,7 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     }
   }
 
-  // 3. Apply transparency: fully transparent for interior, soft alpha for borders
+  // 4. Apply transparency: fully transparent for interior, soft alpha for borders
   const HUE_CENTER = 120;
   const HUE_RANGE = 50;
   const SAT_MIN = 0.08;
@@ -345,7 +394,7 @@ function buildCharacterPosePrompt(
   }
   parts.push(
     characterDescription,
-    `Generate ONLY the character in a "${pose}" pose/emotion. The character must be rendered on a solid bright chromakey green (#00FF00) background. The entire background must be uniform pure green with no gradients, no shadows, no environment, no ground. The character should have a thin clean white outline (2-3 pixels) separating it from the green background. Crisp sharp edges, no blur or feathering at the borders. Maintain consistent character design, proportions, and art style.`
+    `Generate exactly ONE character — one body, one head, one pair of arms, one pair of legs — in a "${pose}" pose/emotion as a full-body shot, centered in the frame. STRICTLY FORBIDDEN: multiple characters, duplicates, copies, turnaround sheets, character sheets, multiple views, side-by-side variations, or any layout containing more than one figure. The image contains exactly one figure. The character must be rendered on a solid bright chromakey green (#00FF00) background. The entire background must be uniform pure green with no gradients, no shadows, no environment, no ground. The character should have a thin clean white outline (2-3 pixels) separating it from the green background. Crisp sharp edges, no blur or feathering at the borders. Maintain consistent character design, proportions, and art style.`
   );
   return parts.join("\n\n");
 }
@@ -382,7 +431,7 @@ export async function processCharacterBatch(
         storyMasterPrompt
       )
     };
-    idleLocalPath = await generateImage(idleItem);
+    idleLocalPath = await generateImage(idleItem, undefined, undefined, "2:3");
     logger.log(
       `[processCharacterBatch] batch=${batch.batchId} — removing chromakey from idle pose`
     );
@@ -430,7 +479,7 @@ export async function processCharacterBatch(
         ),
         referenceImages: [idleDataUri]
       };
-      const localPath = await generateImage(poseItem);
+      const localPath = await generateImage(poseItem, undefined, undefined, "2:3");
       logger.log(
         `[processCharacterBatch] batch=${batch.batchId} pose=${pose} — removing chromakey`
       );
@@ -482,7 +531,7 @@ export async function processRegeneratePose(
       ),
       referenceImages: [refDataUri]
     };
-    const localPath = await generateImage(poseItem);
+    const localPath = await generateImage(poseItem, undefined, undefined, "2:3");
     logger.log(
       `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — removing chromakey`
     );
@@ -526,7 +575,7 @@ export async function processBackgroundBatch(
       id: itemId,
       description: parts.join("\n\n")
     };
-    const localPath = await generateImage(item);
+    const localPath = await generateImage(item, undefined, undefined, "16:9");
     const serverName = await uploadToImageServer(localPath, "background.png");
     batch.items[itemId].status = "completed";
     batch.items[itemId].filePath = serverName;
