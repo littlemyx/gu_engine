@@ -44,6 +44,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/outline:
+    post:
+      operationId: generateOutline
+      summary: Generate a high-level outline (acts + anchor skeleton) from a brief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OutlineRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -242,6 +260,26 @@ components:
           items:
             $ref: '#/components/schemas/SceneCharacter'
           description: Characters present in this scene
+
+    OutlineRequest:
+      type: object
+      required:
+        - brief
+        - archetypeProfiles
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+          description: |
+            Procedural narrative brief (Brief in client/src/narrative/types.ts).
+            Treated as opaque JSON by text_gen — embedded into the prompt as-is.
+        archetypeProfiles:
+          type: object
+          additionalProperties: true
+          description: |
+            Map of archetypeId -> ArchetypeProfile, only the archetypes
+            referenced by the brief's loveInterests. Embedded into the prompt
+            so the LLM knows which beats are required per route.
 
     ErrorResponse:
       type: object

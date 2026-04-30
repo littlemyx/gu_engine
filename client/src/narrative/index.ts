@@ -11,3 +11,6 @@ export { ARCHETYPES, ARCHETYPE_IDS, getArchetype } from './archetypes';
 export { SAMPLE_BRIEF } from './sampleBrief';
 export { validateBrief } from './validateBrief';
 export type { BriefIssue } from './validateBrief';
+export { buildOutlineRequestPayload } from './buildOutlineRequest';
+export { useOutlineGeneration } from './useOutlineGeneration';
+export type { OutlineGenStatus } from './useOutlineGeneration';

@@ -5,9 +5,13 @@ import {
   ARCHETYPE_IDS,
   SAMPLE_BRIEF,
   validateBrief,
+  useOutlineGeneration,
+  type AnchorPlan,
   type ArchetypeProfile,
   type Brief,
   type LoveInterestCard,
+  type OutlineGenStatus,
+  type OutlinePlan,
 } from '@/narrative';
 import styles from './playground.module.css';
 
@@ -16,6 +20,9 @@ const Playground = () => {
   const issues = useMemo(() => validateBrief(SAMPLE_BRIEF), []);
   const errorCount = issues.filter(i => i.severity === 'error').length;
   const warningCount = issues.filter(i => i.severity === 'warning').length;
+  const outlineGen = useOutlineGeneration();
+
+  const isBlocked = errorCount > 0;
 
   return (
     <div className={styles.container}>
@@ -30,6 +37,21 @@ const Playground = () => {
           </Link>
         </nav>
       </header>
+
+      <OutlineBar
+        status={outlineGen.status}
+        disabled={isBlocked}
+        onGenerate={() => outlineGen.generate(SAMPLE_BRIEF)}
+        onReset={outlineGen.reset}
+      />
+
+      {outlineGen.status.state === 'done' && <OutlineResult outline={outlineGen.status.outline} />}
+
+      {outlineGen.status.state === 'error' && (
+        <div className={styles.outlineResult}>
+          <div className={styles.errorBox}>Ошибка генерации: {outlineGen.status.message}</div>
+        </div>
+      )}
 
       <div className={styles.body}>
         {/* ────────────── ЛЕВАЯ КОЛОНКА: бриф ────────────── */}
@@ -261,6 +283,165 @@ const ArchetypeView: React.FC<{ archetype: ArchetypeProfile }> = ({ archetype })
           ))}
         </>
       )}
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// OUTLINE GENERATION
+// ────────────────────────────────────────────────────────────────────────────
+
+const OutlineBar: React.FC<{
+  status: OutlineGenStatus;
+  disabled: boolean;
+  onGenerate: () => void;
+  onReset: () => void;
+}> = ({ status, disabled, onGenerate, onReset }) => {
+  const [statusDot, statusLabel] = (() => {
+    switch (status.state) {
+      case 'idle':
+        return [styles.statusDotIdle, 'не запускалось'];
+      case 'generating':
+        return [
+          styles.statusDotGen,
+          status.batchId ? `генерируется... (batch ${status.batchId.slice(0, 8)})` : 'отправка запроса...',
+        ];
+      case 'done':
+        return [styles.statusDotDone, `готово · ${status.outline.anchors.length} якорей`];
+      case 'error':
+        return [styles.statusDotError, 'ошибка'];
+    }
+  })();
+
+  return (
+    <div className={styles.outlineBar}>
+      <div className={styles.outlineBarLeft}>
+        <span className={styles.outlineBarTitle}>Outline-генератор</span>
+        <span className={styles.outlineBarMeta}>
+          <span className={`${styles.statusDot} ${statusDot}`} />
+          {statusLabel}
+          {disabled && ' · бриф невалиден, исправь ошибки сначала'}
+        </span>
+      </div>
+      <div className={styles.outlineBarRight}>
+        {status.state === 'done' && (
+          <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+            Сбросить
+          </button>
+        )}
+        <button
+          type="button"
+          className={styles.primaryBtn}
+          onClick={onGenerate}
+          disabled={disabled || status.state === 'generating'}
+        >
+          {status.state === 'generating'
+            ? 'Генерация...'
+            : status.state === 'done'
+            ? 'Перегенерировать'
+            : 'Сгенерировать outline'}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const OutlineResult: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
+  // group anchors by route
+  const byRoute = useMemo(() => {
+    const map = new Map<string, AnchorPlan[]>();
+    for (const a of outline.anchors) {
+      const list = map.get(a.routeId) ?? [];
+      list.push(a);
+      map.set(a.routeId, list);
+    }
+    // sort common first, остальные по имени маршрута
+    return Array.from(map.entries()).sort(([a], [b]) => {
+      if (a === 'common') return -1;
+      if (b === 'common') return 1;
+      return a.localeCompare(b);
+    });
+  }, [outline.anchors]);
+
+  return (
+    <div className={styles.outlineResult}>
+      <div className={styles.outlineHeader}>
+        <h2 className={styles.outlineTitle}>{outline.title || 'Без названия'}</h2>
+        {outline.logline && <p className={styles.outlineLogline}>{outline.logline}</p>}
+        {outline.centralConflict && (
+          <p className={styles.outlineConflict}>
+            <strong>Центральный конфликт: </strong>
+            {outline.centralConflict}
+          </p>
+        )}
+      </div>
+
+      <div className={styles.actsRow}>
+        {outline.acts.map(a => (
+          <div key={a.act} className={styles.actCard}>
+            <div className={styles.actLabel}>акт {a.act}</div>
+            <div className={styles.actPurpose}>{a.purpose}</div>
+            {a.tone && <div className={styles.actTone}>{a.tone}</div>}
+          </div>
+        ))}
+      </div>
+
+      {byRoute.map(([routeId, anchors]) => (
+        <div key={routeId} className={`${styles.routeBlock} ${routeId === 'common' ? styles.routeBlockCommon : ''}`}>
+          <div className={styles.routeTitle}>
+            <span className={styles.routeTitleLi}>{routeId}</span>
+            <span style={{ color: '#9ca3af', fontSize: 11 }}>{anchors.length} якорей</span>
+          </div>
+          {anchors
+            .sort((a, b) => a.act - b.act)
+            .map(anchor => (
+              <AnchorRow key={anchor.id} anchor={anchor} />
+            ))}
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const AnchorRow: React.FC<{ anchor: AnchorPlan }> = ({ anchor }) => {
+  const entryReq = anchor.entryStateRequired;
+  const flagsReq = entryReq?.flagsRequired ?? [];
+  const rangesReq = entryReq?.ranges ?? {};
+  return (
+    <div className={styles.anchorRow}>
+      <div className={styles.anchorIdCell}>
+        <span className={styles.anchorIdName}>{anchor.id}</span>
+        <span className={styles.anchorTypeTag}>
+          {anchor.type} · акт {anchor.act}
+          {anchor.characterFocus ? ` · ${anchor.characterFocus}` : ''}
+        </span>
+      </div>
+      <div className={styles.anchorBodyCell}>
+        <span>{anchor.summary}</span>
+        {(flagsReq.length > 0 || Object.keys(rangesReq).length > 0) && (
+          <div>
+            {flagsReq.map(f => (
+              <span key={f} className={styles.anchorEntryReq}>
+                flag: {f}
+              </span>
+            ))}
+            {Object.entries(rangesReq).map(([path, range]) => (
+              <span key={path} className={styles.anchorEntryReq}>
+                {path} ∈ [{range[0]}, {range[1]}]
+              </span>
+            ))}
+          </div>
+        )}
+        {anchor.establishes.length > 0 && (
+          <div className={styles.anchorEstablishes}>
+            {anchor.establishes.map(f => (
+              <span key={f} className={styles.anchorEstablish}>
+                +{f}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

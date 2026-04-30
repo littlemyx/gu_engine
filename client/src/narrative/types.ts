@@ -358,3 +358,102 @@ export type GeneratedProject = {
   startingSceneId: string;
   scenes: Record<string, Scene>;
 };
+
+// ============================================================================
+// OUTLINE PLAN (intermediate artifact between brief and full scene graph)
+// ============================================================================
+
+/**
+ * Outline-планировщик возвращает якорный скелет: набор якорей и DAG-рёбра
+ * между ними. Сцены в этот момент ещё не сгенерированы — это первый слой
+ * пайплайна, на котором фиксируется структура истории.
+ */
+
+export type OutlineAct = {
+  act: number;
+  purpose: string;
+  tone: string;
+};
+
+export type AnchorPlan = {
+  id: string;
+  type: AnchorType;
+  routeId: string;
+  act: number;
+  /** id LI, на котором сфокусирован якорь (для li_introduction / route_*). null = общая сцена. */
+  characterFocus: string | null;
+  /** 1-2 предложения, что происходит в этом якоре. Авторский контекст для branch-генератора. */
+  summary: string;
+  /** Факты, которые становятся истинными после прохождения якоря. */
+  establishes: string[];
+  /** Требование на state при входе. null = нет ограничений (для якорей в начале route). */
+  entryStateRequired: {
+    ranges: StateRanges;
+    flagsRequired: string[];
+  } | null;
+};
+
+export type AnchorEdge = {
+  from: string;
+  to: string;
+};
+
+export type OutlinePlan = {
+  title: string;
+  logline: string;
+  centralConflict: string;
+  acts: OutlineAct[];
+  anchors: AnchorPlan[];
+  anchorEdges: AnchorEdge[];
+};
+
+/**
+ * Распарсить и валидировать строковый JSON-ответ от outline-генератора.
+ * Бросает Error с диагностикой, если структура не совпадает.
+ */
+export function parseOutlinePlan(raw: string): OutlinePlan {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`outline JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('outline must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.anchors) || !Array.isArray(obj.anchorEdges) || !Array.isArray(obj.acts)) {
+    throw new Error('outline missing required arrays: acts/anchors/anchorEdges');
+  }
+
+  const anchors: AnchorPlan[] = obj.anchors.map((a, i) => {
+    const anchor = a as Record<string, unknown>;
+    if (!anchor.id || !anchor.type || !anchor.routeId) {
+      throw new Error(`anchors[${i}] missing required fields (id/type/routeId)`);
+    }
+    return {
+      id: String(anchor.id),
+      type: anchor.type as AnchorType,
+      routeId: String(anchor.routeId),
+      act: typeof anchor.act === 'number' ? anchor.act : 1,
+      characterFocus: anchor.characterFocus ? String(anchor.characterFocus) : null,
+      summary: String(anchor.summary ?? ''),
+      establishes: Array.isArray(anchor.establishes) ? (anchor.establishes as string[]) : [],
+      entryStateRequired:
+        anchor.entryStateRequired && typeof anchor.entryStateRequired === 'object'
+          ? (anchor.entryStateRequired as AnchorPlan['entryStateRequired'])
+          : null,
+    };
+  });
+
+  return {
+    title: String(obj.title ?? ''),
+    logline: String(obj.logline ?? ''),
+    centralConflict: String(obj.centralConflict ?? ''),
+    acts: obj.acts as OutlineAct[],
+    anchors,
+    anchorEdges: obj.anchorEdges as AnchorEdge[],
+  };
+}

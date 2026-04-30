@@ -1,8 +1,14 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText } from './text-generator.js';
-import type { StoryMasterPromptRequest, SceneTextRequest, ItemState, BatchState } from './types.js';
+import { processStoryMasterPrompt, processSceneText, processOutline } from './text-generator.js';
+import type {
+  StoryMasterPromptRequest,
+  SceneTextRequest,
+  OutlineRequest,
+  ItemState,
+  BatchState,
+} from './types.js';
 import { logger } from './logger.js';
 
 const PORT = Number(process.env.PORT) || 3200;
@@ -66,6 +72,33 @@ app.post('/generate/sceneText', (req, res) => {
   logger.log(`[POST /generate/sceneText] batch=${batchId} depth=${body.depth}/${body.maxDepth} chain=${body.sceneChain?.length ?? 0}`);
 
   processSceneText(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/outline', (req, res) => {
+  const body = req.body as OutlineRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'outline';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const liCount = Array.isArray((body.brief as { loveInterests?: unknown[] })?.loveInterests)
+    ? (body.brief as { loveInterests: unknown[] }).loveInterests.length
+    : 0;
+  logger.log(`[POST /generate/outline] batch=${batchId} liCount=${liCount}`);
+
+  processOutline(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

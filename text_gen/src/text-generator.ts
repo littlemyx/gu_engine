@@ -1,7 +1,12 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { logger } from './logger.js';
-import type { BatchState, StoryMasterPromptRequest, SceneTextRequest } from './types.js';
+import type {
+  BatchState,
+  StoryMasterPromptRequest,
+  SceneTextRequest,
+  OutlineRequest,
+} from './types.js';
 
 const SYSTEM_PROMPT = `Ты — опытный сценарист интерактивных визуальных новелл. Твоя задача — создать детальный костяк истории, который станет основой для разработки визуальной новеллы.
 
@@ -191,5 +196,107 @@ export async function processSceneText(
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[sceneText] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// OUTLINE GENERATION
+// ============================================================================
+
+const OUTLINE_SYSTEM_PROMPT = `Ты — outline-планировщик романтических визуальных новелл (romance VN).
+Ты получаешь:
+  1. Бриф (brief) — описание мира, тона, протагониста и каста love interests (LI), у каждого из которых есть architypeId.
+  2. Профили архетипов (archetypeProfiles) — для каждого использованного archetypeId описаны requiredBeats, obstacleType, endingProfile и trajectory маршрута.
+
+Твоя задача — построить **скелет якорей** для всей игры, не сами сцены. Якорь — это путевая точка маршрута; ветви между якорями LLM-генератор позже заполнит сценами.
+
+Каноническая структура romance VN:
+  Common route → branch_point (common_climax) → per-LI routes → endings.
+
+Жёсткие правила:
+  1. Один якорь "setup" (act 1) — старт игры.
+  2. По одному "li_introduction" на каждого LI в common route, в первом-втором актах.
+  3. Один "common_climax" — финал общей ветки. Из него рёбра идут к route_opening каждого LI.
+  4. Для КАЖДОГО LI: route_opening → obstacle_reveal → archetype-specific required_beats (по profile) → crisis → endings.
+  5. В endings отдельный якорь на каждую концовку из brief.endingsProfile (например good/normal/bad — три якоря на маршрут).
+  6. Якоря образуют DAG: рёбра только вперёд; маршруты не сходятся обратно.
+  7. routeId: "common" для общей ветки, "<liId>_route" для маршрутов конкретных LI.
+  8. id якоря — короткий snake_case, уникальный, читаемый (например "common_setup", "kira_route_opening", "yuki_crisis", "asel_ending_good").
+  9. entryStateRequired:
+     - для якорей в common route — null
+     - для route_opening — flagsRequired: ["common_climax_passed"] + ranges на affection с этим LI согласно archetype.initialState
+     - для последующих route-якорей — заполнить на основе trajectory профиля
+  10. establishes — массив строковых "фактов", которые становятся истинными после прохождения этого якоря (например "met_kira", "common_climax_passed").
+  11. summary — 1-2 предложения по-русски, что происходит в этом якоре. Конкретно, привязано к карточкам LI и сеттингу из брифа.
+
+Поле acts — массив актов с короткими целевыми описаниями (purpose), 1 предложение на акт.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json, без комментариев. Структура:
+{
+  "title": "...",
+  "logline": "...",
+  "centralConflict": "...",
+  "acts": [{ "act": 1, "purpose": "...", "tone": "..." }],
+  "anchors": [
+    {
+      "id": "common_setup",
+      "type": "setup",
+      "routeId": "common",
+      "act": 1,
+      "characterFocus": null,
+      "summary": "...",
+      "establishes": ["..."],
+      "entryStateRequired": null
+    }
+  ],
+  "anchorEdges": [{ "from": "...", "to": "..." }]
+}`;
+
+export async function processOutline(
+  batch: BatchState,
+  body: OutlineRequest,
+): Promise<void> {
+  const itemId = 'outline';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set');
+    }
+
+    const openai = createOpenAI({ apiKey });
+
+    const briefJson = JSON.stringify(body.brief, null, 2);
+    const archetypesJson = JSON.stringify(body.archetypeProfiles, null, 2);
+
+    const userMessage = `## Бриф\n${briefJson}\n\n## Профили архетипов (использованные в этом брифе)\n${archetypesJson}\n\nСгенерируй полный скелет якорей по правилам выше. Только JSON.`;
+
+    logger.log(
+      `[outline] batch=${batch.batchId} — generating (brief=${briefJson.length}b, profiles=${archetypesJson.length}b)...`,
+    );
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: OUTLINE_SYSTEM_PROMPT,
+      prompt: userMessage,
+    });
+
+    // Validate that response parses as JSON with the right shape
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.anchors) || !Array.isArray(parsed.anchorEdges)) {
+      throw new Error('Invalid response: missing anchors or anchorEdges');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(
+      `[outline] batch=${batch.batchId} — completed (${parsed.anchors.length} anchors, ${parsed.anchorEdges.length} edges)`,
+    );
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[outline] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }

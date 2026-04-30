@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateSceneTextData, GenerateSceneTextResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -35,6 +35,18 @@ export const generateStoryMasterPrompt = <ThrowOnError extends boolean = false>(
  */
 export const generateSceneText = <ThrowOnError extends boolean = false>(options: Options<GenerateSceneTextData, ThrowOnError>) => (options.client ?? client).post<GenerateSceneTextResponses, unknown, ThrowOnError>({
     url: '/generate/sceneText',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate a high-level outline (acts + anchor skeleton) from a brief
+ */
+export const generateOutline = <ThrowOnError extends boolean = false>(options: Options<GenerateOutlineData, ThrowOnError>) => (options.client ?? client).post<GenerateOutlineResponses, unknown, ThrowOnError>({
+    url: '/generate/outline',
     ...options,
     headers: {
         'Content-Type': 'application/json',

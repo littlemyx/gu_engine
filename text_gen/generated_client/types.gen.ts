@@ -97,6 +97,26 @@ export type SceneTextRequest = {
     characters?: Array<SceneCharacter>;
 };
 
+export type OutlineRequest = {
+    /**
+     * Procedural narrative brief (Brief in client/src/narrative/types.ts).
+     * Treated as opaque JSON by text_gen — embedded into the prompt as-is.
+     *
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Map of archetypeId -> ArchetypeProfile, only the archetypes
+     * referenced by the brief's loveInterests. Embedded into the prompt
+     * so the LLM knows which beats are required per route.
+     *
+     */
+    archetypeProfiles: {
+        [key: string]: unknown;
+    };
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -132,6 +152,22 @@ export type GenerateSceneTextResponses = {
 };
 
 export type GenerateSceneTextResponse = GenerateSceneTextResponses[keyof GenerateSceneTextResponses];
+
+export type GenerateOutlineData = {
+    body: OutlineRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/outline';
+};
+
+export type GenerateOutlineResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateOutlineResponse = GenerateOutlineResponses[keyof GenerateOutlineResponses];
 
 export type ListBatchesData = {
     body?: never;

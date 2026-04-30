@@ -21,6 +21,16 @@ export interface SceneTextRequest {
   characters?: SceneCharacter[];
 }
 
+/**
+ * Запрос на генерацию outline-плана (акты + якорный скелет) из брифа.
+ * Бриф и архетипы передаются как opaque JSON-объекты — text_gen их не
+ * интерпретирует, а только сериализует в промпт.
+ */
+export interface OutlineRequest {
+  brief: unknown;
+  archetypeProfiles: Record<string, unknown>;
+}
+
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ItemState {

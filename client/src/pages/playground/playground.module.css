@@ -291,3 +291,281 @@
   white-space: pre;
   margin: 0;
 }
+
+/* ============ OUTLINE GENERATION ============ */
+
+.outlineBar {
+  margin: 0 32px 0 32px;
+  padding: 16px 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.outlineBarLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.outlineBarTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.outlineBarMeta {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.outlineBarRight {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.primaryBtn {
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.primaryBtn:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.primaryBtn:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
+}
+
+.secondaryBtn {
+  background: #fff;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  background: #f9fafb;
+}
+
+.statusDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+
+.statusDotIdle {
+  background: #d1d5db;
+}
+
+.statusDotGen {
+  background: #f59e0b;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.statusDotDone {
+  background: #16a34a;
+}
+
+.statusDotError {
+  background: #dc2626;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.outlineResult {
+  margin: 16px 32px 0 32px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+
+.outlineHeader {
+  margin-bottom: 12px;
+}
+
+.outlineTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+}
+
+.outlineLogline {
+  font-size: 13px;
+  color: #4b5563;
+  font-style: italic;
+  margin: 0 0 6px 0;
+}
+
+.outlineConflict {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0;
+}
+
+.actsRow {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 12px 0;
+}
+
+.actCard {
+  flex: 1 1 200px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.actLabel {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #9ca3af;
+  margin-bottom: 4px;
+}
+
+.actPurpose {
+  font-size: 12px;
+  color: #1f2937;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+
+.actTone {
+  font-size: 11px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.routeBlock {
+  margin-top: 16px;
+  border-left: 3px solid #c7d2fe;
+  padding-left: 12px;
+}
+
+.routeBlockCommon {
+  border-left-color: #fbbf24;
+}
+
+.routeTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.routeTitleLi {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: #4f46e5;
+  background: #eef2ff;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.anchorRow {
+  display: grid;
+  grid-template-columns: minmax(160px, max-content) 1fr;
+  gap: 6px 12px;
+  font-size: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #f3f4f6;
+}
+
+.anchorRow:last-child {
+  border-bottom: none;
+}
+
+.anchorIdCell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.anchorIdName {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.anchorTypeTag {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.anchorBodyCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: #374151;
+  line-height: 1.4;
+}
+
+.anchorEstablishes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.anchorEstablish {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  background: #f0fdf4;
+  color: #166534;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.anchorEntryReq {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  background: #fef2f2;
+  color: #991b1b;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-right: 4px;
+}
+
+.errorBox {
+  font-size: 13px;
+  color: #b91c1c;
+  background: #fef2f2;
+  padding: 12px 16px;
+  border-radius: 6px;
+  border: 1px solid #fecaca;
+}
