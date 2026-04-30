@@ -39,7 +39,13 @@ export function useSegmentGeneration() {
   useEffect(() => stopPolling, [stopPolling]);
 
   const generate = useCallback(
-    async (brief: Brief, outline: OutlinePlan, fromId: string, toId: string) => {
+    async (
+      brief: Brief,
+      outline: OutlinePlan,
+      fromId: string,
+      toId: string,
+      retry?: { previousAttempt: GeneratedSegment; previousIssues: SegmentIssue[] },
+    ) => {
       stopPolling();
       setStatus({ state: 'generating', batchId: '', fromId, toId });
 
@@ -50,6 +56,10 @@ export function useSegmentGeneration() {
         const body = {
           ...payload,
           archetypeProfile: payload.archetypeProfile ?? undefined,
+          previousAttempt: retry?.previousAttempt ?? undefined,
+          previousIssues: retry
+            ? retry.previousIssues.map(it => `[${it.severity}] ${it.scope}: ${it.message}`)
+            : undefined,
         };
         const { data, error } = await generateSegment({ body });
 

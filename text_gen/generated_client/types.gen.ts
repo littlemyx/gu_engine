@@ -152,6 +152,22 @@ export type SegmentRequest = {
      *
      */
     existingFlags?: Array<string>;
+    /**
+     * Previously generated GeneratedSegment that failed validation.
+     * When present alongside previousIssues, the LLM is asked to
+     * regenerate with awareness of what failed before.
+     *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Human-readable list of issues from the previous attempt
+     * (e.g. "ни один из 4 путей не приводит state в требования
+     * anchorTo"). Each entry is shown to the LLM verbatim.
+     *
+     */
+    previousIssues?: Array<string>;
 };
 
 export type ErrorResponse = {

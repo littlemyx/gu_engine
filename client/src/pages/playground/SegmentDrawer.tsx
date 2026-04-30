@@ -15,7 +15,13 @@ type Props = {
   outline: OutlinePlan;
   selection: { fromId: string; toId: string };
   status: SegmentGenStatus;
-  onGenerate: (brief: Brief, outline: OutlinePlan, fromId: string, toId: string) => void;
+  onGenerate: (
+    brief: Brief,
+    outline: OutlinePlan,
+    fromId: string,
+    toId: string,
+    retry?: { previousAttempt: GeneratedSegment; previousIssues: SegmentIssue[] },
+  ) => void;
   onClose: () => void;
 };
 
@@ -28,6 +34,11 @@ export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, stat
     (status.state === 'generating' || status.state === 'done' || status.state === 'error') &&
     status.fromId === selection.fromId &&
     status.toId === selection.toId;
+  const hasIssues = matchesSelection && status.state === 'done' && status.issues.length > 0;
+  const retryContext =
+    matchesSelection && status.state === 'done' && status.issues.length > 0
+      ? { previousAttempt: status.segment, previousIssues: status.issues }
+      : undefined;
 
   return (
     <aside className={styles.drawer}>
@@ -50,10 +61,12 @@ export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, stat
           type="button"
           className={styles.primaryBtn}
           disabled={matchesSelection && status.state === 'generating'}
-          onClick={() => onGenerate(brief, outline, selection.fromId, selection.toId)}
+          onClick={() => onGenerate(brief, outline, selection.fromId, selection.toId, retryContext)}
         >
           {matchesSelection && status.state === 'generating'
             ? 'Генерация...'
+            : hasIssues
+            ? 'Перегенерировать с фидбэком'
             : matchesSelection && status.state === 'done'
             ? 'Перегенерировать сегмент'
             : 'Сгенерировать сегмент'}

@@ -41,6 +41,13 @@ export interface SegmentRequest {
   anchorFrom: unknown;
   anchorTo: unknown;
   existingFlags?: string[];
+  /**
+   * Previously generated segment that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
 }
 
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';

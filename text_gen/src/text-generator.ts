@@ -400,17 +400,40 @@ export async function processSegment(batch: BatchState, body: SegmentRequest): P
     const toJson = JSON.stringify(body.anchorTo, null, 2);
     const existingFlagsJson = JSON.stringify(body.existingFlags ?? []);
 
-    const userMessage = [
+    const parts: string[] = [
       `## Бриф\n${briefJson}`,
       `## Профиль архетипа маршрута\n${archetypeJson}`,
       `## Якорь FROM (стартовая точка сегмента)\n${fromJson}`,
       `## Якорь TO (целевая точка, куда обязан привести сегмент)\n${toJson}`,
       `## Уже установленные флаги (из предков)\n${existingFlagsJson}`,
-      'Сгенерируй scene-DAG между этими якорями по правилам выше. Только JSON.',
-    ].join('\n\n');
+    ];
+
+    // Retry-with-feedback: если есть previousAttempt и previousIssues,
+    // показываем LLM-у предыдущую неудачную попытку и список проблем.
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
+      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(
+        `## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\nЭтот JSON был сгенерирован ранее, но не удовлетворил требованиям. Используй как референс — что-то можно сохранить, главное исправить ошибки ниже.\n\n${prevJson}`,
+      );
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии сегмента ОБЯЗАТЕЛЬНО устрани эти ошибки. Пути в DAG должны суммарно сдвигать state в нужные диапазоны и устанавливать требуемые флаги anchorTo.`,
+      );
+      parts.push(
+        'Сгенерируй ИСПРАВЛЕННУЮ версию scene-DAG. Те же правила, тот же формат JSON. Только JSON.',
+      );
+    } else {
+      parts.push(
+        'Сгенерируй scene-DAG между этими якорями по правилам выше. Только JSON.',
+      );
+    }
+
+    const userMessage = parts.join('\n\n');
 
     logger.log(
-      `[segment] batch=${batch.batchId} — generating (brief=${briefJson.length}b, from=${(body.anchorFrom as { id?: string })?.id ?? '?'}, to=${(body.anchorTo as { id?: string })?.id ?? '?'})...`,
+      `[segment] batch=${batch.batchId} — generating (brief=${briefJson.length}b, from=${(body.anchorFrom as { id?: string })?.id ?? '?'}, to=${(body.anchorTo as { id?: string })?.id ?? '?'}${hasFeedback ? `, retry with ${body.previousIssues?.length ?? 0} issue(s)` : ''})...`,
     );
 
     const { text } = await generateText({

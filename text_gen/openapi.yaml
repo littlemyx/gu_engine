@@ -334,6 +334,22 @@ components:
           description: |
             Flags already established by ancestors of anchorFrom in the outline.
             Helps the LLM stay consistent with what has already happened.
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Previously generated GeneratedSegment that failed validation.
+            When present alongside previousIssues, the LLM is asked to
+            regenerate with awareness of what failed before.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: |
+            Human-readable list of issues from the previous attempt
+            (e.g. "ни один из 4 путей не приводит state в требования
+            anchorTo"). Each entry is shown to the LLM verbatim.
 
     ErrorResponse:
       type: object
