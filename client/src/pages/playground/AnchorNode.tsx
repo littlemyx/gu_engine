@@ -23,6 +23,15 @@ export const AnchorNode = ({ data }: NodeProps<Node<AnchorNodeData>>) => {
     <div className={styles.anchor} style={{ borderColor: data.routeColor }}>
       <Handle type="target" position={Position.Left} className={styles.handle} />
 
+      {(data.imageUrl || data.spriteUrl) && (
+        <div className={styles.thumbStrip}>
+          {data.imageUrl && <img className={styles.thumbBg} src={data.imageUrl} alt="" title="background" />}
+          {data.spriteUrl && (
+            <img className={styles.thumbSprite} src={data.spriteUrl} alt="" title={data.characterFocus ?? 'sprite'} />
+          )}
+        </div>
+      )}
+
       <div className={styles.header}>
         <span className={styles.typeBadge} style={{ background: data.routeColor }}>
           {ANCHOR_TYPE_LABEL[data.type] ?? data.type}

@@ -3,6 +3,7 @@ import {
   ARCHETYPE_IDS,
   ARCHETYPES,
   useBriefStore,
+  useNarrativeStore,
   type ArchetypeId,
   type Brief,
   type EndingKind,
@@ -10,6 +11,8 @@ import {
   type LoveInterestCard,
 } from '@/narrative';
 import styles from './BriefEditor.module.css';
+
+const IMAGE_SERVER_BASE = 'http://localhost:3007';
 
 const FORMATS: Format[] = ['single_arc', 'episodic', 'vignette'];
 const ENDINGS: EndingKind[] = ['good', 'normal', 'bad'];
@@ -274,9 +277,16 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
 
 const LoveInterestEditor: React.FC<{ li: LoveInterestCard }> = ({ li }) => {
   const store = useBriefStore();
+  const characterState = useNarrativeStore(s => s.characters[li.id]);
   const archetype = ARCHETYPES[li.archetype];
   const specificsSchema = archetype.archetypeSpecificsSchema;
   const specifics = li.archetypeSpecifics ?? {};
+
+  const spriteUrl =
+    characterState?.status === 'done'
+      ? `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(characterState.idleFilename)}`
+      : null;
+  const spriteStatus = characterState?.status;
 
   return (
     <div className={styles.liCard}>
@@ -317,114 +327,129 @@ const LoveInterestEditor: React.FC<{ li: LoveInterestCard }> = ({ li }) => {
         </button>
       </header>
 
-      <Field label="role in world" full>
-        <input
-          type="text"
-          className={styles.input}
-          value={li.roleInWorld}
-          onChange={e => store.patchLoveInterest(li.id, { roleInWorld: e.target.value })}
-          placeholder="староста потока"
-        />
-      </Field>
-      <Field label="speech pattern" full>
-        <input
-          type="text"
-          className={styles.input}
-          value={li.speechPattern}
-          onChange={e => store.patchLoveInterest(li.id, { speechPattern: e.target.value })}
-          placeholder="формальная, резкая, редко шутит"
-        />
-      </Field>
-      <div className={styles.fieldGrid}>
-        <Field label="hair">
-          <input
-            type="text"
-            className={styles.input}
-            value={li.appearance.hair ?? ''}
-            onChange={e => store.patchLoveInterestAppearance(li.id, { hair: e.target.value })}
-          />
-        </Field>
-        <Field label="build">
-          <input
-            type="text"
-            className={styles.input}
-            value={li.appearance.build ?? ''}
-            onChange={e => store.patchLoveInterestAppearance(li.id, { build: e.target.value })}
-          />
-        </Field>
-        <Field label="signature item">
-          <input
-            type="text"
-            className={styles.input}
-            value={li.appearance.signatureItem ?? ''}
-            onChange={e => store.patchLoveInterestAppearance(li.id, { signatureItem: e.target.value })}
-          />
-        </Field>
-      </div>
-
-      <Field label="personality (4 csv-поля: traits | values | fears | desires)" full>
-        <div className={styles.personalityGrid}>
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="traits"
-            value={csv(li.personality.traits)}
-            onChange={e => store.patchLoveInterestPersonality(li.id, { traits: fromCsv(e.target.value) })}
-          />
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="values"
-            value={csv(li.personality.values)}
-            onChange={e => store.patchLoveInterestPersonality(li.id, { values: fromCsv(e.target.value) })}
-          />
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="fears"
-            value={csv(li.personality.fears)}
-            onChange={e => store.patchLoveInterestPersonality(li.id, { fears: fromCsv(e.target.value) })}
-          />
-          <input
-            type="text"
-            className={styles.input}
-            placeholder="desires"
-            value={csv(li.personality.desires)}
-            onChange={e => store.patchLoveInterestPersonality(li.id, { desires: fromCsv(e.target.value) })}
-          />
+      <div className={styles.liBodyRow}>
+        <div className={styles.liSpriteSlot}>
+          {spriteUrl ? (
+            <img className={styles.liSprite} src={spriteUrl} alt={li.name} />
+          ) : spriteStatus === 'generating' ? (
+            <span className={styles.liSpritePlaceholder}>генерируется...</span>
+          ) : spriteStatus === 'failed' ? (
+            <span className={`${styles.liSpritePlaceholder} ${styles.liSpriteFailed}`}>✗ ошибка</span>
+          ) : (
+            <span className={styles.liSpritePlaceholder}>спрайт не создан</span>
+          )}
         </div>
-      </Field>
-
-      <Field label="pre-existing relationship" full>
-        <input
-          type="text"
-          className={styles.input}
-          value={li.preExistingRelationship ?? ''}
-          onChange={e =>
-            store.patchLoveInterest(li.id, {
-              preExistingRelationship: e.target.value || null,
-            })
-          }
-          placeholder="antagonistic | distant_acquaintance | null"
-        />
-      </Field>
-
-      {specificsSchema && (
-        <div className={styles.specificsBlock}>
-          <div className={styles.specificsHeader}>archetype_specifics для «{li.archetype}»</div>
-          {Object.entries(specificsSchema).map(([field, decl]) => (
-            <Field key={field} label={`${field}${decl.required ? ' *' : ''}`} full>
+        <div className={styles.liBodyFields}>
+          <Field label="role in world" full>
+            <input
+              type="text"
+              className={styles.input}
+              value={li.roleInWorld}
+              onChange={e => store.patchLoveInterest(li.id, { roleInWorld: e.target.value })}
+              placeholder="староста потока"
+            />
+          </Field>
+          <Field label="speech pattern" full>
+            <input
+              type="text"
+              className={styles.input}
+              value={li.speechPattern}
+              onChange={e => store.patchLoveInterest(li.id, { speechPattern: e.target.value })}
+              placeholder="формальная, резкая, редко шутит"
+            />
+          </Field>
+          <div className={styles.fieldGrid}>
+            <Field label="hair">
               <input
                 type="text"
                 className={styles.input}
-                value={specifics[field] ?? ''}
-                onChange={e => store.patchLoveInterestSpecifics(li.id, field, e.target.value)}
-                placeholder={decl.examples.slice(0, 3).join(' | ')}
+                value={li.appearance.hair ?? ''}
+                onChange={e => store.patchLoveInterestAppearance(li.id, { hair: e.target.value })}
               />
             </Field>
-          ))}
+            <Field label="build">
+              <input
+                type="text"
+                className={styles.input}
+                value={li.appearance.build ?? ''}
+                onChange={e => store.patchLoveInterestAppearance(li.id, { build: e.target.value })}
+              />
+            </Field>
+            <Field label="signature item">
+              <input
+                type="text"
+                className={styles.input}
+                value={li.appearance.signatureItem ?? ''}
+                onChange={e => store.patchLoveInterestAppearance(li.id, { signatureItem: e.target.value })}
+              />
+            </Field>
+          </div>
+
+          <Field label="personality (4 csv-поля: traits | values | fears | desires)" full>
+            <div className={styles.personalityGrid}>
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="traits"
+                value={csv(li.personality.traits)}
+                onChange={e => store.patchLoveInterestPersonality(li.id, { traits: fromCsv(e.target.value) })}
+              />
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="values"
+                value={csv(li.personality.values)}
+                onChange={e => store.patchLoveInterestPersonality(li.id, { values: fromCsv(e.target.value) })}
+              />
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="fears"
+                value={csv(li.personality.fears)}
+                onChange={e => store.patchLoveInterestPersonality(li.id, { fears: fromCsv(e.target.value) })}
+              />
+              <input
+                type="text"
+                className={styles.input}
+                placeholder="desires"
+                value={csv(li.personality.desires)}
+                onChange={e => store.patchLoveInterestPersonality(li.id, { desires: fromCsv(e.target.value) })}
+              />
+            </div>
+          </Field>
+
+          <Field label="pre-existing relationship" full>
+            <input
+              type="text"
+              className={styles.input}
+              value={li.preExistingRelationship ?? ''}
+              onChange={e =>
+                store.patchLoveInterest(li.id, {
+                  preExistingRelationship: e.target.value || null,
+                })
+              }
+              placeholder="antagonistic | distant_acquaintance | null"
+            />
+          </Field>
+
+          {specificsSchema && (
+            <div className={styles.specificsBlock}>
+              <div className={styles.specificsHeader}>archetype_specifics для «{li.archetype}»</div>
+              {Object.entries(specificsSchema).map(([field, decl]) => (
+                <Field key={field} label={`${field}${decl.required ? ' *' : ''}`} full>
+                  <input
+                    type="text"
+                    className={styles.input}
+                    value={specifics[field] ?? ''}
+                    onChange={e => store.patchLoveInterestSpecifics(li.id, field, e.target.value)}
+                    placeholder={decl.examples.slice(0, 3).join(' | ')}
+                  />
+                </Field>
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 };

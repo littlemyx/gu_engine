@@ -29,6 +29,7 @@ import styles from './playground.module.css';
 
 const Playground = () => {
   const brief = useBriefStore(s => s.brief);
+  const persistedOutline = useNarrativeStore(s => s.outline);
   const [showRawBrief, setShowRawBrief] = useState(false);
   const [showAnchorList, setShowAnchorList] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null);
@@ -41,6 +42,10 @@ const Playground = () => {
   const characterGen = useBulkCharacterGeneration();
 
   const isBlocked = errorCount > 0;
+
+  // Активный outline = свежесгенерированный, либо закэшированный в localStorage.
+  // Это позволяет UI показывать граф и downstream-секции после reload.
+  const activeOutline = outlineGen.status.state === 'done' ? outlineGen.status.outline : persistedOutline;
 
   return (
     <div className={styles.container}>
@@ -63,9 +68,9 @@ const Playground = () => {
         onReset={outlineGen.reset}
       />
 
-      {outlineGen.status.state === 'done' &&
+      {activeOutline &&
         (() => {
-          const outline = outlineGen.status.outline;
+          const outline = activeOutline;
           return (
             <>
               <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />

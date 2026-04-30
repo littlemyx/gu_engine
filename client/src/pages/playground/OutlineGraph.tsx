@@ -19,10 +19,12 @@ const InnerGraph: React.FC<{
 }> = ({ outline, onEdgeClick, selected }) => {
   const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
+  const images = useNarrativeStore(s => s.images);
+  const characters = useNarrativeStore(s => s.characters);
   const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
   const { nodes, edges } = useMemo(
-    () => computeAnchorLayout(outline, segments, validations),
-    [outline, segments, validations],
+    () => computeAnchorLayout(outline, segments, validations, images, characters),
+    [outline, segments, validations, images, characters],
   );
 
   // Подсветить выбранное ребро
