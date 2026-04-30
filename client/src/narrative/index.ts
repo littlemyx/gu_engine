@@ -20,12 +20,14 @@ export type { SegmentGenStatus } from './useSegmentGeneration';
 export { validateSegmentSemantics, getAllSegmentValidations } from './validateSegment';
 export type { SegmentValidationContext } from './validateSegment';
 export { useNarrativeStore } from './narrativeStore';
-export type { ImageGenState } from './narrativeStore';
+export type { ImageGenState, CharacterGenState } from './narrativeStore';
 export { useBriefStore } from './briefStore';
 export { useBulkSegmentGeneration } from './useBulkSegmentGeneration';
 export type { BulkGenStatus, BulkFailure } from './useBulkSegmentGeneration';
 export { useBulkImageGeneration } from './useBulkImageGeneration';
 export type { ImageBulkStatus, ImageBulkFailure } from './useBulkImageGeneration';
+export { useBulkCharacterGeneration } from './useBulkCharacterGeneration';
+export type { CharacterBulkStatus, CharacterBulkFailure } from './useBulkCharacterGeneration';
 export {
   convertToGameProject,
   downloadJson,

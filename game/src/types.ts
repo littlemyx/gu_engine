@@ -6,6 +6,12 @@ export type SceneOutput = {
 export type SceneNodeData = {
   label: string;
   image: string;
+  /**
+   * Optional foreground character sprite (PNG with transparent background)
+   * rendered on top of `image`. Set by procedural-narrative pilot when a
+   * scene's charactersPresent contains a generated LI sprite.
+   */
+  sprite?: string;
   outputs: SceneOutput[];
 };
 

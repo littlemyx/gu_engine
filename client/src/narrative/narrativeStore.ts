@@ -9,6 +9,7 @@ import type { GeneratedSegment, OutlinePlan } from './types';
  *   - текущий сгенерированный outline (если есть)
  *   - кэш сгенерированных сегментов (key = `${fromId}->${toId}`)
  *   - кэш сгенерированных background-картинок (key = anchorId)
+ *   - кэш сгенерированных character-спрайтов (key = liId)
  *
  * Персистится в localStorage: outline стоит ~1 LLM-вызов и десятки секунд,
  * сегменты — десятки LLM-вызовов и до 10 минут, картинки — 3-5 минут на
@@ -31,6 +32,16 @@ export type ImageGenState =
   | { status: 'done'; filename: string }
   | { status: 'failed'; error: string };
 
+/**
+ * Стейт генерации одного персонажа. В MVP — только idle-поза.
+ * filename содержит имя файла на image_server (без URL-префикса).
+ */
+export type CharacterGenState =
+  | { status: 'pending' }
+  | { status: 'generating'; batchId: string }
+  | { status: 'done'; idleFilename: string; poseFilenames?: Record<string, string> }
+  | { status: 'failed'; error: string };
+
 type NarrativeState = {
   outline: OutlinePlan | null;
   segments: Record<string, GeneratedSegment>;
@@ -40,12 +51,20 @@ type NarrativeState = {
    * convertToGameProject строит полный URL под IMAGE_SERVER_BASE.
    */
   images: Record<string, ImageGenState>;
+  /**
+   * Спрайты персонажей. Ключ — id LI из брифа. Не сбрасывается при
+   * setOutline (LI не меняются), но сбрасывается явно если пользователь
+   * меняет каст в брифе. Простая стратегия инвалидации: clearCharacters.
+   */
+  characters: Record<string, CharacterGenState>;
 
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
   clearSegments: () => void;
   setImage: (anchorId: string, state: ImageGenState) => void;
   clearImages: () => void;
+  setCharacter: (liId: string, state: CharacterGenState) => void;
+  clearCharacters: () => void;
 
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
 };
@@ -56,10 +75,12 @@ export const useNarrativeStore = create<NarrativeState>()(
       outline: null,
       segments: {},
       images: {},
+      characters: {},
 
       setOutline: outline => {
-        // При установке нового outline сбрасываем все downstream-кэши — id-якорей
-        // могли поменяться при перегенерации.
+        // При установке нового outline сбрасываем outline-зависимые кэши:
+        // segments и backgrounds. characters не трогаем — LI принадлежат
+        // брифу, а бриф не меняется при regenerate-outline.
         set({ outline, segments: {}, images: {} });
       },
 
@@ -75,16 +96,23 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       clearImages: () => set({ images: {} }),
 
+      setCharacter: (liId, state) => {
+        set(s => ({ characters: { ...s.characters, [liId]: state } }));
+      },
+
+      clearCharacters: () => set({ characters: {} }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
     }),
     {
       name: 'gu-narrative-state',
-      version: 1,
+      version: 2,
       // Персистим только данные, не действия.
       partialize: state => ({
         outline: state.outline,
         segments: state.segments,
         images: state.images,
+        characters: state.characters,
       }),
     },
   ),

@@ -9,6 +9,7 @@ import {
   useSegmentGeneration,
   useBulkSegmentGeneration,
   useBulkImageGeneration,
+  useBulkCharacterGeneration,
   useNarrativeStore,
   convertToGameProject,
   downloadJson,
@@ -16,6 +17,7 @@ import {
   type AnchorPlan,
   type ArchetypeProfile,
   type BulkGenStatus,
+  type CharacterBulkStatus,
   type ImageBulkStatus,
   type OutlineGenStatus,
   type OutlinePlan,
@@ -36,6 +38,7 @@ const Playground = () => {
   const segmentGen = useSegmentGeneration();
   const bulkGen = useBulkSegmentGeneration();
   const imageGen = useBulkImageGeneration();
+  const characterGen = useBulkCharacterGeneration();
 
   const isBlocked = errorCount > 0;
 
@@ -78,6 +81,13 @@ const Playground = () => {
                 onCancel={imageGen.cancel}
                 onReset={imageGen.reset}
                 anchorCount={outline.anchors.length}
+              />
+              <CharacterGenBar
+                status={characterGen.status}
+                onStart={() => characterGen.start(brief, outline)}
+                onCancel={characterGen.cancel}
+                onReset={characterGen.reset}
+                liCount={brief.loveInterests.length}
               />
               <ExportBar outline={outline} />
               <div className={styles.outlineDetailsToggleRow}>
@@ -580,6 +590,91 @@ const ImageGenBar: React.FC<{
 };
 
 // ────────────────────────────────────────────────────────────────────────────
+// CHARACTER GENERATION (idle-спрайты для каждого LI через image_gen)
+// ────────────────────────────────────────────────────────────────────────────
+
+const CharacterGenBar: React.FC<{
+  status: CharacterBulkStatus;
+  onStart: () => void;
+  onCancel: () => void;
+  onReset: () => void;
+  liCount: number;
+}> = ({ status, onStart, onCancel, onReset, liCount }) => {
+  const characters = useNarrativeStore(s => s.characters);
+  const cachedDone = Object.values(characters).filter(c => c.status === 'done').length;
+
+  if (status.state === 'idle') {
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Генерация спрайтов персонажей · {cachedDone} / {liCount} готово
+          </span>
+          <span className={styles.bulkMeta}>
+            один POST /generate/character на LI (idle-поза, прозрачный фон) · 2 параллельно · ~2–4 мин на полный каст
+          </span>
+        </div>
+        <button type="button" className={styles.primaryBtn} onClick={onStart} disabled={liCount === 0}>
+          Сгенерировать спрайты
+        </button>
+      </div>
+    );
+  }
+
+  if (status.state === 'running') {
+    const pct = status.total === 0 ? 100 : Math.round((status.completed / status.total) * 100);
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Character-генерация · {status.completed} / {status.total}
+            {status.cancelled && ' (отменяется...)'}
+          </span>
+          <div className={styles.progressTrack}>
+            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          </div>
+          <span className={styles.bulkMeta}>
+            ⚙ в процессе: {status.inFlight} · ⌛ в очереди: {status.remaining}
+            {status.failures.length > 0 && ` · ✗ ошибок: ${status.failures.length}`}
+          </span>
+        </div>
+        <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={status.cancelled}>
+          {status.cancelled ? 'Отменяется...' : 'Остановить'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.bulkBar}>
+      <div className={styles.bulkLeft}>
+        <span className={styles.bulkTitle}>
+          Character-генерация завершена · {status.completed} / {status.total}
+          {status.cancelled && ' (остановлено)'}
+        </span>
+        <span className={styles.bulkMeta}>
+          {status.failures.length > 0 ? (
+            <>
+              ✗ {status.failures.length} ошибок:{' '}
+              {status.failures
+                .slice(0, 3)
+                .map(f => f.liId)
+                .join(', ')}
+              {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
+            </>
+          ) : (
+            'все спрайты сгенерированы успешно'
+          )}
+        </span>
+      </div>
+      <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+        OK
+      </button>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
 // EXPORT BAR (.gu.json + scenes.json для game/-движка)
 // ────────────────────────────────────────────────────────────────────────────
 
@@ -587,12 +682,15 @@ const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
   const images = useNarrativeStore(s => s.images);
+  const characters = useNarrativeStore(s => s.characters);
   const segmentCount = Object.keys(segments).length;
   const imageCount = Object.values(images).filter(i => i.status === 'done').length;
+  const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
   const edgeCount = outline.anchorEdges.length;
+  const liCount = brief.loveInterests.length;
 
   const onExport = () => {
-    const result = convertToGameProject(brief, outline, segments, images);
+    const result = convertToGameProject(brief, outline, segments, images, characters);
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
     // Небольшой timeout, чтобы браузер не схлопнул два «download» подряд.
@@ -604,9 +702,10 @@ const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
       <div className={styles.exportLeft}>
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
-          {segmentCount} из {edgeCount} сегментов · {imageCount} из {outline.anchors.length} фонов
+          {segmentCount}/{edgeCount} сегментов · {imageCount}/{outline.anchors.length} фонов · {characterCount}/
+          {liCount} спрайтов
           {segmentCount < edgeCount && (
-            <span className={styles.exportHint}> · остальные станут placeholder-переходами без сцен</span>
+            <span className={styles.exportHint}> · placeholder-переходы для несгенерированных</span>
           )}
         </span>
       </div>

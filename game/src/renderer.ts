@@ -32,6 +32,10 @@ export class GameRenderer {
       ? `<img class="scene-image" src="${escapeHtml(node.data.image)}" alt="" />`
       : `<div class="scene-image-placeholder">Нет изображения</div>`;
 
+    const spriteHtml = node.data.sprite
+      ? `<img class="scene-sprite" src="${escapeHtml(node.data.sprite)}" alt="" />`
+      : "";
+
     const choicesHtml =
       activeOutputs.length > 0
         ? activeOutputs
@@ -58,6 +62,7 @@ export class GameRenderer {
       <div class="scene" style="animation: fadeIn ${settings.sceneFadeInMs}ms ease">
         <div class="scene-image-container">
           ${imageHtml}
+          ${spriteHtml}
         </div>
         <div class="scene-body">
           <div class="scene-label">${escapeHtml(node.data.label)}</div>

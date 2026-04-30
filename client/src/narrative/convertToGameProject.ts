@@ -1,5 +1,5 @@
-import type { Brief, DraftDialogueLine, GeneratedSegment, OutlinePlan } from './types';
-import type { ImageGenState } from './narrativeStore';
+import type { AnchorPlan, Brief, DraftDialogueLine, GeneratedSegment, OutlinePlan } from './types';
+import type { CharacterGenState, ImageGenState } from './narrativeStore';
 
 /**
  * Базовый URL image-сервера, который раздаёт сгенерированные image_gen-ом
@@ -12,6 +12,37 @@ function imageUrlFor(state: ImageGenState | undefined): string {
     return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.filename)}`;
   }
   return '';
+}
+
+function spriteUrlFor(state: CharacterGenState | undefined): string {
+  if (state?.status === 'done' && state.idleFilename) {
+    return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.idleFilename)}`;
+  }
+  return '';
+}
+
+/**
+ * Берёт первый из присутствующих в сцене персонажей, у которого
+ * сгенерирован спрайт. Возвращает URL или пустую строку.
+ *
+ * Стратегия "первый сгенерированный, а не первый присутствующий" —
+ * чтобы при частичной генерации спрайтов сцена не оставалась пустой,
+ * если первый по списку character ещё не готов.
+ */
+function pickSpriteUrl(charactersPresent: string[], characters: Record<string, CharacterGenState>): string {
+  for (const liId of charactersPresent) {
+    const url = spriteUrlFor(characters[liId]);
+    if (url) return url;
+  }
+  return '';
+}
+
+/**
+ * Для якоря: characterFocus → его спрайт (если сгенерирован).
+ */
+function pickAnchorSprite(anchor: AnchorPlan, characters: Record<string, CharacterGenState>): string {
+  if (!anchor.characterFocus) return '';
+  return spriteUrlFor(characters[anchor.characterFocus]);
 }
 
 /**
@@ -39,6 +70,8 @@ export type GameSceneOutput = {
 export type GameSceneNodeData = {
   label: string;
   image: string;
+  /** Optional foreground character sprite (PNG with transparent bg) over `image`. */
+  sprite?: string;
   outputs: GameSceneOutput[];
 };
 
@@ -80,6 +113,7 @@ export type ConversionStats = {
   placeholderEdges: number;
   totalEdges: number;
   imagesEmbedded: number;
+  spritesEmbedded: number;
 };
 
 export type ConversionResult = {
@@ -119,6 +153,7 @@ export function convertToGameProject(
   outline: OutlinePlan,
   segments: Record<string, GeneratedSegment>,
   images: Record<string, ImageGenState> = {},
+  characters: Record<string, CharacterGenState> = {},
 ): ConversionResult {
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
@@ -126,6 +161,7 @@ export function convertToGameProject(
   let placeholderEdges = 0;
   let generatedSegments = 0;
   let imagesEmbedded = 0;
+  let spritesEmbedded = 0;
 
   // Сортировка маршрутов и порядок появления для y-позиций.
   const routes: string[] = [];
@@ -136,7 +172,9 @@ export function convertToGameProject(
   // ── 1. Якоря ───────────────────────────────────────────────────────────
   for (const anchor of outline.anchors) {
     const image = imageUrlFor(images[anchor.id]);
+    const sprite = pickAnchorSprite(anchor, characters);
     if (image) imagesEmbedded++;
+    if (sprite) spritesEmbedded++;
     nodes.push({
       id: anchor.id,
       type: 'scene',
@@ -147,6 +185,7 @@ export function convertToGameProject(
       data: {
         label: renderAnchorText(anchor.summary, anchor.id),
         image,
+        sprite: sprite || undefined,
         outputs: [], // дозаполним из anchorEdges + segments
       },
     });
@@ -193,6 +232,10 @@ export function convertToGameProject(
       const baseY = (routeIdx.get(targetAnchor?.routeId ?? 'common') ?? 0) * ANCHOR_Y_STEP + DRAFT_Y_OFFSET;
       seg.scenes.forEach((draft, idx) => {
         if (segmentImage) imagesEmbedded++;
+        // Sprite сцены сегмента — первый из присутствующих персонажей,
+        // у кого есть готовый спрайт. Если никто не сгенерирован — пусто.
+        const sprite = pickSpriteUrl(draft.charactersPresent, characters);
+        if (sprite) spritesEmbedded++;
         nodes.push({
           id: draft.id,
           type: 'scene',
@@ -205,6 +248,7 @@ export function convertToGameProject(
           data: {
             label: renderDraftSceneText(draft.narration, draft.dialogue),
             image: segmentImage,
+            sprite: sprite || undefined,
             outputs: draft.choices.map(c => ({ id: c.id, text: c.text })),
           },
         });
@@ -248,6 +292,7 @@ export function convertToGameProject(
     placeholderEdges,
     totalEdges: edges.length,
     imagesEmbedded,
+    spritesEmbedded,
   };
 
   return { project, scenes: { nodes, edges }, stats };
