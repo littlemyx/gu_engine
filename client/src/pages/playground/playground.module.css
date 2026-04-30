@@ -575,3 +575,37 @@
   justify-content: center;
   margin: 12px 32px 0 32px;
 }
+
+.exportBar {
+  margin: 16px 32px 0 32px;
+  padding: 14px 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.exportLeft {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.exportTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.exportMeta {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.exportHint {
+  font-style: italic;
+  color: #9ca3af;
+}

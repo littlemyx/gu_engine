@@ -3,6 +3,7 @@ import { generateSegment, getBatchStatus, type BatchStatus } from '@root/text_ge
 import type { Brief, GeneratedSegment, OutlinePlan, SegmentIssue } from './types';
 import { parseGeneratedSegment, validateGeneratedSegment } from './types';
 import { buildSegmentRequestPayload } from './buildSegmentRequest';
+import { useNarrativeStore } from './narrativeStore';
 
 export type SegmentGenStatus =
   | { state: 'idle' }
@@ -25,6 +26,7 @@ export type SegmentGenStatus =
 export function useSegmentGeneration() {
   const [status, setStatus] = useState<SegmentGenStatus>({ state: 'idle' });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const setSegmentInStore = useNarrativeStore(s => s.setSegment);
 
   const stopPolling = useCallback(() => {
     if (intervalRef.current) {
@@ -98,6 +100,7 @@ export function useSegmentGeneration() {
               try {
                 const segment = parseGeneratedSegment(raw);
                 const issues = validateGeneratedSegment(segment);
+                setSegmentInStore(fromId, toId, segment);
                 setStatus({
                   state: 'done',
                   batchId,

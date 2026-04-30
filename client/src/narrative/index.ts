@@ -17,3 +17,13 @@ export type { OutlineGenStatus } from './useOutlineGeneration';
 export { buildSegmentRequestPayload } from './buildSegmentRequest';
 export { useSegmentGeneration } from './useSegmentGeneration';
 export type { SegmentGenStatus } from './useSegmentGeneration';
+export { useNarrativeStore } from './narrativeStore';
+export {
+  convertToGameProject,
+  downloadJson,
+  slugify,
+  type ConversionStats,
+  type ConversionResult,
+  type GameSceneGraph,
+  type GameProjectFile,
+} from './convertToGameProject';

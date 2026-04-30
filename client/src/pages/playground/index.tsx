@@ -7,6 +7,10 @@ import {
   validateBrief,
   useOutlineGeneration,
   useSegmentGeneration,
+  useNarrativeStore,
+  convertToGameProject,
+  downloadJson,
+  slugify,
   type AnchorPlan,
   type ArchetypeProfile,
   type Brief,
@@ -58,6 +62,7 @@ const Playground = () => {
             onEdgeClick={setSelectedSegment}
             selected={selectedSegment}
           />
+          <ExportBar outline={outlineGen.status.outline} />
           <div className={styles.outlineDetailsToggleRow}>
             <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
               {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
@@ -475,6 +480,41 @@ const AnchorRow: React.FC<{ anchor: AnchorPlan }> = ({ anchor }) => {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// EXPORT BAR (.gu.json + scenes.json для game/-движка)
+// ────────────────────────────────────────────────────────────────────────────
+
+const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
+  const segments = useNarrativeStore(s => s.segments);
+  const segmentCount = Object.keys(segments).length;
+  const edgeCount = outline.anchorEdges.length;
+
+  const onExport = () => {
+    const result = convertToGameProject(SAMPLE_BRIEF, outline, segments);
+    const slug = slugify(result.project.title);
+    downloadJson(`${slug}.gu.json`, result.project);
+    // Небольшой timeout, чтобы браузер не схлопнул два «download» подряд.
+    setTimeout(() => downloadJson('scenes.json', result.scenes), 250);
+  };
+
+  return (
+    <div className={styles.exportBar}>
+      <div className={styles.exportLeft}>
+        <span className={styles.exportTitle}>Экспорт в game/-движок</span>
+        <span className={styles.exportMeta}>
+          {segmentCount} из {edgeCount} сегментов сгенерировано
+          {segmentCount < edgeCount && (
+            <span className={styles.exportHint}> · остальные станут placeholder-переходами без сцен</span>
+          )}
+        </span>
+      </div>
+      <button type="button" className={styles.primaryBtn} onClick={onExport}>
+        Скачать .gu.json + scenes.json
+      </button>
     </div>
   );
 };

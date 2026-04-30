@@ -3,6 +3,7 @@ import { generateOutline, getBatchStatus, type BatchStatus } from '@root/text_ge
 import type { Brief, OutlinePlan } from './types';
 import { parseOutlinePlan } from './types';
 import { buildOutlineRequestPayload } from './buildOutlineRequest';
+import { useNarrativeStore } from './narrativeStore';
 
 export type OutlineGenStatus =
   | { state: 'idle' }
@@ -25,6 +26,7 @@ export type OutlineGenStatus =
 export function useOutlineGeneration() {
   const [status, setStatus] = useState<OutlineGenStatus>({ state: 'idle' });
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const setOutlineInStore = useNarrativeStore(s => s.setOutline);
 
   const stopPolling = useCallback(() => {
     if (intervalRef.current) {
@@ -105,6 +107,7 @@ export function useOutlineGeneration() {
               }
               try {
                 const outline = parseOutlinePlan(raw);
+                setOutlineInStore(outline);
                 setStatus({
                   state: 'done',
                   outline,
@@ -150,7 +153,8 @@ export function useOutlineGeneration() {
   const reset = useCallback(() => {
     stopPolling();
     setStatus({ state: 'idle' });
-  }, [stopPolling]);
+    setOutlineInStore(null);
+  }, [stopPolling, setOutlineInStore]);
 
   return { status, generate, reset };
 }
