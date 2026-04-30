@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { GeneratedSegment, OutlinePlan } from './types';
 
 /**
@@ -9,9 +10,17 @@ import type { GeneratedSegment, OutlinePlan } from './types';
  *   - кэш сгенерированных сегментов (key = `${fromId}->${toId}`)
  *   - кэш сгенерированных background-картинок (key = anchorId)
  *
- * Ничего не персистируется между сессиями — outline-id может меняться при
- * перегенерации, кэш быстро устаревает. Persist можно добавить позже, по
- * outline-fingerprint.
+ * Персистится в localStorage: outline стоит ~1 LLM-вызов и десятки секунд,
+ * сегменты — десятки LLM-вызовов и до 10 минут, картинки — 3-5 минут на
+ * полный outline. Терять при reload контрпродуктивно.
+ *
+ * Invalidation: setOutline сбрасывает segments и images, потому что id
+ * якорей могут не совпадать с прежними. Чтобы переиспользовать кэш при
+ * незначительных правках брифа, в будущем можно ввести persist по
+ * outline-fingerprint и сравнивать новые/старые id.
+ *
+ * Размер: ~28 якорей × ~5 KB сегмента + ~70 байт URL фона ≈ 150 KB.
+ * localStorage спокойно вмещает.
  */
 
 const segmentKey = (fromId: string, toId: string) => `${fromId}->${toId}`;
@@ -41,28 +50,42 @@ type NarrativeState = {
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
 };
 
-export const useNarrativeStore = create<NarrativeState>((set, get) => ({
-  outline: null,
-  segments: {},
-  images: {},
+export const useNarrativeStore = create<NarrativeState>()(
+  persist(
+    (set, get) => ({
+      outline: null,
+      segments: {},
+      images: {},
 
-  setOutline: outline => {
-    // При установке нового outline сбрасываем все downstream-кэши — id-якорей
-    // могли поменяться при перегенерации.
-    set({ outline, segments: {}, images: {} });
-  },
+      setOutline: outline => {
+        // При установке нового outline сбрасываем все downstream-кэши — id-якорей
+        // могли поменяться при перегенерации.
+        set({ outline, segments: {}, images: {} });
+      },
 
-  setSegment: (fromId, toId, segment) => {
-    set(s => ({ segments: { ...s.segments, [segmentKey(fromId, toId)]: segment } }));
-  },
+      setSegment: (fromId, toId, segment) => {
+        set(s => ({ segments: { ...s.segments, [segmentKey(fromId, toId)]: segment } }));
+      },
 
-  clearSegments: () => set({ segments: {} }),
+      clearSegments: () => set({ segments: {} }),
 
-  setImage: (anchorId, state) => {
-    set(s => ({ images: { ...s.images, [anchorId]: state } }));
-  },
+      setImage: (anchorId, state) => {
+        set(s => ({ images: { ...s.images, [anchorId]: state } }));
+      },
 
-  clearImages: () => set({ images: {} }),
+      clearImages: () => set({ images: {} }),
 
-  getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
-}));
+      getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
+    }),
+    {
+      name: 'gu-narrative-state',
+      version: 1,
+      // Персистим только данные, не действия.
+      partialize: state => ({
+        outline: state.outline,
+        segments: state.segments,
+        images: state.images,
+      }),
+    },
+  ),
+);
