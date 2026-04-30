@@ -7,6 +7,7 @@ import {
   validateBrief,
   useOutlineGeneration,
   useSegmentGeneration,
+  useBulkSegmentGeneration,
   useNarrativeStore,
   convertToGameProject,
   downloadJson,
@@ -14,6 +15,7 @@ import {
   type AnchorPlan,
   type ArchetypeProfile,
   type Brief,
+  type BulkGenStatus,
   type LoveInterestCard,
   type OutlineGenStatus,
   type OutlinePlan,
@@ -31,6 +33,7 @@ const Playground = () => {
   const warningCount = issues.filter(i => i.severity === 'warning').length;
   const outlineGen = useOutlineGeneration();
   const segmentGen = useSegmentGeneration();
+  const bulkGen = useBulkSegmentGeneration();
 
   const isBlocked = errorCount > 0;
 
@@ -55,35 +58,41 @@ const Playground = () => {
         onReset={outlineGen.reset}
       />
 
-      {outlineGen.status.state === 'done' && (
-        <>
-          <OutlineGraph
-            outline={outlineGen.status.outline}
-            onEdgeClick={setSelectedSegment}
-            selected={selectedSegment}
-          />
-          <ExportBar outline={outlineGen.status.outline} />
-          <div className={styles.outlineDetailsToggleRow}>
-            <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
-              {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
-            </button>
-          </div>
-          {showAnchorList && <OutlineResult outline={outlineGen.status.outline} />}
-          {selectedSegment && (
-            <SegmentDrawer
-              brief={SAMPLE_BRIEF}
-              outline={outlineGen.status.outline}
-              selection={selectedSegment}
-              status={segmentGen.status}
-              onGenerate={segmentGen.generate}
-              onClose={() => {
-                setSelectedSegment(null);
-                segmentGen.reset();
-              }}
-            />
-          )}
-        </>
-      )}
+      {outlineGen.status.state === 'done' &&
+        (() => {
+          const outline = outlineGen.status.outline;
+          return (
+            <>
+              <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />
+              <BulkGenBar
+                status={bulkGen.status}
+                onStart={() => bulkGen.start(SAMPLE_BRIEF, outline)}
+                onCancel={bulkGen.cancel}
+                onReset={bulkGen.reset}
+              />
+              <ExportBar outline={outline} />
+              <div className={styles.outlineDetailsToggleRow}>
+                <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
+                  {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
+                </button>
+              </div>
+              {showAnchorList && <OutlineResult outline={outline} />}
+              {selectedSegment && (
+                <SegmentDrawer
+                  brief={SAMPLE_BRIEF}
+                  outline={outline}
+                  selection={selectedSegment}
+                  status={segmentGen.status}
+                  onGenerate={segmentGen.generate}
+                  onClose={() => {
+                    setSelectedSegment(null);
+                    segmentGen.reset();
+                  }}
+                />
+              )}
+            </>
+          );
+        })()}
 
       {outlineGen.status.state === 'error' && (
         <div className={styles.outlineResult}>
@@ -479,6 +488,93 @@ const AnchorRow: React.FC<{ anchor: AnchorPlan }> = ({ anchor }) => {
             ))}
           </div>
         )}
+      </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// BULK SEGMENT GENERATION (все сегменты outline-а в один клик)
+// ────────────────────────────────────────────────────────────────────────────
+
+const BulkGenBar: React.FC<{
+  status: BulkGenStatus;
+  onStart: () => void;
+  onCancel: () => void;
+  onReset: () => void;
+}> = ({ status, onStart, onCancel, onReset }) => {
+  if (status.state === 'idle') {
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>Bulk-генерация всех сегментов</span>
+          <span className={styles.bulkMeta}>
+            запустит сразу 3 LLM-вызова, остальные встанут в очередь · ~5–10 минут на полный outline
+          </span>
+        </div>
+        <button type="button" className={styles.primaryBtn} onClick={onStart}>
+          Сгенерировать все сегменты
+        </button>
+      </div>
+    );
+  }
+
+  if (status.state === 'running') {
+    const pct = status.total === 0 ? 100 : Math.round((status.completed / status.total) * 100);
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Bulk-генерация · {status.completed} / {status.total}
+            {status.cancelled && ' (отменяется...)'}
+          </span>
+          <div className={styles.progressTrack}>
+            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          </div>
+          <span className={styles.bulkMeta}>
+            ⚙ в процессе: {status.inFlight} · ⌛ в очереди: {status.remaining}
+            {status.failures.length > 0 && ` · ✗ ошибок: ${status.failures.length}`}
+          </span>
+        </div>
+        <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={status.cancelled}>
+          {status.cancelled ? 'Отменяется...' : 'Остановить'}
+        </button>
+      </div>
+    );
+  }
+
+  // state === 'done'
+  return (
+    <div className={styles.bulkBar}>
+      <div className={styles.bulkLeft}>
+        <span className={styles.bulkTitle}>
+          Bulk-генерация завершена · {status.completed} / {status.total}
+          {status.cancelled && ' (остановлено)'}
+        </span>
+        <span className={styles.bulkMeta}>
+          {status.failures.length > 0 ? (
+            <>
+              ✗ {status.failures.length} ошибок:{' '}
+              {status.failures
+                .slice(0, 3)
+                .map(f => `${f.fromId}→${f.toId}`)
+                .join(', ')}
+              {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
+            </>
+          ) : (
+            'все сегменты сгенерированы успешно'
+          )}
+        </span>
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {status.failures.length > 0 && (
+          <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+            Скрыть
+          </button>
+        )}
+        <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+          OK
+        </button>
       </div>
     </div>
   );

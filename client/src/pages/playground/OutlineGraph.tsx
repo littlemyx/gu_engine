@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type Edge, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import type { OutlinePlan } from '@/narrative';
+import { useNarrativeStore, type OutlinePlan } from '@/narrative';
 import { AnchorNode } from './AnchorNode';
 import { computeAnchorLayout } from './outlineLayout';
 import styles from './OutlineGraph.module.css';
@@ -17,7 +17,8 @@ const InnerGraph: React.FC<{
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
 }> = ({ outline, onEdgeClick, selected }) => {
-  const { nodes, edges } = useMemo(() => computeAnchorLayout(outline), [outline]);
+  const segments = useNarrativeStore(s => s.segments);
+  const { nodes, edges } = useMemo(() => computeAnchorLayout(outline, segments), [outline, segments]);
 
   // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {

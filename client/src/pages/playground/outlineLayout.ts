@@ -1,5 +1,5 @@
 import type { Node, Edge } from '@xyflow/react';
-import type { AnchorPlan, OutlinePlan } from '@/narrative';
+import type { AnchorPlan, GeneratedSegment, OutlinePlan } from '@/narrative';
 
 export type AnchorNodeData = AnchorPlan & {
   routeColor: string;
@@ -27,7 +27,10 @@ const COMMON_COLOR = '#fbbf24'; // amber для common-route
  * Получаем читаемую компоновку: common-route одной горизонтальной линией
  * сверху, после common_climax расходимся вниз на параллельные маршруты LI.
  */
-export function computeAnchorLayout(outline: OutlinePlan): {
+export function computeAnchorLayout(
+  outline: OutlinePlan,
+  segments: Record<string, GeneratedSegment> = {},
+): {
   nodes: Node<AnchorNodeData>[];
   edges: Edge[];
 } {
@@ -96,16 +99,22 @@ export function computeAnchorLayout(outline: OutlinePlan): {
 
   const edges: Edge[] = outline.anchorEdges.map((e, i) => {
     const targetAnchor = anchorById.get(e.to);
+    const hasSegment = !!segments[`${e.from}->${e.to}`];
+    const stroke = targetAnchor ? routeColor(targetAnchor.routeId) : '#9ca3af';
     return {
       id: `e-${i}-${e.from}-${e.to}`,
       source: e.from,
       target: e.to,
       type: 'smoothstep',
       animated: false,
-      style: {
-        stroke: targetAnchor ? routeColor(targetAnchor.routeId) : '#9ca3af',
-        strokeWidth: 1.5,
-      },
+      // Сгенерированные сегменты — толстая сплошная линия;
+      // несгенерированные — тонкая пунктирная (placeholder).
+      style: hasSegment
+        ? { stroke, strokeWidth: 2.5 }
+        : { stroke, strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.6 },
+      label: hasSegment ? '✓' : undefined,
+      labelStyle: hasSegment ? { fill: stroke, fontWeight: 700 } : undefined,
+      labelBgStyle: hasSegment ? { fill: '#fff', fillOpacity: 0.9 } : undefined,
     };
   });
 

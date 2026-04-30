@@ -18,6 +18,8 @@ export { buildSegmentRequestPayload } from './buildSegmentRequest';
 export { useSegmentGeneration } from './useSegmentGeneration';
 export type { SegmentGenStatus } from './useSegmentGeneration';
 export { useNarrativeStore } from './narrativeStore';
+export { useBulkSegmentGeneration } from './useBulkSegmentGeneration';
+export type { BulkGenStatus, BulkFailure } from './useBulkSegmentGeneration';
 export {
   convertToGameProject,
   downloadJson,
