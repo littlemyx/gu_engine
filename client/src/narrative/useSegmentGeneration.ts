@@ -3,6 +3,7 @@ import { generateSegment, getBatchStatus, type BatchStatus } from '@root/text_ge
 import type { Brief, GeneratedSegment, OutlinePlan, SegmentIssue } from './types';
 import { parseGeneratedSegment, validateGeneratedSegment } from './types';
 import { buildSegmentRequestPayload } from './buildSegmentRequest';
+import { validateSegmentSemantics } from './validateSegment';
 import { useNarrativeStore } from './narrativeStore';
 
 export type SegmentGenStatus =
@@ -99,7 +100,14 @@ export function useSegmentGeneration() {
               }
               try {
                 const segment = parseGeneratedSegment(raw);
-                const issues = validateGeneratedSegment(segment);
+                const issues: SegmentIssue[] = [
+                  ...validateGeneratedSegment(segment),
+                  ...validateSegmentSemantics(segment, {
+                    anchorFrom: payload.anchorFrom,
+                    anchorTo: payload.anchorTo,
+                    archetype: payload.archetypeProfile,
+                  }),
+                ];
                 setSegmentInStore(fromId, toId, segment);
                 setStatus({
                   state: 'done',

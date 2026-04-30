@@ -1,5 +1,5 @@
 import type { Node, Edge } from '@xyflow/react';
-import type { AnchorPlan, GeneratedSegment, OutlinePlan } from '@/narrative';
+import type { AnchorPlan, GeneratedSegment, OutlinePlan, SegmentIssue } from '@/narrative';
 
 export type AnchorNodeData = AnchorPlan & {
   routeColor: string;
@@ -30,6 +30,7 @@ const COMMON_COLOR = '#fbbf24'; // amber для common-route
 export function computeAnchorLayout(
   outline: OutlinePlan,
   segments: Record<string, GeneratedSegment> = {},
+  validations: Record<string, SegmentIssue[]> = {},
 ): {
   nodes: Node<AnchorNodeData>[];
   edges: Edge[];
@@ -99,22 +100,34 @@ export function computeAnchorLayout(
 
   const edges: Edge[] = outline.anchorEdges.map((e, i) => {
     const targetAnchor = anchorById.get(e.to);
-    const hasSegment = !!segments[`${e.from}->${e.to}`];
-    const stroke = targetAnchor ? routeColor(targetAnchor.routeId) : '#9ca3af';
+    const segKey = `${e.from}->${e.to}`;
+    const hasSegment = !!segments[segKey];
+    const segIssues = validations[segKey] ?? [];
+    const hasError = segIssues.some(it => it.severity === 'error');
+    const hasWarning = segIssues.some(it => it.severity === 'warning');
+    const routeStroke = targetAnchor ? routeColor(targetAnchor.routeId) : '#9ca3af';
+    // Цветовая схема:
+    //   нет сегмента      → пунктир, цвет маршрута, низкая прозрачность
+    //   сегмент валиден   → толстая сплошная, цвет маршрута, ✓
+    //   warning           → жёлтый цвет, ⚠
+    //   error             → красный цвет, ✗
+    const stroke = hasError ? '#dc2626' : hasWarning ? '#d97706' : routeStroke;
+    const label = hasError ? '✗' : hasWarning ? '⚠' : hasSegment ? '✓' : undefined;
+    const labelTooltip =
+      segIssues.length > 0 ? segIssues.map(it => `[${it.severity}] ${it.scope}: ${it.message}`).join('\n') : undefined;
     return {
       id: `e-${i}-${e.from}-${e.to}`,
       source: e.from,
       target: e.to,
       type: 'smoothstep',
       animated: false,
-      // Сгенерированные сегменты — толстая сплошная линия;
-      // несгенерированные — тонкая пунктирная (placeholder).
       style: hasSegment
-        ? { stroke, strokeWidth: 2.5 }
-        : { stroke, strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.6 },
-      label: hasSegment ? '✓' : undefined,
-      labelStyle: hasSegment ? { fill: stroke, fontWeight: 700 } : undefined,
-      labelBgStyle: hasSegment ? { fill: '#fff', fillOpacity: 0.9 } : undefined,
+        ? { stroke, strokeWidth: hasError ? 3 : 2.5 }
+        : { stroke: routeStroke, strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.6 },
+      label,
+      labelStyle: label ? { fill: stroke, fontWeight: 700 } : undefined,
+      labelBgStyle: label ? { fill: '#fff', fillOpacity: 0.9 } : undefined,
+      data: { tooltip: labelTooltip },
     };
   });
 

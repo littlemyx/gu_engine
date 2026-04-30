@@ -17,6 +17,8 @@ export type { OutlineGenStatus } from './useOutlineGeneration';
 export { buildSegmentRequestPayload } from './buildSegmentRequest';
 export { useSegmentGeneration } from './useSegmentGeneration';
 export type { SegmentGenStatus } from './useSegmentGeneration';
+export { validateSegmentSemantics, getAllSegmentValidations } from './validateSegment';
+export type { SegmentValidationContext } from './validateSegment';
 export { useNarrativeStore } from './narrativeStore';
 export type { ImageGenState } from './narrativeStore';
 export { useBriefStore } from './briefStore';

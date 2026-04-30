@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type Edge, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { useNarrativeStore, type OutlinePlan } from '@/narrative';
+import { getAllSegmentValidations, useBriefStore, useNarrativeStore, type OutlinePlan } from '@/narrative';
 import { AnchorNode } from './AnchorNode';
 import { computeAnchorLayout } from './outlineLayout';
 import styles from './OutlineGraph.module.css';
@@ -17,8 +17,13 @@ const InnerGraph: React.FC<{
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
 }> = ({ outline, onEdgeClick, selected }) => {
+  const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
-  const { nodes, edges } = useMemo(() => computeAnchorLayout(outline, segments), [outline, segments]);
+  const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
+  const { nodes, edges } = useMemo(
+    () => computeAnchorLayout(outline, segments, validations),
+    [outline, segments, validations],
+  );
 
   // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {
@@ -58,6 +63,19 @@ export const OutlineGraph: React.FC<{
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
 }> = ({ outline, onEdgeClick, selected }) => {
+  const brief = useBriefStore(s => s.brief);
+  const segments = useNarrativeStore(s => s.segments);
+  const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
+  const validationCounts = useMemo(() => {
+    let errors = 0;
+    let warnings = 0;
+    for (const issues of Object.values(validations)) {
+      if (issues.some(it => it.severity === 'error')) errors++;
+      else if (issues.some(it => it.severity === 'warning')) warnings++;
+    }
+    return { errors, warnings };
+  }, [validations]);
+
   return (
     <div className={styles.graphContainer}>
       <div className={styles.graphHeader}>
@@ -105,6 +123,13 @@ export const OutlineGraph: React.FC<{
               );
             });
         })()}
+        {(validationCounts.errors > 0 || validationCounts.warnings > 0) && (
+          <span className={styles.legendItem} style={{ color: validationCounts.errors > 0 ? '#dc2626' : '#d97706' }}>
+            {validationCounts.errors > 0 && <>✗ {validationCounts.errors} невалидных</>}
+            {validationCounts.errors > 0 && validationCounts.warnings > 0 && ' · '}
+            {validationCounts.warnings > 0 && <>⚠ {validationCounts.warnings} с warning</>}
+          </span>
+        )}
         <span className={styles.legendMeta}>
           {outline.anchors.length} якорей · {outline.anchorEdges.length} рёбер
         </span>
