@@ -1,0 +1,98 @@
+.graphContainer {
+  margin: 16px 32px 0 32px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.graphHeader {
+  padding: 18px 20px 12px 20px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.graphTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+}
+
+.graphLogline {
+  font-size: 13px;
+  color: #4b5563;
+  font-style: italic;
+  margin: 0 0 6px 0;
+}
+
+.graphConflict {
+  font-size: 12px;
+  color: #6b7280;
+  margin: 0 0 12px 0;
+}
+
+.actsStrip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.actChip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 3px 10px;
+  font-size: 11px;
+}
+
+.actChipNum {
+  font-weight: 600;
+  color: #4f46e5;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.actChipPurpose {
+  color: #4b5563;
+}
+
+.graphCanvas {
+  height: 600px;
+  background: #fafaf9;
+}
+
+.graphLegend {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  border-top: 1px solid #f3f4f6;
+  font-size: 12px;
+  color: #4b5563;
+  flex-wrap: wrap;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.legendDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.legendMeta {
+  margin-left: auto;
+  color: #9ca3af;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+}

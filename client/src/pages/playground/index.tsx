@@ -13,10 +13,12 @@ import {
   type OutlineGenStatus,
   type OutlinePlan,
 } from '@/narrative';
+import { OutlineGraph } from './OutlineGraph';
 import styles from './playground.module.css';
 
 const Playground = () => {
   const [showRawBrief, setShowRawBrief] = useState(false);
+  const [showAnchorList, setShowAnchorList] = useState(false);
   const issues = useMemo(() => validateBrief(SAMPLE_BRIEF), []);
   const errorCount = issues.filter(i => i.severity === 'error').length;
   const warningCount = issues.filter(i => i.severity === 'warning').length;
@@ -45,7 +47,17 @@ const Playground = () => {
         onReset={outlineGen.reset}
       />
 
-      {outlineGen.status.state === 'done' && <OutlineResult outline={outlineGen.status.outline} />}
+      {outlineGen.status.state === 'done' && (
+        <>
+          <OutlineGraph outline={outlineGen.status.outline} />
+          <div className={styles.outlineDetailsToggleRow}>
+            <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
+              {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
+            </button>
+          </div>
+          {showAnchorList && <OutlineResult outline={outlineGen.status.outline} />}
+        </>
+      )}
 
       {outlineGen.status.state === 'error' && (
         <div className={styles.outlineResult}>
