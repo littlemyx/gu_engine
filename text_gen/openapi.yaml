@@ -62,6 +62,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/segment:
+    post:
+      operationId: generateSegment
+      summary: Generate scene-level draft DAG between two outline anchors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SegmentRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -280,6 +298,42 @@ components:
             Map of archetypeId -> ArchetypeProfile, only the archetypes
             referenced by the brief's loveInterests. Embedded into the prompt
             so the LLM knows which beats are required per route.
+
+    SegmentRequest:
+      type: object
+      required:
+        - brief
+        - anchorFrom
+        - anchorTo
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+          description: Brief context (characters, world, tone, art style, scale).
+        archetypeProfile:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            ArchetypeProfile of the LI on this route, or null for common-route
+            segments. Used by the LLM to apply trajectory rules and beat themes.
+        anchorFrom:
+          type: object
+          additionalProperties: true
+          description: AnchorPlan of the source anchor (segment entry).
+        anchorTo:
+          type: object
+          additionalProperties: true
+          description: |
+            AnchorPlan of the target anchor (segment exit). Its
+            entryStateRequired ranges/flags define the success criterion.
+        existingFlags:
+          type: array
+          items:
+            type: string
+          description: |
+            Flags already established by ancestors of anchorFrom in the outline.
+            Helps the LLM stay consistent with what has already happened.
 
     ErrorResponse:
       type: object

@@ -14,3 +14,6 @@ export type { BriefIssue } from './validateBrief';
 export { buildOutlineRequestPayload } from './buildOutlineRequest';
 export { useOutlineGeneration } from './useOutlineGeneration';
 export type { OutlineGenStatus } from './useOutlineGeneration';
+export { buildSegmentRequestPayload } from './buildSegmentRequest';
+export { useSegmentGeneration } from './useSegmentGeneration';
+export type { SegmentGenStatus } from './useSegmentGeneration';

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type NodeTypes } from '@xyflow/react';
+import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type Edge, type NodeTypes } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import type { OutlinePlan } from '@/narrative';
 import { AnchorNode } from './AnchorNode';
@@ -10,18 +10,39 @@ const nodeTypes: NodeTypes = {
   anchor: AnchorNode,
 };
 
-const InnerGraph: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
+export type SelectedSegment = { fromId: string; toId: string };
+
+const InnerGraph: React.FC<{
+  outline: OutlinePlan;
+  onEdgeClick?: (s: SelectedSegment) => void;
+  selected?: SelectedSegment | null;
+}> = ({ outline, onEdgeClick, selected }) => {
   const { nodes, edges } = useMemo(() => computeAnchorLayout(outline), [outline]);
+
+  // Подсветить выбранное ребро
+  const styledEdges: Edge[] = useMemo(() => {
+    if (!selected) return edges;
+    return edges.map(e =>
+      e.source === selected.fromId && e.target === selected.toId
+        ? {
+            ...e,
+            animated: true,
+            style: { ...(e.style ?? {}), strokeWidth: 3 },
+          }
+        : e,
+    );
+  }, [edges, selected]);
 
   return (
     <ReactFlow
       nodes={nodes}
-      edges={edges}
+      edges={styledEdges}
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 1.0 }}
       minZoom={0.2}
       maxZoom={1.5}
+      onEdgeClick={(_, edge) => onEdgeClick?.({ fromId: edge.source, toId: edge.target })}
       proOptions={{ hideAttribution: true }}
     >
       <Background gap={20} color="#e5e7eb" />
@@ -31,7 +52,11 @@ const InnerGraph: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
   );
 };
 
-export const OutlineGraph: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
+export const OutlineGraph: React.FC<{
+  outline: OutlinePlan;
+  onEdgeClick?: (s: SelectedSegment) => void;
+  selected?: SelectedSegment | null;
+}> = ({ outline, onEdgeClick, selected }) => {
   return (
     <div className={styles.graphContainer}>
       <div className={styles.graphHeader}>
@@ -54,9 +79,12 @@ export const OutlineGraph: React.FC<{ outline: OutlinePlan }> = ({ outline }) =>
       </div>
       <div className={styles.graphCanvas}>
         <ReactFlowProvider>
-          <InnerGraph outline={outline} />
+          <InnerGraph outline={outline} onEdgeClick={onEdgeClick} selected={selected} />
         </ReactFlowProvider>
       </div>
+      {onEdgeClick && (
+        <div className={styles.graphHint}>Нажми на ребро между якорями, чтобы открыть генератор сцен сегмента →</div>
+      )}
       <div className={styles.graphLegend}>
         <span className={styles.legendItem}>
           <span className={styles.legendDot} style={{ background: '#fbbf24' }} />

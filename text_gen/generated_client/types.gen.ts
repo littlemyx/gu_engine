@@ -117,6 +117,43 @@ export type OutlineRequest = {
     };
 };
 
+export type SegmentRequest = {
+    /**
+     * Brief context (characters, world, tone, art style, scale).
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * ArchetypeProfile of the LI on this route, or null for common-route
+     * segments. Used by the LLM to apply trajectory rules and beat themes.
+     *
+     */
+    archetypeProfile?: {
+        [key: string]: unknown;
+    };
+    /**
+     * AnchorPlan of the source anchor (segment entry).
+     */
+    anchorFrom: {
+        [key: string]: unknown;
+    };
+    /**
+     * AnchorPlan of the target anchor (segment exit). Its
+     * entryStateRequired ranges/flags define the success criterion.
+     *
+     */
+    anchorTo: {
+        [key: string]: unknown;
+    };
+    /**
+     * Flags already established by ancestors of anchorFrom in the outline.
+     * Helps the LLM stay consistent with what has already happened.
+     *
+     */
+    existingFlags?: Array<string>;
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -168,6 +205,22 @@ export type GenerateOutlineResponses = {
 };
 
 export type GenerateOutlineResponse = GenerateOutlineResponses[keyof GenerateOutlineResponses];
+
+export type GenerateSegmentData = {
+    body: SegmentRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/segment';
+};
+
+export type GenerateSegmentResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateSegmentResponse = GenerateSegmentResponses[keyof GenerateSegmentResponses];
 
 export type ListBatchesData = {
     body?: never;

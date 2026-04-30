@@ -6,6 +6,7 @@ import {
   SAMPLE_BRIEF,
   validateBrief,
   useOutlineGeneration,
+  useSegmentGeneration,
   type AnchorPlan,
   type ArchetypeProfile,
   type Brief,
@@ -13,16 +14,19 @@ import {
   type OutlineGenStatus,
   type OutlinePlan,
 } from '@/narrative';
-import { OutlineGraph } from './OutlineGraph';
+import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
+import { SegmentDrawer } from './SegmentDrawer';
 import styles from './playground.module.css';
 
 const Playground = () => {
   const [showRawBrief, setShowRawBrief] = useState(false);
   const [showAnchorList, setShowAnchorList] = useState(false);
+  const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null);
   const issues = useMemo(() => validateBrief(SAMPLE_BRIEF), []);
   const errorCount = issues.filter(i => i.severity === 'error').length;
   const warningCount = issues.filter(i => i.severity === 'warning').length;
   const outlineGen = useOutlineGeneration();
+  const segmentGen = useSegmentGeneration();
 
   const isBlocked = errorCount > 0;
 
@@ -49,13 +53,30 @@ const Playground = () => {
 
       {outlineGen.status.state === 'done' && (
         <>
-          <OutlineGraph outline={outlineGen.status.outline} />
+          <OutlineGraph
+            outline={outlineGen.status.outline}
+            onEdgeClick={setSelectedSegment}
+            selected={selectedSegment}
+          />
           <div className={styles.outlineDetailsToggleRow}>
             <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
               {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
             </button>
           </div>
           {showAnchorList && <OutlineResult outline={outlineGen.status.outline} />}
+          {selectedSegment && (
+            <SegmentDrawer
+              brief={SAMPLE_BRIEF}
+              outline={outlineGen.status.outline}
+              selection={selectedSegment}
+              status={segmentGen.status}
+              onGenerate={segmentGen.generate}
+              onClose={() => {
+                setSelectedSegment(null);
+                segmentGen.reset();
+              }}
+            />
+          )}
         </>
       )}
 

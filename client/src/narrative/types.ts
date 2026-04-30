@@ -457,3 +457,166 @@ export function parseOutlinePlan(raw: string): OutlinePlan {
     anchorEdges: obj.anchorEdges as AnchorEdge[],
   };
 }
+
+// ============================================================================
+// SEGMENT GENERATION (draft-уровень: что LLM возвращает на стадии branch-gen)
+// ============================================================================
+
+/**
+ * Сцена в "черновой" форме, какой её рождает branch-генератор.
+ *
+ * Это упрощённая версия Scene:
+ *   - narration — простая строка (без условных вставок; уйдёт во второй проход)
+ *   - charactersPresent / location / dialogue / choices — как ожидается
+ *   - nextSceneId === null означает «ветка ведёт в anchorTo»
+ *     (runtime-движок при null будет идти к target-якорю сегмента)
+ *
+ * Полная Scene-структура с conditional narration и asset-меткой собирается
+ * валидатором/конвертером на следующем витке пайплайна.
+ */
+export type DraftDialogueLine = {
+  speaker: string;
+  emotion?: string;
+  line: string;
+};
+
+export type DraftChoice = {
+  id: string;
+  text: string;
+  effects: {
+    stateDeltas: Record<StateVarPath, number>;
+    flagSet: string[];
+    flagClear: string[];
+  };
+  /** null = ветка ведёт в anchorTo сегмента. */
+  nextSceneId: string | null;
+};
+
+export type DraftScene = {
+  id: string;
+  location: string;
+  timeMarker: string;
+  charactersPresent: string[];
+  narration: string;
+  dialogue: DraftDialogueLine[];
+  choices: DraftChoice[];
+};
+
+export type GeneratedSegment = {
+  fromAnchorId: string;
+  toAnchorId: string;
+  /** id первой сцены сегмента (куда runtime попадает из anchorFrom). */
+  entrySceneId: string;
+  scenes: DraftScene[];
+};
+
+export function parseGeneratedSegment(raw: string): GeneratedSegment {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`segment JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('segment must be an object');
+  }
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.scenes)) {
+    throw new Error('segment missing required array: scenes');
+  }
+  if (!obj.entrySceneId || typeof obj.entrySceneId !== 'string') {
+    throw new Error('segment missing required string: entrySceneId');
+  }
+
+  const scenes: DraftScene[] = obj.scenes.map((s, i) => {
+    const scene = s as Record<string, unknown>;
+    if (!scene.id) throw new Error(`scenes[${i}] missing id`);
+    return {
+      id: String(scene.id),
+      location: String(scene.location ?? ''),
+      timeMarker: String(scene.timeMarker ?? ''),
+      charactersPresent: Array.isArray(scene.charactersPresent) ? (scene.charactersPresent as string[]) : [],
+      narration: String(scene.narration ?? ''),
+      dialogue: Array.isArray(scene.dialogue) ? (scene.dialogue as DraftDialogueLine[]) : [],
+      choices: Array.isArray(scene.choices)
+        ? (scene.choices as unknown[]).map((c, j): DraftChoice => {
+            const choice = c as Record<string, unknown>;
+            const effects = (choice.effects ?? {}) as Record<string, unknown>;
+            return {
+              id: String(choice.id ?? `${scene.id}_c${j}`),
+              text: String(choice.text ?? ''),
+              effects: {
+                stateDeltas: (effects.stateDeltas ?? {}) as Record<StateVarPath, number>,
+                flagSet: Array.isArray(effects.flagSet) ? (effects.flagSet as string[]) : [],
+                flagClear: Array.isArray(effects.flagClear) ? (effects.flagClear as string[]) : [],
+              },
+              nextSceneId: choice.nextSceneId ? String(choice.nextSceneId) : null,
+            };
+          })
+        : [],
+    };
+  });
+
+  return {
+    fromAnchorId: String(obj.fromAnchorId ?? ''),
+    toAnchorId: String(obj.toAnchorId ?? ''),
+    entrySceneId: String(obj.entrySceneId),
+    scenes,
+  };
+}
+
+// ============================================================================
+// SEGMENT VALIDATION (basic reachability check)
+// ============================================================================
+
+export type SegmentIssue = {
+  severity: 'error' | 'warning';
+  scope: string;
+  message: string;
+};
+
+/**
+ * Базовая проверка корректности сгенерированного сегмента:
+ *   - все nextSceneId ссылаются на существующую сцену в сегменте, либо null (anchor)
+ *   - entrySceneId присутствует в scenes
+ *   - есть хотя бы одна ветка, ведущая к anchorTo (nextSceneId == null)
+ *
+ * State-инвариант anchorTo пока не проверяется (это next iteration).
+ */
+export function validateGeneratedSegment(seg: GeneratedSegment): SegmentIssue[] {
+  const issues: SegmentIssue[] = [];
+  const sceneIds = new Set(seg.scenes.map(s => s.id));
+
+  if (!sceneIds.has(seg.entrySceneId)) {
+    issues.push({
+      severity: 'error',
+      scope: 'entry',
+      message: `entrySceneId "${seg.entrySceneId}" не найден среди сцен сегмента`,
+    });
+  }
+
+  let exitCount = 0;
+  for (const scene of seg.scenes) {
+    for (const choice of scene.choices) {
+      if (choice.nextSceneId === null) {
+        exitCount++;
+      } else if (!sceneIds.has(choice.nextSceneId)) {
+        issues.push({
+          severity: 'error',
+          scope: `${scene.id}/choice/${choice.id}`,
+          message: `nextSceneId "${choice.nextSceneId}" не найден среди сцен сегмента`,
+        });
+      }
+    }
+  }
+
+  if (exitCount === 0) {
+    issues.push({
+      severity: 'error',
+      scope: 'exit',
+      message: 'нет ни одной ветки, ведущей в anchorTo (хотя бы один choice.nextSceneId должен быть null)',
+    });
+  }
+
+  return issues;
+}

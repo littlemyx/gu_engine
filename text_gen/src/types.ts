@@ -31,6 +31,18 @@ export interface OutlineRequest {
   archetypeProfiles: Record<string, unknown>;
 }
 
+/**
+ * Запрос на генерацию scene-уровневого DAG между двумя якорями.
+ * Все вложенные структуры — opaque JSON (text_gen их не интерпретирует).
+ */
+export interface SegmentRequest {
+  brief: unknown;
+  archetypeProfile: unknown | null;
+  anchorFrom: unknown;
+  anchorTo: unknown;
+  existingFlags?: string[];
+}
+
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ItemState {

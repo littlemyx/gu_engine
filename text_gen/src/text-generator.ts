@@ -6,6 +6,7 @@ import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
   OutlineRequest,
+  SegmentRequest,
 } from './types.js';
 
 const SYSTEM_PROMPT = `Ты — опытный сценарист интерактивных визуальных новелл. Твоя задача — создать детальный костяк истории, который станет основой для разработки визуальной новеллы.
@@ -298,5 +299,137 @@ export async function processOutline(
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[outline] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// SEGMENT GENERATION (scenes between two outline anchors)
+// ============================================================================
+
+const SEGMENT_SYSTEM_PROMPT = `Ты — branch-генератор сцен для романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, протагонист (blank slate, реплики = выборы игрока), каст LI.
+  2. archetypeProfile — профиль архетипа этого маршрута, или null для common-route.
+  3. anchorFrom — стартовый якорь сегмента (что игрок только что прошёл).
+  4. anchorTo — целевой якорь сегмента, куда сегмент обязан игрока привести.
+     Его entryStateRequired (ranges + flags) — это инвариант, который должен
+     достигаться как минимум по одному пути выборов.
+  5. existingFlags — флаги, уже выставленные предками anchorFrom.
+
+Твоя задача — сгенерировать **локальный DAG из 3-6 сцен**, который соединяет
+anchorFrom и anchorTo. Каждая сцена имеет 2-3 выбора. Выборы влияют на state
+(stateDeltas + flag set/clear). Хотя бы одна "успешная" ветка через выборы
+должна привести state в anchorTo.entryStateRequired.
+
+Жёсткие правила:
+  1. Сцен ровно столько, сколько нужно нарративно: 3 — для коротких сегментов
+     (li_introduction, route_opening), 4-5 — для средних (obstacle, required_beat),
+     5-6 — для крупных (crisis). Не растягивай.
+  2. Структура графа — DAG с 1-2 локальными "пузырями": некоторые выборы ведут в
+     разные сцены, но к концу сегмента все пути сходятся к anchorTo. Pure линейная
+     цепочка тоже допустима для коротких сегментов.
+  3. id сцен — короткие snake_case, читаемые ("kira_walk_park", "yuki_cafe_dawn").
+  4. nextSceneId выбора:
+     - id другой сцены сегмента → структурное ветвление
+     - null → ветка ведёт в anchorTo (выход сегмента)
+  5. Хотя бы один выбор в сегменте должен иметь nextSceneId === null.
+  6. stateDeltas — небольшие шаги (-0.1...+0.15 типично), используй пути
+     state-переменных из state-схемы брифа: "relationship[<liId>].affection",
+     "relationship[<liId>].trust", "relationship[<liId>].tension", и доп. вары
+     из archetypeProfile.additionalStateVars.
+  7. flagSet включает все required-флаги anchorTo по пути хотя бы одного выбора
+     (можно распределить по разным сценам сегмента).
+  8. Соответствуй trajectory.shape архетипа: например, для "monotone_gradual" не
+     делай резких скачков (max 0.08 за выбор); для "tension_to_affection_pivot"
+     один выбор должен быть "переломным" (резкий tension drop + affection jump).
+  9. Текст narration — 2-4 предложения, по-русски. От 2-го лица протагонист
+     ("Ты входишь...", "Перед тобой..."). Без внутренних монологов.
+  10. dialogue — реплики только LI и других NPC, не протагониста (его реплики —
+      это choices). emotion поле опционально (например "tense", "soft", "wistful").
+  11. choice.text — короткая фраза, что игрок (= протагонист) делает или говорит.
+      До 12 слов.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "fromAnchorId": "...",
+  "toAnchorId": "...",
+  "entrySceneId": "...",
+  "scenes": [
+    {
+      "id": "...",
+      "location": "...",
+      "timeMarker": "...",
+      "charactersPresent": ["kira"],
+      "narration": "...",
+      "dialogue": [
+        { "speaker": "kira", "emotion": "tense", "line": "..." }
+      ],
+      "choices": [
+        {
+          "id": "scene_id_c1",
+          "text": "...",
+          "effects": {
+            "stateDeltas": { "relationship[kira].affection": 0.1 },
+            "flagSet": ["..."],
+            "flagClear": []
+          },
+          "nextSceneId": "next_scene_id_or_null"
+        }
+      ]
+    }
+  ]
+}`;
+
+export async function processSegment(batch: BatchState, body: SegmentRequest): Promise<void> {
+  const itemId = 'segment';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set');
+    }
+
+    const openai = createOpenAI({ apiKey });
+
+    const briefJson = JSON.stringify(body.brief, null, 2);
+    const archetypeJson = body.archetypeProfile ? JSON.stringify(body.archetypeProfile, null, 2) : 'null';
+    const fromJson = JSON.stringify(body.anchorFrom, null, 2);
+    const toJson = JSON.stringify(body.anchorTo, null, 2);
+    const existingFlagsJson = JSON.stringify(body.existingFlags ?? []);
+
+    const userMessage = [
+      `## Бриф\n${briefJson}`,
+      `## Профиль архетипа маршрута\n${archetypeJson}`,
+      `## Якорь FROM (стартовая точка сегмента)\n${fromJson}`,
+      `## Якорь TO (целевая точка, куда обязан привести сегмент)\n${toJson}`,
+      `## Уже установленные флаги (из предков)\n${existingFlagsJson}`,
+      'Сгенерируй scene-DAG между этими якорями по правилам выше. Только JSON.',
+    ].join('\n\n');
+
+    logger.log(
+      `[segment] batch=${batch.batchId} — generating (brief=${briefJson.length}b, from=${(body.anchorFrom as { id?: string })?.id ?? '?'}, to=${(body.anchorTo as { id?: string })?.id ?? '?'})...`,
+    );
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: SEGMENT_SYSTEM_PROMPT,
+      prompt: userMessage,
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.scenes) || !parsed.entrySceneId) {
+      throw new Error('Invalid response: missing scenes or entrySceneId');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[segment] batch=${batch.batchId} — completed (${parsed.scenes.length} scenes)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[segment] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }

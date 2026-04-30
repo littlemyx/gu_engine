@@ -1,11 +1,12 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
   OutlineRequest,
+  SegmentRequest,
   ItemState,
   BatchState,
 } from './types.js';
@@ -99,6 +100,32 @@ app.post('/generate/outline', (req, res) => {
   logger.log(`[POST /generate/outline] batch=${batchId} liCount=${liCount}`);
 
   processOutline(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/segment', (req, res) => {
+  const body = req.body as SegmentRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'segment';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const fromId = (body.anchorFrom as { id?: string })?.id ?? '?';
+  const toId = (body.anchorTo as { id?: string })?.id ?? '?';
+  logger.log(`[POST /generate/segment] batch=${batchId} ${fromId} -> ${toId}`);
+
+  processSegment(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

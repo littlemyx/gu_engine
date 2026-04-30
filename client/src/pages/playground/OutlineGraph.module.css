@@ -96,3 +96,10 @@
   font-family: ui-monospace, 'SF Mono', Menlo, monospace;
   font-size: 11px;
 }
+
+.graphHint {
+  font-size: 11px;
+  color: #6b7280;
+  padding: 4px 20px 10px 20px;
+  font-style: italic;
+}
