@@ -8,6 +8,7 @@ import {
   useOutlineGeneration,
   useSegmentGeneration,
   useBulkSegmentGeneration,
+  useBulkImageGeneration,
   useNarrativeStore,
   convertToGameProject,
   downloadJson,
@@ -16,6 +17,7 @@ import {
   type ArchetypeProfile,
   type Brief,
   type BulkGenStatus,
+  type ImageBulkStatus,
   type LoveInterestCard,
   type OutlineGenStatus,
   type OutlinePlan,
@@ -34,6 +36,7 @@ const Playground = () => {
   const outlineGen = useOutlineGeneration();
   const segmentGen = useSegmentGeneration();
   const bulkGen = useBulkSegmentGeneration();
+  const imageGen = useBulkImageGeneration();
 
   const isBlocked = errorCount > 0;
 
@@ -69,6 +72,13 @@ const Playground = () => {
                 onStart={() => bulkGen.start(SAMPLE_BRIEF, outline)}
                 onCancel={bulkGen.cancel}
                 onReset={bulkGen.reset}
+              />
+              <ImageGenBar
+                status={imageGen.status}
+                onStart={() => imageGen.start(SAMPLE_BRIEF, outline)}
+                onCancel={imageGen.cancel}
+                onReset={imageGen.reset}
+                anchorCount={outline.anchors.length}
               />
               <ExportBar outline={outline} />
               <div className={styles.outlineDetailsToggleRow}>
@@ -581,16 +591,103 @@ const BulkGenBar: React.FC<{
 };
 
 // ────────────────────────────────────────────────────────────────────────────
+// IMAGE GENERATION (фоны для каждого якоря через image_gen)
+// ────────────────────────────────────────────────────────────────────────────
+
+const ImageGenBar: React.FC<{
+  status: ImageBulkStatus;
+  onStart: () => void;
+  onCancel: () => void;
+  onReset: () => void;
+  anchorCount: number;
+}> = ({ status, onStart, onCancel, onReset, anchorCount }) => {
+  const images = useNarrativeStore(s => s.images);
+  const cachedDone = Object.values(images).filter(i => i.status === 'done').length;
+
+  if (status.state === 'idle') {
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Генерация фонов · {cachedDone} / {anchorCount} готово
+          </span>
+          <span className={styles.bulkMeta}>
+            один POST /generate/background на якорь · 3 параллельно · ~3–5 минут на полный outline
+          </span>
+        </div>
+        <button type="button" className={styles.primaryBtn} onClick={onStart}>
+          Сгенерировать фоны
+        </button>
+      </div>
+    );
+  }
+
+  if (status.state === 'running') {
+    const pct = status.total === 0 ? 100 : Math.round((status.completed / status.total) * 100);
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Image-генерация · {status.completed} / {status.total}
+            {status.cancelled && ' (отменяется...)'}
+          </span>
+          <div className={styles.progressTrack}>
+            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          </div>
+          <span className={styles.bulkMeta}>
+            ⚙ в процессе: {status.inFlight} · ⌛ в очереди: {status.remaining}
+            {status.failures.length > 0 && ` · ✗ ошибок: ${status.failures.length}`}
+          </span>
+        </div>
+        <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={status.cancelled}>
+          {status.cancelled ? 'Отменяется...' : 'Остановить'}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.bulkBar}>
+      <div className={styles.bulkLeft}>
+        <span className={styles.bulkTitle}>
+          Image-генерация завершена · {status.completed} / {status.total}
+          {status.cancelled && ' (остановлено)'}
+        </span>
+        <span className={styles.bulkMeta}>
+          {status.failures.length > 0 ? (
+            <>
+              ✗ {status.failures.length} ошибок:{' '}
+              {status.failures
+                .slice(0, 3)
+                .map(f => f.anchorId)
+                .join(', ')}
+              {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
+            </>
+          ) : (
+            'все фоны сгенерированы успешно'
+          )}
+        </span>
+      </div>
+      <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+        OK
+      </button>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
 // EXPORT BAR (.gu.json + scenes.json для game/-движка)
 // ────────────────────────────────────────────────────────────────────────────
 
 const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
   const segments = useNarrativeStore(s => s.segments);
+  const images = useNarrativeStore(s => s.images);
   const segmentCount = Object.keys(segments).length;
+  const imageCount = Object.values(images).filter(i => i.status === 'done').length;
   const edgeCount = outline.anchorEdges.length;
 
   const onExport = () => {
-    const result = convertToGameProject(SAMPLE_BRIEF, outline, segments);
+    const result = convertToGameProject(SAMPLE_BRIEF, outline, segments, images);
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
     // Небольшой timeout, чтобы браузер не схлопнул два «download» подряд.
@@ -602,7 +699,7 @@ const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
       <div className={styles.exportLeft}>
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
-          {segmentCount} из {edgeCount} сегментов сгенерировано
+          {segmentCount} из {edgeCount} сегментов · {imageCount} из {outline.anchors.length} фонов
           {segmentCount < edgeCount && (
             <span className={styles.exportHint}> · остальные станут placeholder-переходами без сцен</span>
           )}

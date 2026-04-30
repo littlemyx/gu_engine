@@ -1,4 +1,18 @@
 import type { Brief, DraftDialogueLine, GeneratedSegment, OutlinePlan } from './types';
+import type { ImageGenState } from './narrativeStore';
+
+/**
+ * Базовый URL image-сервера, который раздаёт сгенерированные image_gen-ом
+ * картинки. Тот же, что использует существующий main canvas.
+ */
+export const IMAGE_SERVER_BASE = 'http://localhost:3007';
+
+function imageUrlFor(state: ImageGenState | undefined): string {
+  if (state?.status === 'done' && state.filename) {
+    return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.filename)}`;
+  }
+  return '';
+}
 
 /**
  * Конвертация procedural-narrative-артефактов в формат, который читает
@@ -65,6 +79,7 @@ export type ConversionStats = {
   generatedSegments: number;
   placeholderEdges: number;
   totalEdges: number;
+  imagesEmbedded: number;
 };
 
 export type ConversionResult = {
@@ -103,12 +118,14 @@ export function convertToGameProject(
   brief: Brief,
   outline: OutlinePlan,
   segments: Record<string, GeneratedSegment>,
+  images: Record<string, ImageGenState> = {},
 ): ConversionResult {
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
   const anchorOutputs = new Map<string, GameSceneOutput[]>(); // by anchor id
   let placeholderEdges = 0;
   let generatedSegments = 0;
+  let imagesEmbedded = 0;
 
   // Сортировка маршрутов и порядок появления для y-позиций.
   const routes: string[] = [];
@@ -118,6 +135,8 @@ export function convertToGameProject(
 
   // ── 1. Якоря ───────────────────────────────────────────────────────────
   for (const anchor of outline.anchors) {
+    const image = imageUrlFor(images[anchor.id]);
+    if (image) imagesEmbedded++;
     nodes.push({
       id: anchor.id,
       type: 'scene',
@@ -127,7 +146,7 @@ export function convertToGameProject(
       },
       data: {
         label: renderAnchorText(anchor.summary, anchor.id),
-        image: '',
+        image,
         outputs: [], // дозаполним из anchorEdges + segments
       },
     });
@@ -168,9 +187,12 @@ export function convertToGameProject(
         target: seg.entrySceneId,
       });
 
-      // Сцены сегмента.
+      // Сцены сегмента наследуют фон от anchorFrom — это типичная VN-логика:
+      // фон меняется на якорной сцене, а внутри сегмента остаётся стабильным.
+      const segmentImage = imageUrlFor(images[e.from]);
       const baseY = (routeIdx.get(targetAnchor?.routeId ?? 'common') ?? 0) * ANCHOR_Y_STEP + DRAFT_Y_OFFSET;
       seg.scenes.forEach((draft, idx) => {
+        if (segmentImage) imagesEmbedded++;
         nodes.push({
           id: draft.id,
           type: 'scene',
@@ -182,7 +204,7 @@ export function convertToGameProject(
           },
           data: {
             label: renderDraftSceneText(draft.narration, draft.dialogue),
-            image: '',
+            image: segmentImage,
             outputs: draft.choices.map(c => ({ id: c.id, text: c.text })),
           },
         });
@@ -225,6 +247,7 @@ export function convertToGameProject(
     generatedSegments,
     placeholderEdges,
     totalEdges: edges.length,
+    imagesEmbedded,
   };
 
   return { project, scenes: { nodes, edges }, stats };
