@@ -19,6 +19,7 @@ export { useSegmentGeneration } from './useSegmentGeneration';
 export type { SegmentGenStatus } from './useSegmentGeneration';
 export { useNarrativeStore } from './narrativeStore';
 export type { ImageGenState } from './narrativeStore';
+export { useBriefStore } from './briefStore';
 export { useBulkSegmentGeneration } from './useBulkSegmentGeneration';
 export type { BulkGenStatus, BulkFailure } from './useBulkSegmentGeneration';
 export { useBulkImageGeneration } from './useBulkImageGeneration';

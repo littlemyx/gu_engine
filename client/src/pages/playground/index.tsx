@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import {
   ARCHETYPES,
   ARCHETYPE_IDS,
-  SAMPLE_BRIEF,
   validateBrief,
+  useBriefStore,
   useOutlineGeneration,
   useSegmentGeneration,
   useBulkSegmentGeneration,
@@ -15,24 +15,23 @@ import {
   slugify,
   type AnchorPlan,
   type ArchetypeProfile,
-  type Brief,
   type BulkGenStatus,
   type ImageBulkStatus,
-  type LoveInterestCard,
   type OutlineGenStatus,
   type OutlinePlan,
 } from '@/narrative';
 import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
 import { SegmentDrawer } from './SegmentDrawer';
+import { BriefEditor } from './BriefEditor';
 import styles from './playground.module.css';
 
 const Playground = () => {
+  const brief = useBriefStore(s => s.brief);
   const [showRawBrief, setShowRawBrief] = useState(false);
   const [showAnchorList, setShowAnchorList] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null);
-  const issues = useMemo(() => validateBrief(SAMPLE_BRIEF), []);
+  const issues = useMemo(() => validateBrief(brief), [brief]);
   const errorCount = issues.filter(i => i.severity === 'error').length;
-  const warningCount = issues.filter(i => i.severity === 'warning').length;
   const outlineGen = useOutlineGeneration();
   const segmentGen = useSegmentGeneration();
   const bulkGen = useBulkSegmentGeneration();
@@ -57,7 +56,7 @@ const Playground = () => {
       <OutlineBar
         status={outlineGen.status}
         disabled={isBlocked}
-        onGenerate={() => outlineGen.generate(SAMPLE_BRIEF)}
+        onGenerate={() => outlineGen.generate(brief)}
         onReset={outlineGen.reset}
       />
 
@@ -69,13 +68,13 @@ const Playground = () => {
               <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />
               <BulkGenBar
                 status={bulkGen.status}
-                onStart={() => bulkGen.start(SAMPLE_BRIEF, outline)}
+                onStart={() => bulkGen.start(brief, outline)}
                 onCancel={bulkGen.cancel}
                 onReset={bulkGen.reset}
               />
               <ImageGenBar
                 status={imageGen.status}
-                onStart={() => imageGen.start(SAMPLE_BRIEF, outline)}
+                onStart={() => imageGen.start(brief, outline)}
                 onCancel={imageGen.cancel}
                 onReset={imageGen.reset}
                 anchorCount={outline.anchors.length}
@@ -89,7 +88,7 @@ const Playground = () => {
               {showAnchorList && <OutlineResult outline={outline} />}
               {selectedSegment && (
                 <SegmentDrawer
-                  brief={SAMPLE_BRIEF}
+                  brief={brief}
                   outline={outline}
                   selection={selectedSegment}
                   status={segmentGen.status}
@@ -111,11 +110,10 @@ const Playground = () => {
       )}
 
       <div className={styles.body}>
-        {/* ────────────── ЛЕВАЯ КОЛОНКА: бриф ────────────── */}
+        {/* ────────────── ЛЕВАЯ КОЛОНКА: редактор брифа ────────────── */}
         <div className={styles.column}>
-          <BriefSummary brief={SAMPLE_BRIEF} errorCount={errorCount} warningCount={warningCount} />
+          <BriefEditor brief={brief} />
           <BriefIssues issues={issues} />
-          <LoveInterestList loveInterests={SAMPLE_BRIEF.loveInterests} />
 
           <section className={styles.section}>
             <div
@@ -133,7 +131,7 @@ const Playground = () => {
                 {showRawBrief ? 'Свернуть' : 'Раскрыть'}
               </button>
             </div>
-            {showRawBrief && <pre className={styles.jsonBlock}>{JSON.stringify(SAMPLE_BRIEF, null, 2)}</pre>}
+            {showRawBrief && <pre className={styles.jsonBlock}>{JSON.stringify(brief, null, 2)}</pre>}
           </section>
         </div>
 
@@ -156,58 +154,6 @@ const Playground = () => {
 
 // ────────────────────────────────────────────────────────────────────────────
 
-const BriefSummary: React.FC<{
-  brief: Brief;
-  errorCount: number;
-  warningCount: number;
-}> = ({ brief, errorCount, warningCount }) => {
-  const validityLabel =
-    errorCount === 0
-      ? warningCount === 0
-        ? 'валидный'
-        : `валидный, ${warningCount} предупреждений`
-      : `ошибок: ${errorCount}`;
-
-  return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>
-        Бриф{' '}
-        <span className={styles.sectionMeta}>
-          v{brief.version} · {validityLabel}
-        </span>
-      </h2>
-      <div className={styles.kvList}>
-        <span className={styles.kvKey}>genre</span>
-        <span className={styles.kvVal}>{brief.genre}</span>
-        <span className={styles.kvKey}>format</span>
-        <span className={styles.kvVal}>{brief.format}</span>
-        <span className={styles.kvKey}>scale</span>
-        <span className={styles.kvVal}>
-          {brief.scale.acts} акта · ~{brief.scale.targetDurationMinutes} мин · плотность {brief.scale.branchingDensity}{' '}
-          · common-route = {brief.scale.commonRouteShare}
-        </span>
-        <span className={styles.kvKey}>endings</span>
-        <span className={styles.kvVal}>{brief.endingsProfile.join(' / ')}</span>
-        <span className={styles.kvKey}>setting</span>
-        <span className={styles.kvVal}>
-          {brief.world.setting.era} · {brief.world.setting.place} — {brief.world.setting.specifics}
-        </span>
-        <span className={styles.kvKey}>tone</span>
-        <span className={styles.kvVal}>
-          {brief.world.tone.mood} · intensity={brief.world.tone.intensity}
-          {brief.world.tone.themes.length > 0 && <> · {brief.world.tone.themes.join(', ')}</>}
-        </span>
-        <span className={styles.kvKey}>protagonist</span>
-        <span className={styles.kvVal}>
-          {brief.protagonist.gender} ({brief.protagonist.voiceStyle})
-        </span>
-        <span className={styles.kvKey}>art</span>
-        <span className={styles.kvVal}>{brief.artStyle.referenceDescriptor}</span>
-      </div>
-    </section>
-  );
-};
-
 const BriefIssues: React.FC<{
   issues: ReturnType<typeof validateBrief>;
 }> = ({ issues }) => {
@@ -229,48 +175,6 @@ const BriefIssues: React.FC<{
         <div key={idx} className={issue.severity === 'error' ? styles.issueError : styles.issueWarning}>
           <span className={styles.issuePath}>{issue.path}</span>
           {issue.message}
-        </div>
-      ))}
-    </section>
-  );
-};
-
-const LoveInterestList: React.FC<{
-  loveInterests: LoveInterestCard[];
-}> = ({ loveInterests }) => {
-  return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>
-        Love interests <span className={styles.sectionMeta}>{loveInterests.length} карточки</span>
-      </h2>
-      {loveInterests.map(li => (
-        <div key={li.id} className={styles.briefCard}>
-          <div className={styles.briefCardHeader}>
-            <span className={styles.briefCardName}>
-              {li.name}, {li.age}
-            </span>
-            <span className={styles.briefCardArchetype}>{li.archetype}</span>
-          </div>
-          <div className={styles.briefCardRole}>{li.roleInWorld}</div>
-          <div style={{ fontSize: 12, color: '#4b5563', lineHeight: 1.5 }}>
-            <em>{li.speechPattern}</em>
-          </div>
-          <div className={styles.tagRow}>
-            {li.personality.traits.map(t => (
-              <span key={t} className={styles.tag}>
-                {t}
-              </span>
-            ))}
-          </div>
-          {li.archetypeSpecifics && Object.keys(li.archetypeSpecifics).length > 0 && (
-            <div className={styles.tagRow}>
-              {Object.entries(li.archetypeSpecifics).map(([k, v]) => (
-                <span key={k} className={styles.tag} style={{ background: '#eef2ff', color: '#4338ca' }}>
-                  {k}: {v}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
       ))}
     </section>
@@ -680,6 +584,7 @@ const ImageGenBar: React.FC<{
 // ────────────────────────────────────────────────────────────────────────────
 
 const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
+  const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
   const images = useNarrativeStore(s => s.images);
   const segmentCount = Object.keys(segments).length;
@@ -687,7 +592,7 @@ const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
   const edgeCount = outline.anchorEdges.length;
 
   const onExport = () => {
-    const result = convertToGameProject(SAMPLE_BRIEF, outline, segments, images);
+    const result = convertToGameProject(brief, outline, segments, images);
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
     // Небольшой timeout, чтобы браузер не схлопнул два «download» подряд.
