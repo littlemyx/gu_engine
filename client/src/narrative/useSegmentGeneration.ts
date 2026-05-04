@@ -56,6 +56,7 @@ export function useSegmentGeneration() {
         const body = {
           ...payload,
           archetypeProfile: payload.archetypeProfile ?? undefined,
+          baselineStateRanges: payload.baselineStateRanges,
           previousAttempt: retry?.previousAttempt ?? undefined,
           previousIssues: retry
             ? retry.previousIssues.map(it => `[${it.severity}] ${it.scope}: ${it.message}`)

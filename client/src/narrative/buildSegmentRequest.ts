@@ -1,5 +1,6 @@
-import type { AnchorPlan, ArchetypeProfile, Brief, OutlinePlan } from './types';
+import type { AnchorPlan, ArchetypeProfile, Brief, OutlinePlan, Range, StateVarPath } from './types';
 import { ARCHETYPES } from './archetypes';
+import { computeStartRanges } from './segmentBaseline';
 
 /**
  * Собирает payload для /generate/segment.
@@ -24,6 +25,7 @@ export function buildSegmentRequestPayload(
   anchorFrom: AnchorPlan;
   anchorTo: AnchorPlan;
   existingFlags: string[];
+  baselineStateRanges: Record<StateVarPath, Range>;
 } {
   const anchorFrom = outline.anchors.find(a => a.id === fromId);
   const anchorTo = outline.anchors.find(a => a.id === toId);
@@ -57,5 +59,6 @@ export function buildSegmentRequestPayload(
     anchorFrom,
     anchorTo,
     existingFlags: [...ancestorFlags].sort(),
+    baselineStateRanges: computeStartRanges(anchorFrom, anchorTo, archetypeProfile),
   };
 }

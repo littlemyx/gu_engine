@@ -7,9 +7,11 @@ import type {
   GeneratedSegment,
   OutlinePlan,
   SegmentIssue,
+  StateVarPath,
 } from './types';
 import { validateGeneratedSegment } from './types';
 import { ARCHETYPES } from './archetypes';
+import { computeStartRanges } from './segmentBaseline';
 
 /**
  * Семантическая валидация сгенерированного сегмента.
@@ -17,17 +19,20 @@ import { ARCHETYPES } from './archetypes';
  * Проверяет:
  *   1. Reachability state-инварианта anchorTo:
  *      хотя бы один путь от entrySceneId до выхода (nextSceneId === null)
- *      должен суммарно сдвигать state в anchorTo.entryStateRequired.ranges
- *      и устанавливать все anchorTo.entryStateRequired.flagsRequired.
+ *      должен суммарно сдвигать state из baseline-диапазонов (computeStartRanges)
+ *      в anchorTo.entryStateRequired.ranges и устанавливать все
+ *      anchorTo.entryStateRequired.flagsRequired.
  *   2. Лимит шага архетипа: для slow_burn-типа архетипов с заданным
  *      maxPerSceneDelta никакой выбор не должен делать скачок больше лимита.
  *   3. Pivot-инвариант: для tension_to_affection_pivot хотя бы один
  *      выбор должен резко двигать affection (≥ 0.12) и снижать tension.
  *
- * Возвращает SegmentIssue[]; пустой массив = всё ок.
+ * Reachability — range-feasibility: для каждой target-переменной проверяем,
+ * существует ли стартовое состояние в baseline-диапазоне такое, что start +
+ * Σdelta попадает в target-диапазон. Это менее строго, чем точечная оценка по
+ * lo-углу, и совпадает с тем baseline-блоком, который видит LLM в промпте.
  *
- * Алгоритм за O(scenes × choices × paths). Для типичного сегмента
- * (3-6 сцен × 2-3 выбора) это ~десятки путей, считается мгновенно.
+ * Возвращает SegmentIssue[]; пустой массив = всё ок.
  */
 
 export type SegmentValidationContext = {
@@ -40,21 +45,18 @@ export type SegmentValidationContext = {
 const DELTA_TOLERANCE = 0.001;
 const PIVOT_AFFECTION_DELTA = 0.12;
 
+type PathSummary = {
+  deltas: Record<StateVarPath, number>;
+  flags: Set<string>;
+};
+
 export function validateSegmentSemantics(segment: GeneratedSegment, ctx: SegmentValidationContext): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
   const sceneMap = new Map<string, DraftScene>(segment.scenes.map(s => [s.id, s]));
 
-  // Стартовое состояние: нижняя граница диапазонов anchorFrom (если есть)
-  // + флаги, выставленные anchorFrom и его предками (establishes).
-  const startState: Record<string, number> = {};
-  if (ctx.anchorFrom.entryStateRequired?.ranges) {
-    for (const [path, [lo]] of Object.entries(ctx.anchorFrom.entryStateRequired.ranges)) {
-      startState[path] = lo;
-    }
-  }
+  const startRanges = computeStartRanges(ctx.anchorFrom, ctx.anchorTo, ctx.archetype);
   const startFlags = new Set<string>(ctx.anchorFrom.establishes);
 
-  // Целевые требования
   const targetRanges = ctx.anchorTo.entryStateRequired?.ranges ?? {};
   const targetFlags = ctx.anchorTo.entryStateRequired?.flagsRequired ?? [];
 
@@ -81,28 +83,58 @@ export function validateSegmentSemantics(segment: GeneratedSegment, ctx: Segment
   // её должен ловить уже validateGeneratedSegment, но защитимся.
   if (paths.length === 0) return issues;
 
-  // Проверка: хотя бы один путь приводит state в нужные диапазоны и
-  // выставляет все требуемые флаги.
-  let satisfying = 0;
-  for (const path of paths) {
-    const state = { ...startState };
+  // Сводим каждый путь к Σdelta + final flags.
+  const summaries: PathSummary[] = paths.map(path => {
+    const deltas: Record<StateVarPath, number> = {};
     const flags = new Set(startFlags);
     for (const choice of path) {
       for (const [p, d] of Object.entries(choice.effects.stateDeltas)) {
-        state[p] = (state[p] ?? 0) + d;
+        deltas[p] = (deltas[p] ?? 0) + d;
       }
       for (const f of choice.effects.flagSet) flags.add(f);
       for (const f of choice.effects.flagClear) flags.delete(f);
     }
-    if (pathSatisfies(state, flags, targetRanges, targetFlags)) satisfying++;
-  }
+    return { deltas, flags };
+  });
 
-  if (satisfying === 0) {
-    issues.push({
-      severity: 'error',
-      scope: 'state-reachability',
-      message: `ни один из ${paths.length} путей не приводит state в требования anchorTo (${ctx.anchorTo.id})`,
-    });
+  const hasSatisfying = summaries.some(s => isFeasible(s, startRanges, targetRanges, targetFlags));
+
+  if (!hasSatisfying) {
+    // Per-variable диагностика: для каждой target-переменной находим путь
+    // с минимальным "разрывом" от feasible window — это даёт LLM-у явный
+    // сигнал, в какую сторону и насколько подвинуть Σdelta.
+    let perVarReported = false;
+    for (const [p, [tLo, tHi]] of Object.entries(targetRanges)) {
+      const issue = diagnoseVariable(p, [tLo, tHi], summaries, startRanges);
+      if (issue) {
+        issues.push(issue);
+        perVarReported = true;
+      }
+    }
+
+    // Per-flag диагностика: какой требуемый флаг ни один путь не выставляет?
+    for (const f of targetFlags) {
+      const anySets = summaries.some(s => s.flags.has(f));
+      if (!anySets) {
+        issues.push({
+          severity: 'error',
+          scope: `state-reachability/flag:${f}`,
+          message: `требуемый флаг "${f}" не установлен ни одним путём — добавь flagSet:["${f}"] хотя бы в один выбор на пути к выходу`,
+        });
+        perVarReported = true;
+      }
+    }
+
+    // Каждое требование выполнимо отдельно, но ни один путь не выполняет все
+    // одновременно — обычно это значит, что target-переменные тянут в разные
+    // стороны и ни один single path их не сводит.
+    if (!perVarReported) {
+      issues.push({
+        severity: 'error',
+        scope: 'state-reachability',
+        message: `каждое требование anchorTo (${ctx.anchorTo.id}) выполнимо отдельно, но ни один из ${paths.length} путей не выполняет все одновременно — нужен путь, который двигает все state-переменные согласованно`,
+      });
+    }
   }
 
   // Лимит шага per-choice (например, slow_burn ⇒ не более 0.08).
@@ -157,6 +189,33 @@ export function validateSegmentSemantics(segment: GeneratedSegment, ctx: Segment
 }
 
 /**
+ * Прогоняет structural + semantic validators для одного сегмента и
+ * возвращает SegmentIssue[]. Пустой массив = ок.
+ *
+ * Используется в SegmentDrawer для recompute issues по сегменту,
+ * который был восстановлен из persisted-стора (и где status хука
+ * `useSegmentGeneration` уже забыл свой `issues`-массив).
+ */
+export function getSegmentValidations(
+  brief: Brief,
+  outline: OutlinePlan,
+  fromId: string,
+  toId: string,
+  segment: GeneratedSegment,
+): SegmentIssue[] {
+  const anchorFrom = outline.anchors.find(a => a.id === fromId);
+  const anchorTo = outline.anchors.find(a => a.id === toId);
+  if (!anchorFrom || !anchorTo) return [];
+  const focusLiId = anchorTo.characterFocus ?? anchorFrom.characterFocus ?? null;
+  const li = focusLiId ? brief.loveInterests.find(l => l.id === focusLiId) : null;
+  const archetype: ArchetypeProfile | null = li ? ARCHETYPES[li.archetype] : null;
+  return [
+    ...validateGeneratedSegment(segment),
+    ...validateSegmentSemantics(segment, { anchorFrom, anchorTo, archetype }),
+  ];
+}
+
+/**
  * Прогоняет structural + semantic validators по всем сегментам outline-а
  * и возвращает map "fromId->toId" → SegmentIssue[]. Пустой массив = ок.
  *
@@ -191,18 +250,78 @@ export function getAllSegmentValidations(
   return result;
 }
 
-function pathSatisfies(
-  state: Record<string, number>,
-  flags: Set<string>,
-  targetRanges: Record<string, [number, number]>,
+function isFeasible(
+  s: PathSummary,
+  startRanges: Record<StateVarPath, [number, number]>,
+  targetRanges: Record<StateVarPath, [number, number]>,
   targetFlags: string[],
 ): boolean {
-  for (const [path, [lo, hi]] of Object.entries(targetRanges)) {
-    const v = state[path] ?? 0;
-    if (v < lo - DELTA_TOLERANCE || v > hi + DELTA_TOLERANCE) return false;
+  for (const [p, [tLo, tHi]] of Object.entries(targetRanges)) {
+    const start = startRanges[p] ?? [0, 0];
+    const d = s.deltas[p] ?? 0;
+    const lower = Math.max(start[0], tLo - d);
+    const upper = Math.min(start[1], tHi - d);
+    if (lower > upper + DELTA_TOLERANCE) return false;
   }
   for (const f of targetFlags) {
-    if (!flags.has(f)) return false;
+    if (!s.flags.has(f)) return false;
   }
   return true;
+}
+
+function diagnoseVariable(
+  p: StateVarPath,
+  [tLo, tHi]: [number, number],
+  summaries: PathSummary[],
+  startRanges: Record<StateVarPath, [number, number]>,
+): SegmentIssue | null {
+  const start = startRanges[p] ?? [0, 0];
+  const sLo = start[0];
+  const sHi = start[1];
+
+  let smallestGap = Infinity;
+  let bestDelta = 0;
+  let bestReachLo = sLo;
+  let bestReachHi = sHi;
+  let bestDirection: 'up' | 'down' = 'up';
+
+  for (const s of summaries) {
+    const d = s.deltas[p] ?? 0;
+    const reachLo = sLo + d;
+    const reachHi = sHi + d;
+    let gap = 0;
+    let direction: 'up' | 'down' = 'up';
+    if (reachHi < tLo - DELTA_TOLERANCE) {
+      gap = tLo - reachHi;
+      direction = 'up';
+    } else if (reachLo > tHi + DELTA_TOLERANCE) {
+      gap = reachLo - tHi;
+      direction = 'down';
+    } else {
+      // Этот путь feasible по этой переменной — переменная не проблема.
+      return null;
+    }
+    if (gap < smallestGap) {
+      smallestGap = gap;
+      bestDelta = d;
+      bestReachLo = reachLo;
+      bestReachHi = reachHi;
+      bestDirection = direction;
+    }
+  }
+
+  const sign = bestDelta >= 0 ? '+' : '';
+  const directionHint =
+    bestDirection === 'up'
+      ? `нужно ещё ~+${smallestGap.toFixed(2)} вверх`
+      : `нужно ещё ~-${smallestGap.toFixed(2)} вниз`;
+  return {
+    severity: 'error',
+    scope: `state-reachability/${p}`,
+    message: `target [${tLo.toFixed(2)}, ${tHi.toFixed(2)}], baseline [${sLo.toFixed(2)}, ${sHi.toFixed(
+      2,
+    )}], best path Σdelta=${sign}${bestDelta.toFixed(2)} → reachable [${bestReachLo.toFixed(2)}, ${bestReachHi.toFixed(
+      2,
+    )}]; ${directionHint} суммарной дельты`,
+  };
 }

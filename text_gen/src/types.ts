@@ -42,6 +42,14 @@ export interface SegmentRequest {
   anchorTo: unknown;
   existingFlags?: string[];
   /**
+   * Baseline state ranges at segment entry: {[stateVarPath]: [lo, hi]}.
+   * Computed on the client by reconciling anchorFrom.entryStateRequired with
+   * archetype.initialState. Shown to the LLM verbatim in the prompt and used
+   * by the validator's range-feasibility check — eliminates hidden 0-default
+   * mismatches that previously caused infinite retry loops.
+   */
+  baselineStateRanges?: Record<string, [number, number]>;
+  /**
    * Previously generated segment that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
    */

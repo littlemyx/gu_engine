@@ -334,6 +334,21 @@ components:
           description: |
             Flags already established by ancestors of anchorFrom in the outline.
             Helps the LLM stay consistent with what has already happened.
+        baselineStateRanges:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
+          description: |
+            Baseline state ranges at segment entry: {[stateVarPath]: [lo, hi]}.
+            Computed on the client by reconciling anchorFrom.entryStateRequired
+            with archetype.initialState. Shown to the LLM verbatim in the prompt
+            and used by the validator's range-feasibility check — eliminates
+            hidden 0-default mismatches that previously caused infinite retry
+            loops.
         previousAttempt:
           type: object
           additionalProperties: true

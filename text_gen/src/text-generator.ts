@@ -399,6 +399,7 @@ export async function processSegment(batch: BatchState, body: SegmentRequest): P
     const fromJson = JSON.stringify(body.anchorFrom, null, 2);
     const toJson = JSON.stringify(body.anchorTo, null, 2);
     const existingFlagsJson = JSON.stringify(body.existingFlags ?? []);
+    const baselineRangesJson = JSON.stringify(body.baselineStateRanges ?? {}, null, 2);
 
     const parts: string[] = [
       `## Бриф\n${briefJson}`,
@@ -406,6 +407,7 @@ export async function processSegment(batch: BatchState, body: SegmentRequest): P
       `## Якорь FROM (стартовая точка сегмента)\n${fromJson}`,
       `## Якорь TO (целевая точка, куда обязан привести сегмент)\n${toJson}`,
       `## Уже установленные флаги (из предков)\n${existingFlagsJson}`,
+      `## Базовое состояние на входе сегмента (диапазоны)\n${baselineRangesJson}\nСчитай, что игрок входит в anchorFrom со state в этих диапазонах. Сумма твоих stateDeltas по любому "успешному" пути должна сдвинуть state из этих диапазонов в anchorTo.entryStateRequired.ranges и установить все anchorTo.entryStateRequired.flagsRequired.`,
     ];
 
     // Retry-with-feedback: если есть previousAttempt и previousIssues,
