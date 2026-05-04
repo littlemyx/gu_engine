@@ -46,6 +46,7 @@ export function computeAnchorLayout(
   validations: Record<string, SegmentIssue[]> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
+  generatingEdgeIds: Set<string> = new Set(),
 ): {
   nodes: Node<AnchorNodeData>[];
   edges: Edge[];
@@ -142,11 +143,21 @@ export function computeAnchorLayout(
     const hasError = segIssues.some(it => it.severity === 'error');
     const hasWarning = segIssues.some(it => it.severity === 'warning');
     const routeStroke = targetAnchor ? routeColor(targetAnchor.routeId) : '#9ca3af';
-    // Цветовая схема:
-    //   нет сегмента      → пунктир, цвет маршрута, низкая прозрачность
-    //   сегмент валиден   → толстая сплошная, цвет маршрута, ✓
-    //   warning           → жёлтый цвет, ⚠
-    //   error             → красный цвет, ✗
+
+    if (generatingEdgeIds.has(segKey)) {
+      return {
+        id: `e-${i}-${e.from}-${e.to}`,
+        source: e.from,
+        target: e.to,
+        type: 'smoothstep',
+        animated: true,
+        style: { stroke: routeStroke, strokeWidth: 2 },
+        label: '⏳',
+        labelStyle: { fill: routeStroke, fontWeight: 700 },
+        labelBgStyle: { fill: '#fff', fillOpacity: 0.9 },
+      };
+    }
+
     const stroke = hasError ? '#dc2626' : hasWarning ? '#d97706' : routeStroke;
     const label = hasError ? '✗' : hasWarning ? '⚠' : hasSegment ? '✓' : undefined;
     const labelTooltip =

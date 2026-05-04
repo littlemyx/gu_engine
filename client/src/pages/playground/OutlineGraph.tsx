@@ -1,5 +1,14 @@
-import React, { useMemo } from 'react';
-import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type Edge, type NodeTypes } from '@xyflow/react';
+import React, { useEffect, useMemo } from 'react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  MiniMap,
+  useNodesState,
+  type Edge,
+  type NodeTypes,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { getAllSegmentValidations, useBriefStore, useNarrativeStore, type OutlinePlan } from '@/narrative';
 import { AnchorNode } from './AnchorNode';
@@ -16,16 +25,19 @@ const InnerGraph: React.FC<{
   outline: OutlinePlan;
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
-}> = ({ outline, onEdgeClick, selected }) => {
+  generatingEdgeIds?: Set<string>;
+}> = ({ outline, onEdgeClick, selected, generatingEdgeIds }) => {
   const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
-  const { nodes, edges } = useMemo(
-    () => computeAnchorLayout(outline, segments, validations, images, characters),
-    [outline, segments, validations, images, characters],
+  const { nodes: layoutNodes, edges } = useMemo(
+    () => computeAnchorLayout(outline, segments, validations, images, characters, generatingEdgeIds),
+    [outline, segments, validations, images, characters, generatingEdgeIds],
   );
+  const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
+  useEffect(() => setNodes(layoutNodes), [layoutNodes, setNodes]);
 
   // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {
@@ -45,6 +57,7 @@ const InnerGraph: React.FC<{
     <ReactFlow
       nodes={nodes}
       edges={styledEdges}
+      onNodesChange={onNodesChange}
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 1.0 }}
@@ -64,7 +77,8 @@ export const OutlineGraph: React.FC<{
   outline: OutlinePlan;
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
-}> = ({ outline, onEdgeClick, selected }) => {
+  generatingEdgeIds?: Set<string>;
+}> = ({ outline, onEdgeClick, selected, generatingEdgeIds }) => {
   const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
   const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
@@ -100,7 +114,12 @@ export const OutlineGraph: React.FC<{
       </div>
       <div className={styles.graphCanvas}>
         <ReactFlowProvider>
-          <InnerGraph outline={outline} onEdgeClick={onEdgeClick} selected={selected} />
+          <InnerGraph
+            outline={outline}
+            onEdgeClick={onEdgeClick}
+            selected={selected}
+            generatingEdgeIds={generatingEdgeIds}
+          />
         </ReactFlowProvider>
       </div>
       {onEdgeClick && (

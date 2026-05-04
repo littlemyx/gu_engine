@@ -41,6 +41,17 @@ const Playground = () => {
   const imageGen = useBulkImageGeneration();
   const characterGen = useBulkCharacterGeneration();
 
+  const generatingEdgeIds = useMemo(() => {
+    const set = new Set<string>();
+    if (segmentGen.status.state === 'generating') {
+      set.add(`${segmentGen.status.fromId}->${segmentGen.status.toId}`);
+    }
+    if (bulkGen.status.state === 'running') {
+      for (const key of bulkGen.status.inFlightKeys) set.add(key);
+    }
+    return set;
+  }, [segmentGen.status, bulkGen.status]);
+
   const isBlocked = errorCount > 0;
 
   // Активный outline = свежесгенерированный, либо закэшированный в localStorage.
@@ -73,7 +84,12 @@ const Playground = () => {
           const outline = activeOutline;
           return (
             <>
-              <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />
+              <OutlineGraph
+                outline={outline}
+                onEdgeClick={setSelectedSegment}
+                selected={selectedSegment}
+                generatingEdgeIds={generatingEdgeIds}
+              />
               <BulkGenBar
                 status={bulkGen.status}
                 onStart={() => bulkGen.start(brief, outline)}
@@ -616,7 +632,7 @@ const CharacterGenBar: React.FC<{
             Генерация спрайтов персонажей · {cachedDone} / {liCount} готово
           </span>
           <span className={styles.bulkMeta}>
-            один POST /generate/character на LI (idle-поза, прозрачный фон) · 2 параллельно · ~2–4 мин на полный каст
+            8 поз на LI (idle + 7 эмоций, прозрачный фон) · 2 параллельно · ~4–6 мин на полный каст
           </span>
         </div>
         <button type="button" className={styles.primaryBtn} onClick={onStart} disabled={liCount === 0}>

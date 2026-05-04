@@ -34,6 +34,7 @@ export type BulkGenStatus =
       total: number;
       completed: number;
       inFlight: number;
+      inFlightKeys: string[];
       remaining: number;
       failures: BulkFailure[];
       cancelled: boolean;
@@ -64,6 +65,7 @@ export function useBulkSegmentGeneration() {
     const total = queue.length;
     let completed = 0;
     let inFlight = 0;
+    const inFlightSet = new Set<string>();
     const failures: BulkFailure[] = [];
 
     if (total === 0) {
@@ -78,6 +80,7 @@ export function useBulkSegmentGeneration() {
         total,
         completed,
         inFlight,
+        inFlightKeys: [...inFlightSet],
         remaining: queue.length,
         failures: failures.slice(),
         cancelled: cancelledRef.current,
@@ -85,6 +88,8 @@ export function useBulkSegmentGeneration() {
     };
 
     const processOne = async (item: { fromId: string; toId: string }): Promise<void> => {
+      const key = `${item.fromId}->${item.toId}`;
+      inFlightSet.add(key);
       inFlight++;
       publish();
       try {
@@ -106,6 +111,7 @@ export function useBulkSegmentGeneration() {
           error: e instanceof Error ? e.message : String(e),
         });
       } finally {
+        inFlightSet.delete(key);
         inFlight--;
         publish();
       }

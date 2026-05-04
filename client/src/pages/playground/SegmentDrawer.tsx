@@ -1,12 +1,14 @@
-import React from 'react';
-import type {
-  AnchorPlan,
-  Brief,
-  DraftScene,
-  GeneratedSegment,
-  OutlinePlan,
-  SegmentGenStatus,
-  SegmentIssue,
+import React, { useMemo } from 'react';
+import {
+  getSegmentValidations,
+  useNarrativeStore,
+  type AnchorPlan,
+  type Brief,
+  type DraftScene,
+  type GeneratedSegment,
+  type OutlinePlan,
+  type SegmentGenStatus,
+  type SegmentIssue,
 } from '@/narrative';
 import styles from './SegmentDrawer.module.css';
 
@@ -25,20 +27,42 @@ type Props = {
   onClose: () => void;
 };
 
+type DisplayState =
+  | { kind: 'idle' }
+  | { kind: 'generating'; batchId: string }
+  | { kind: 'error'; message: string }
+  | { kind: 'done'; segment: GeneratedSegment; issues: SegmentIssue[]; fromStore: boolean };
+
 export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, status, onGenerate, onClose }) => {
   const anchorFrom = outline.anchors.find(a => a.id === selection.fromId);
   const anchorTo = outline.anchors.find(a => a.id === selection.toId);
+  const storedSegment = useNarrativeStore(s => s.segments[`${selection.fromId}->${selection.toId}`]);
+  const storedIssues = useMemo(
+    () => (storedSegment ? getSegmentValidations(brief, outline, selection.fromId, selection.toId, storedSegment) : []),
+    [storedSegment, brief, outline, selection.fromId, selection.toId],
+  );
   if (!anchorFrom || !anchorTo) return null;
 
   const matchesSelection =
     (status.state === 'generating' || status.state === 'done' || status.state === 'error') &&
     status.fromId === selection.fromId &&
     status.toId === selection.toId;
-  const hasIssues = matchesSelection && status.state === 'done' && status.issues.length > 0;
+
+  const displayState: DisplayState = (() => {
+    if (matchesSelection) {
+      if (status.state === 'generating') return { kind: 'generating', batchId: status.batchId };
+      if (status.state === 'error') return { kind: 'error', message: status.message };
+      if (status.state === 'done')
+        return { kind: 'done', segment: status.segment, issues: status.issues, fromStore: false };
+    }
+    if (storedSegment) return { kind: 'done', segment: storedSegment, issues: storedIssues, fromStore: true };
+    return { kind: 'idle' };
+  })();
+
+  const isDone = displayState.kind === 'done';
+  const hasIssues = isDone && displayState.issues.length > 0;
   const retryContext =
-    matchesSelection && status.state === 'done' && status.issues.length > 0
-      ? { previousAttempt: status.segment, previousIssues: status.issues }
-      : undefined;
+    isDone && hasIssues ? { previousAttempt: displayState.segment, previousIssues: displayState.issues } : undefined;
 
   return (
     <aside className={styles.drawer}>
@@ -60,31 +84,31 @@ export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, stat
         <button
           type="button"
           className={styles.primaryBtn}
-          disabled={matchesSelection && status.state === 'generating'}
+          disabled={displayState.kind === 'generating'}
           onClick={() => onGenerate(brief, outline, selection.fromId, selection.toId, retryContext)}
         >
-          {matchesSelection && status.state === 'generating'
+          {displayState.kind === 'generating'
             ? 'Генерация...'
             : hasIssues
             ? 'Перегенерировать с фидбэком'
-            : matchesSelection && status.state === 'done'
+            : isDone
             ? 'Перегенерировать сегмент'
             : 'Сгенерировать сегмент'}
         </button>
-        {matchesSelection && status.state === 'generating' && (
+        {displayState.kind === 'generating' && (
           <span className={styles.statusInline}>
             <span className={`${styles.statusDot} ${styles.statusDotGen}`} />
-            идёт LLM-вызов · batch {status.batchId.slice(0, 8) || '...'}
+            идёт LLM-вызов · batch {displayState.batchId.slice(0, 8) || '...'}
           </span>
         )}
-        {matchesSelection && status.state === 'done' && (
+        {displayState.kind === 'done' && (
           <span className={styles.statusInline}>
             <span className={`${styles.statusDot} ${styles.statusDotDone}`} />
-            готово · {status.segment.scenes.length} сцен
-            {status.issues.length > 0 && ` · ${status.issues.length} замечаний`}
+            готово · {displayState.segment.scenes.length} сцен
+            {displayState.issues.length > 0 && ` · ${displayState.issues.length} замечаний`}
           </span>
         )}
-        {matchesSelection && status.state === 'error' && (
+        {displayState.kind === 'error' && (
           <span className={styles.statusInline}>
             <span className={`${styles.statusDot} ${styles.statusDotError}`} />
             ошибка
@@ -93,19 +117,23 @@ export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, stat
       </section>
 
       <div className={styles.drawerBody}>
-        {!matchesSelection ? (
+        {displayState.kind === 'idle' ? (
           <div className={styles.placeholder}>
             Сегмент ещё не сгенерирован. Нажми кнопку выше — LLM соберёт DAG из 3-6 сцен, который переведёт игрока из
             state(<code>{anchorFrom.id}</code>) в state(
             <code>{anchorTo.id}</code>).
           </div>
-        ) : status.state === 'generating' ? (
+        ) : displayState.kind === 'generating' ? (
           <div className={styles.placeholder}>Генерируется...</div>
-        ) : status.state === 'error' ? (
-          <div className={styles.errorBox}>Ошибка: {status.message}</div>
-        ) : status.state === 'done' ? (
-          <SegmentResult segment={status.segment} issues={status.issues} entrySceneId={status.segment.entrySceneId} />
-        ) : null}
+        ) : displayState.kind === 'error' ? (
+          <div className={styles.errorBox}>Ошибка: {displayState.message}</div>
+        ) : (
+          <SegmentResult
+            segment={displayState.segment}
+            issues={displayState.issues}
+            entrySceneId={displayState.segment.entrySceneId}
+          />
+        )}
       </div>
     </aside>
   );
