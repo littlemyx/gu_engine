@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -37,7 +37,20 @@ const InnerGraph: React.FC<{
     [outline, segments, validations, images, characters, generatingEdgeIds],
   );
   const [nodes, setNodes, onNodesChange] = useNodesState(layoutNodes);
-  useEffect(() => setNodes(layoutNodes), [layoutNodes, setNodes]);
+  const initialLayoutDone = useRef(false);
+  useEffect(() => {
+    if (!initialLayoutDone.current) {
+      initialLayoutDone.current = true;
+      return;
+    }
+    setNodes(current => {
+      const currentById = new Map(current.map(n => [n.id, n]));
+      return layoutNodes.map(ln => {
+        const existing = currentById.get(ln.id);
+        return existing ? { ...ln, position: existing.position } : ln;
+      });
+    });
+  }, [layoutNodes, setNodes]);
 
   // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {

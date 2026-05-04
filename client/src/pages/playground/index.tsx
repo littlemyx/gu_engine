@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ARCHETYPES,
@@ -41,15 +41,19 @@ const Playground = () => {
   const imageGen = useBulkImageGeneration();
   const characterGen = useBulkCharacterGeneration();
 
+  const generatingEdgeIdsRef = useRef<Set<string>>(new Set());
   const generatingEdgeIds = useMemo(() => {
-    const set = new Set<string>();
+    const next = new Set<string>();
     if (segmentGen.status.state === 'generating') {
-      set.add(`${segmentGen.status.fromId}->${segmentGen.status.toId}`);
+      next.add(`${segmentGen.status.fromId}->${segmentGen.status.toId}`);
     }
     if (bulkGen.status.state === 'running') {
-      for (const key of bulkGen.status.inFlightKeys) set.add(key);
+      for (const key of bulkGen.status.inFlightKeys) next.add(key);
     }
-    return set;
+    const prev = generatingEdgeIdsRef.current;
+    if (prev.size === next.size && [...prev].every(k => next.has(k))) return prev;
+    generatingEdgeIdsRef.current = next;
+    return next;
   }, [segmentGen.status, bulkGen.status]);
 
   const isBlocked = errorCount > 0;
