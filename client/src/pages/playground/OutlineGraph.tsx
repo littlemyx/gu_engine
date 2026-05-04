@@ -1,10 +1,22 @@
-import React, { useMemo } from 'react';
-import { ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, type Edge, type NodeTypes } from '@xyflow/react';
+import React, { useMemo, useState, useEffect, useRef, useCallback } from 'react';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  Controls,
+  MiniMap,
+  Panel,
+  useReactFlow,
+  type Edge,
+  type NodeTypes,
+  type OnNodesChange,
+} from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { getAllSegmentValidations, useBriefStore, useNarrativeStore, type OutlinePlan } from '@/narrative';
 import { AnchorNode } from './AnchorNode';
 import { computeAnchorLayout } from './outlineLayout';
 import styles from './OutlineGraph.module.css';
+import playgroundStyles from './playground.module.css';
 
 const nodeTypes: NodeTypes = {
   anchor: AnchorNode,
@@ -17,15 +29,45 @@ const InnerGraph: React.FC<{
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
 }> = ({ outline, onEdgeClick, selected }) => {
+  const { fitView } = useReactFlow();
   const brief = useBriefStore(s => s.brief);
   const segments = useNarrativeStore(s => s.segments);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
-  const { nodes, edges } = useMemo(
+  const { nodes: dagreNodes, edges } = useMemo(
     () => computeAnchorLayout(outline, segments, validations, images, characters),
     [outline, segments, validations, images, characters],
   );
+
+  // Позиции, изменяемые пользователем (drag). При смене структуры outline сбрасываются.
+  const [posOverrides, setPosOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  const anchorIdsKey = outline.anchors.map(a => a.id).join(',');
+  const prevAnchorIdsRef = useRef(anchorIdsKey);
+  useEffect(() => {
+    if (anchorIdsKey !== prevAnchorIdsRef.current) {
+      setPosOverrides({});
+      prevAnchorIdsRef.current = anchorIdsKey;
+    }
+  }, [anchorIdsKey]);
+
+  const nodes = useMemo(
+    () => dagreNodes.map(n => ({ ...n, position: posOverrides[n.id] ?? n.position })),
+    [dagreNodes, posOverrides],
+  );
+
+  const onNodesChange: OnNodesChange = useCallback(changes => {
+    for (const change of changes) {
+      if (change.type === 'position' && change.position) {
+        setPosOverrides(prev => ({ ...prev, [change.id]: change.position! }));
+      }
+    }
+  }, []);
+
+  const handleAutoLayout = useCallback(() => {
+    setPosOverrides({});
+    setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
+  }, [fitView]);
 
   // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {
@@ -46,6 +88,7 @@ const InnerGraph: React.FC<{
       nodes={nodes}
       edges={styledEdges}
       nodeTypes={nodeTypes}
+      onNodesChange={onNodesChange}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 1.0 }}
       minZoom={0.2}
@@ -56,6 +99,11 @@ const InnerGraph: React.FC<{
       <Background gap={20} color="#e5e7eb" />
       <Controls showInteractive={false} />
       <MiniMap pannable zoomable nodeColor={n => (n.data as { routeColor?: string })?.routeColor ?? '#9ca3af'} />
+      <Panel position="top-right">
+        <button className={playgroundStyles.secondaryBtn} onClick={handleAutoLayout}>
+          Автораскладка
+        </button>
+      </Panel>
     </ReactFlow>
   );
 };

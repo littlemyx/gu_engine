@@ -1,4 +1,5 @@
 import type { Node, Edge } from '@xyflow/react';
+import dagre from '@dagrejs/dagre';
 import type {
   AnchorPlan,
   CharacterGenState,
@@ -18,8 +19,10 @@ export type AnchorNodeData = AnchorPlan & {
   spriteUrl: string | null;
 };
 
-const COLUMN_WIDTH = 280;
-const ROW_HEIGHT = 200;
+const NODE_WIDTH = 240;
+const NODE_HEIGHT = 280;
+const NODESEP = 50;
+const RANKSEP = 120;
 
 /** Палитра для маршрутов в порядке появления (помимо common). */
 const ROUTE_PALETTE = [
@@ -53,26 +56,6 @@ export function computeAnchorLayout(
   const anchorById = new Map<string, AnchorPlan>();
   for (const a of outline.anchors) anchorById.set(a.id, a);
 
-  // Топологическая глубина: наибольшее число шагов от любого корня.
-  const incoming = new Map<string, string[]>();
-  for (const a of outline.anchors) incoming.set(a.id, []);
-  for (const e of outline.anchorEdges) {
-    if (incoming.has(e.to)) incoming.get(e.to)!.push(e.from);
-  }
-
-  const depth = new Map<string, number>();
-  const computeDepth = (id: string, stack = new Set<string>()): number => {
-    if (depth.has(id)) return depth.get(id)!;
-    if (stack.has(id)) return 0; // защита от циклов (на DAG не должно случаться)
-    stack.add(id);
-    const preds = incoming.get(id) ?? [];
-    const d = preds.length === 0 ? 0 : 1 + Math.max(...preds.map(p => computeDepth(p, stack)));
-    stack.delete(id);
-    depth.set(id, d);
-    return d;
-  };
-  for (const a of outline.anchors) computeDepth(a.id);
-
   // Список маршрутов: common первым, остальные в порядке первого появления.
   const routesOrdered: string[] = [];
   for (const a of outline.anchors) {
@@ -103,17 +86,26 @@ export function computeAnchorLayout(
     return null;
   };
 
-  // Внутри одного слоя (depth) могут оказаться несколько узлов одного маршрута;
-  // разнесём их подсмещением по x, чтобы рёбра не наезжали.
-  const slotByDepthRoute = new Map<string, number>();
-  const nodes: Node<AnchorNodeData>[] = outline.anchors.map(anchor => {
-    const baseDepth = depth.get(anchor.id) ?? 0;
-    const key = `${baseDepth}|${anchor.routeId}`;
-    const slot = slotByDepthRoute.get(key) ?? 0;
-    slotByDepthRoute.set(key, slot + 1);
+  // Раскладка через dagre — слева направо, без перекрытий.
+  const g = new dagre.graphlib.Graph();
+  g.setDefaultEdgeLabel(() => ({}));
+  g.setGraph({ rankdir: 'LR', nodesep: NODESEP, ranksep: RANKSEP });
 
-    const x = (baseDepth + slot * 0) * COLUMN_WIDTH; // одна позиция на слой обычно
-    const y = (routeIndex.get(anchor.routeId) ?? 0) * ROW_HEIGHT;
+  for (const anchor of outline.anchors) {
+    g.setNode(anchor.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
+  }
+  for (const e of outline.anchorEdges) {
+    if (anchorById.has(e.from) && anchorById.has(e.to)) {
+      g.setEdge(e.from, e.to);
+    }
+  }
+
+  dagre.layout(g);
+
+  const nodes: Node<AnchorNodeData>[] = outline.anchors.map(anchor => {
+    const dn = g.node(anchor.id);
+    const x = dn.x - dn.width / 2;
+    const y = dn.y - dn.height / 2;
 
     const imageUrl = imageUrlFor(images[anchor.id]);
     const spriteUrl = anchor.characterFocus ? spriteUrlFor(characters[anchor.characterFocus]) : null;
@@ -128,8 +120,6 @@ export function computeAnchorLayout(
         imageUrl,
         spriteUrl,
       },
-      // visually grouping by routeId via parentNode — пока не используем,
-      // достаточно разноса по y и цвета бордера.
       draggable: true,
     };
   });
