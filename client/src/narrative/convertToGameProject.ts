@@ -14,35 +14,52 @@ function imageUrlFor(state: ImageGenState | undefined): string {
   return '';
 }
 
-function spriteUrlFor(state: CharacterGenState | undefined): string {
-  if (state?.status === 'done' && state.idleFilename) {
+const EMOTION_TO_POSE: Record<string, string> = {
+  happy: 'happy',
+  joy: 'happy',
+  cheerful: 'happy',
+  sad: 'sad',
+  melancholy: 'sad',
+  tense: 'tense',
+  nervous: 'tense',
+  anxious: 'tense',
+  soft: 'soft',
+  gentle: 'soft',
+  tender: 'soft',
+  thoughtful: 'thoughtful',
+  pensive: 'thoughtful',
+  contemplative: 'thoughtful',
+  surprised: 'surprised',
+  shocked: 'surprised',
+  angry: 'angry',
+  furious: 'angry',
+  irritated: 'angry',
+  neutral: 'idle',
+  calm: 'idle',
+};
+
+function spriteUrlForPose(state: CharacterGenState | undefined, emotion: string | undefined): string {
+  if (state?.status !== 'done') return '';
+  const pose = emotion ? EMOTION_TO_POSE[emotion.toLowerCase().trim()] : undefined;
+  if (pose && pose !== 'idle' && state.poseFilenames?.[pose]) {
+    return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.poseFilenames[pose])}`;
+  }
+  if (state.idleFilename) {
     return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.idleFilename)}`;
   }
   return '';
 }
 
-/**
- * Берёт первый из присутствующих в сцене персонажей, у которого
- * сгенерирован спрайт. Возвращает URL или пустую строку.
- *
- * Стратегия "первый сгенерированный, а не первый присутствующий" —
- * чтобы при частичной генерации спрайтов сцена не оставалась пустой,
- * если первый по списку character ещё не готов.
- */
-function pickSpriteUrl(charactersPresent: string[], characters: Record<string, CharacterGenState>): string {
-  for (const liId of charactersPresent) {
-    const url = spriteUrlFor(characters[liId]);
-    if (url) return url;
+function pickSpeakerEmotion(dialogue: DraftDialogueLine[], speakerId: string): string | undefined {
+  for (const line of dialogue) {
+    if (line.speaker === speakerId && line.emotion) return line.emotion;
   }
-  return '';
+  return undefined;
 }
 
-/**
- * Для якоря: characterFocus → его спрайт (если сгенерирован).
- */
 function pickAnchorSprite(anchor: AnchorPlan, characters: Record<string, CharacterGenState>): string {
   if (!anchor.characterFocus) return '';
-  return spriteUrlFor(characters[anchor.characterFocus]);
+  return spriteUrlForPose(characters[anchor.characterFocus], undefined);
 }
 
 /**
@@ -67,11 +84,16 @@ export type GameSceneOutput = {
   text: string;
 };
 
+export type GameSpriteEntry = {
+  url: string;
+  position: 'left' | 'center' | 'right';
+};
+
 export type GameSceneNodeData = {
   label: string;
   image: string;
-  /** Optional foreground character sprite (PNG with transparent bg) over `image`. */
   sprite?: string;
+  sprites?: GameSpriteEntry[];
   outputs: GameSceneOutput[];
 };
 
@@ -121,6 +143,12 @@ export type ConversionResult = {
   scenes: GameSceneGraph;
   stats: ConversionStats;
 };
+
+function assignPositions(count: number): Array<'left' | 'center' | 'right'> {
+  if (count <= 1) return ['center'];
+  if (count === 2) return ['left', 'right'];
+  return ['left', 'center', 'right'];
+}
 
 const ANCHOR_X_STEP = 320;
 const ANCHOR_Y_STEP = 220;
@@ -186,6 +214,7 @@ export function convertToGameProject(
         label: renderAnchorText(anchor.summary, anchor.id),
         image,
         sprite: sprite || undefined,
+        sprites: sprite ? [{ url: sprite, position: 'center' as const }] : undefined,
         outputs: [], // дозаполним из anchorEdges + segments
       },
     });
@@ -232,10 +261,18 @@ export function convertToGameProject(
       const baseY = (routeIdx.get(targetAnchor?.routeId ?? 'common') ?? 0) * ANCHOR_Y_STEP + DRAFT_Y_OFFSET;
       seg.scenes.forEach((draft, idx) => {
         if (segmentImage) imagesEmbedded++;
-        // Sprite сцены сегмента — первый из присутствующих персонажей,
-        // у кого есть готовый спрайт. Если никто не сгенерирован — пусто.
-        const sprite = pickSpriteUrl(draft.charactersPresent, characters);
-        if (sprite) spritesEmbedded++;
+
+        const positions = assignPositions(draft.charactersPresent.length);
+        const sprites: GameSpriteEntry[] = [];
+        for (let ci = 0; ci < draft.charactersPresent.length; ci++) {
+          const liId = draft.charactersPresent[ci];
+          const emotion = pickSpeakerEmotion(draft.dialogue, liId);
+          const url = spriteUrlForPose(characters[liId], emotion);
+          if (url) sprites.push({ url, position: positions[ci] ?? 'center' });
+        }
+        spritesEmbedded += sprites.length;
+
+        const legacySprite = sprites[0]?.url;
         nodes.push({
           id: draft.id,
           type: 'scene',
@@ -248,7 +285,8 @@ export function convertToGameProject(
           data: {
             label: renderDraftSceneText(draft.narration, draft.dialogue),
             image: segmentImage,
-            sprite: sprite || undefined,
+            sprite: legacySprite || undefined,
+            sprites: sprites.length ? sprites : undefined,
             outputs: draft.choices.map(c => ({ id: c.id, text: c.text })),
           },
         });

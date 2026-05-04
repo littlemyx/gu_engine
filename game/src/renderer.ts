@@ -32,9 +32,14 @@ export class GameRenderer {
       ? `<img class="scene-image" src="${escapeHtml(node.data.image)}" alt="" />`
       : `<div class="scene-image-placeholder">Нет изображения</div>`;
 
-    const spriteHtml = node.data.sprite
-      ? `<img class="scene-sprite" src="${escapeHtml(node.data.sprite)}" alt="" />`
-      : "";
+    let spriteHtml = '';
+    if (node.data.sprites?.length) {
+      spriteHtml = node.data.sprites
+        .map(s => `<img class="scene-sprite scene-sprite--${s.position}" src="${escapeHtml(s.url)}" alt="" />`)
+        .join('');
+    } else if (node.data.sprite) {
+      spriteHtml = `<img class="scene-sprite scene-sprite--center" src="${escapeHtml(node.data.sprite)}" alt="" />`;
+    }
 
     const choicesHtml =
       activeOutputs.length > 0

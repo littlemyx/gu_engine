@@ -3,15 +3,17 @@ export type SceneOutput = {
   text: string;
 };
 
+export type SpriteEntry = {
+  url: string;
+  position: 'left' | 'center' | 'right';
+};
+
 export type SceneNodeData = {
   label: string;
   image: string;
-  /**
-   * Optional foreground character sprite (PNG with transparent background)
-   * rendered on top of `image`. Set by procedural-narrative pilot when a
-   * scene's charactersPresent contains a generated LI sprite.
-   */
+  /** @deprecated Use sprites[] for multi-character. Kept for backward compat. */
   sprite?: string;
+  sprites?: SpriteEntry[];
   outputs: SceneOutput[];
 };
 

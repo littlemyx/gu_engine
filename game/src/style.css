@@ -212,14 +212,34 @@ body {
 .scene-sprite {
   position: absolute;
   bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
   height: 100%;
   width: auto;
   max-width: 80%;
   object-fit: contain;
   pointer-events: none;
   z-index: 1;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.scene-sprite--center {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.scene-sprite--left {
+  left: 5%;
+  transform: none;
+  max-width: 45%;
+  height: 90%;
+}
+
+.scene-sprite--right {
+  right: 5%;
+  left: auto;
+  transform: none;
+  max-width: 45%;
+  height: 90%;
 }
 
 .scene-image-placeholder {
