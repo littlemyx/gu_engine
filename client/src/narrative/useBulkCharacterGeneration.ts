@@ -6,16 +6,15 @@ import { useNarrativeStore } from './narrativeStore';
 /**
  * Bulk-генератор спрайтов персонажей через image_gen /generate/character.
  *
- * MVP: генерируем только idle-позу для каждого LI. Дополнительные позы
- * (happy/sad/tense/etc.) — следующий слой; пока spriteRequest не указывает
- * никаких extra poses, сервис вернёт один файл.
- *
- * Каждый запрос на персонажа возвращает batch с одним item-ом ("idle"),
- * полное имя файла лежит в s.completed[0].file.
+ * Генерируем idle + эмоциональные позы для каждого LI.
+ * Сервис получает poses[], генерирует idle первым (как reference), затем
+ * остальные позы параллельно. Результат — idleFilename + poseFilenames map.
  *
  * Resumable: пропускает LI, у которых уже есть сгенерированный спрайт.
  * Concurrency = 2 (character generation тяжелее background-а).
  */
+
+const EMOTION_POSES = ['happy', 'sad', 'tense', 'soft', 'thoughtful', 'surprised', 'angry'] as const;
 
 const CONCURRENCY = 2;
 const POLL_INTERVAL_MS = 2500;
@@ -131,6 +130,7 @@ export function useBulkCharacterGeneration() {
             masterPrompt,
             storyMasterPrompt: storyContext || undefined,
             characterDescription,
+            poses: [...EMOTION_POSES],
           },
         });
         if (error || !data) {
@@ -139,8 +139,8 @@ export function useBulkCharacterGeneration() {
         const batchId = data.batchId;
         setStore(li.id, { status: 'generating', batchId });
 
-        const idleFilename = await pollUntilIdleDone(batchId);
-        setStore(li.id, { status: 'done', idleFilename });
+        const result = await pollUntilAllDone(batchId);
+        setStore(li.id, { status: 'done', ...result });
         completed++;
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
@@ -186,12 +186,9 @@ export function useBulkCharacterGeneration() {
   return { status, start, cancel, reset };
 }
 
-/**
- * Polls until done. /generate/character возвращает batch с одной idle-позой
- * (плюс опциональные доп. позы, которые мы пока не запрашиваем).
- * Возвращаем filename idle-позы.
- */
-async function pollUntilIdleDone(batchId: string): Promise<string> {
+async function pollUntilAllDone(
+  batchId: string,
+): Promise<{ idleFilename: string; poseFilenames: Record<string, string> }> {
   const startedAt = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {
@@ -202,16 +199,27 @@ async function pollUntilIdleDone(batchId: string): Promise<string> {
     const { data, error } = await getBatchStatus({ path: { batchId } });
     if (error || !data) throw new Error('character-batch не найден на сервере');
     const s = data as BatchStatus;
-    if (s.failed.length > 0) {
-      throw new Error(s.failed[0]?.error ?? 'character generation failed');
-    }
+
     if (s.done) {
-      // Ищем idle-позу. Если её нет (бывает на случай переименования),
-      // берём первую завершённую — это всё равно нужный спрайт.
-      const idle = s.completed.find(c => c.id === 'idle') ?? s.completed[0];
-      const filename = idle?.file;
-      if (!filename) throw new Error('пустой результат character-batch');
-      return filename;
+      const idleItem = s.completed.find(c => c.id === 'idle') ?? s.completed[0];
+      if (!idleItem?.file) {
+        const idleFail = s.failed.find(f => f.id === 'idle');
+        throw new Error(idleFail?.error ?? 'idle-поза не сгенерирована');
+      }
+
+      const poseFilenames: Record<string, string> = {};
+      for (const c of s.completed) {
+        if (c.id !== 'idle') poseFilenames[c.id] = c.file;
+      }
+
+      if (s.failed.length > 0) {
+        const failedPoses = s.failed.filter(f => f.id !== 'idle').map(f => f.id);
+        if (failedPoses.length) {
+          console.warn(`[character-gen] позы не удались: ${failedPoses.join(', ')}`);
+        }
+      }
+
+      return { idleFilename: idleItem.file, poseFilenames };
     }
   }
 }
