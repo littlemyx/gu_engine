@@ -81,10 +81,14 @@ export function useBulkCharacterGeneration() {
   const cancelledRef = useRef(false);
   const runningRef = useRef(false);
 
-  const start = useCallback(async (brief: Brief, outline: OutlinePlan | null) => {
+  const start = useCallback(async (brief: Brief, outline: OutlinePlan | null, opts?: { force?: boolean }) => {
     if (runningRef.current) return;
     runningRef.current = true;
     cancelledRef.current = false;
+
+    if (opts?.force) {
+      useNarrativeStore.getState().clearCharacters();
+    }
 
     if (!(await isImageGenReachable())) {
       setStatus({

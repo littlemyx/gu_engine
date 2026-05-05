@@ -110,6 +110,7 @@ const Playground = () => {
               <CharacterGenBar
                 status={characterGen.status}
                 onStart={() => characterGen.start(brief, outline)}
+                onForceStart={() => characterGen.start(brief, outline, { force: true })}
                 onCancel={characterGen.cancel}
                 onReset={characterGen.reset}
                 liCount={brief.loveInterests.length}
@@ -621,12 +622,14 @@ const ImageGenBar: React.FC<{
 const CharacterGenBar: React.FC<{
   status: CharacterBulkStatus;
   onStart: () => void;
+  onForceStart: () => void;
   onCancel: () => void;
   onReset: () => void;
   liCount: number;
-}> = ({ status, onStart, onCancel, onReset, liCount }) => {
+}> = ({ status, onStart, onForceStart, onCancel, onReset, liCount }) => {
   const characters = useNarrativeStore(s => s.characters);
   const cachedDone = Object.values(characters).filter(c => c.status === 'done').length;
+  const allDone = liCount > 0 && cachedDone >= liCount;
 
   if (status.state === 'idle') {
     return (
@@ -639,9 +642,15 @@ const CharacterGenBar: React.FC<{
             8 поз на LI (idle + 7 эмоций, прозрачный фон) · 2 параллельно · ~4–6 мин на полный каст
           </span>
         </div>
-        <button type="button" className={styles.primaryBtn} onClick={onStart} disabled={liCount === 0}>
-          Сгенерировать спрайты
-        </button>
+        {allDone ? (
+          <button type="button" className={styles.secondaryBtn} onClick={onForceStart}>
+            Перегенерировать
+          </button>
+        ) : (
+          <button type="button" className={styles.primaryBtn} onClick={onStart} disabled={liCount === 0}>
+            Сгенерировать спрайты
+          </button>
+        )}
       </div>
     );
   }
