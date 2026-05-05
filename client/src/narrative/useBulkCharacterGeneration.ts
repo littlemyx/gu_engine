@@ -86,9 +86,28 @@ export function useBulkCharacterGeneration() {
     runningRef.current = true;
     cancelledRef.current = false;
 
+    if (!(await isImageGenReachable())) {
+      setStatus({
+        state: 'done',
+        total: 0,
+        completed: 0,
+        failures: [
+          {
+            liId: '__service__',
+            error: 'image_gen недоступен (http://localhost:3100). Запустите сервис: cd image_gen && pnpm dev',
+          },
+        ],
+        cancelled: false,
+      });
+      runningRef.current = false;
+      return;
+    }
+
     const existing = useNarrativeStore.getState().characters;
+    // Включаем в очередь всё кроме 'done': 'generating' тоже ретраим, т.к. batchId
+    // живёт только в памяти image_gen и протухает при рестарте сервиса.
     const queue: LoveInterestCard[] = brief.loveInterests.filter(
-      li => !existing[li.id] || existing[li.id].status === 'failed' || existing[li.id].status === 'pending',
+      li => !existing[li.id] || existing[li.id].status !== 'done',
     );
 
     const total = queue.length;
@@ -226,4 +245,13 @@ async function pollUntilAllDone(
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function isImageGenReachable(): Promise<boolean> {
+  try {
+    const res = await fetch('http://localhost:3100/status', { method: 'GET' });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }

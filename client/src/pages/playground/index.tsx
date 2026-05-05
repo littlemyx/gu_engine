@@ -670,6 +670,8 @@ const CharacterGenBar: React.FC<{
     );
   }
 
+  const firstError = status.failures[0];
+  const isServiceError = firstError?.liId === '__service__';
   return (
     <div className={styles.bulkBar}>
       <div className={styles.bulkLeft}>
@@ -677,16 +679,15 @@ const CharacterGenBar: React.FC<{
           Character-генерация завершена · {status.completed} / {status.total}
           {status.cancelled && ' (остановлено)'}
         </span>
-        <span className={styles.bulkMeta}>
-          {status.failures.length > 0 ? (
-            <>
-              ✗ {status.failures.length} ошибок:{' '}
-              {status.failures
-                .slice(0, 3)
-                .map(f => f.liId)
-                .join(', ')}
-              {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
-            </>
+        <span className={styles.bulkMeta} style={isServiceError ? { color: '#dc2626' } : undefined}>
+          {firstError ? (
+            isServiceError ? (
+              <>✗ {firstError.error}</>
+            ) : (
+              <>
+                ✗ {status.failures.length} ошибок · {firstError.error}
+              </>
+            )
           ) : (
             'все спрайты сгенерированы успешно'
           )}
