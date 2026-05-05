@@ -100,40 +100,37 @@ export function validateSegmentSemantics(segment: GeneratedSegment, ctx: Segment
   const hasSatisfying = summaries.some(s => isFeasible(s, startRanges, targetRanges, targetFlags));
 
   if (!hasSatisfying) {
-    // Per-variable диагностика: для каждой target-переменной находим путь
-    // с минимальным "разрывом" от feasible window — это даёт LLM-у явный
-    // сигнал, в какую сторону и насколько подвинуть Σdelta.
-    let perVarReported = false;
+    // Привязываем диагностику к ОДНОМУ "лучшему кандидат-пути" — тому, что
+    // удовлетворяет максимуму требований, а на остальных имеет минимальный
+    // суммарный gap. Так LLM получает связную картину "вот на этом пути
+    // подкрути Σdelta этих переменных и доустанови этот флаг", а не разбросанные
+    // подсказки от разных путей, которые он не может скомбинировать.
+    const best = pickBestCandidatePath(summaries, startRanges, targetRanges, targetFlags);
+    const totalReqs = Object.keys(targetRanges).length + targetFlags.length;
+    const satisfiedReqs = best.varsFeasible + best.flagsSatisfied;
+    issues.push({
+      severity: 'error',
+      scope: 'state-reachability',
+      message:
+        `Ни один из ${paths.length} путей до выхода не выполняет все требования anchorTo (${ctx.anchorTo.id}) ` +
+        `одновременно. Лучший кандидат-путь удовлетворяет ${satisfiedReqs} из ${totalReqs} требований; ` +
+        `см. конкретные правки ниже — все они относятся к ОДНОМУ этому пути, ` +
+        `и фиксить их надо вместе на одной "успешной" ветке (а не размазывать по разным).`,
+    });
+
     for (const [p, [tLo, tHi]] of Object.entries(targetRanges)) {
-      const issue = diagnoseVariable(p, [tLo, tHi], summaries, startRanges);
-      if (issue) {
-        issues.push(issue);
-        perVarReported = true;
-      }
+      const issue = diagnoseVariableForPath(p, [tLo, tHi], best.summary, startRanges);
+      if (issue) issues.push(issue);
     }
 
-    // Per-flag диагностика: какой требуемый флаг ни один путь не выставляет?
     for (const f of targetFlags) {
-      const anySets = summaries.some(s => s.flags.has(f));
-      if (!anySets) {
+      if (!best.summary.flags.has(f)) {
         issues.push({
           severity: 'error',
           scope: `state-reachability/flag:${f}`,
-          message: `требуемый флаг "${f}" не установлен ни одним путём — добавь flagSet:["${f}"] хотя бы в один выбор на пути к выходу`,
+          message: `на лучшем кандидат-пути флаг "${f}" не установлен — добавь flagSet:["${f}"] в один из выборов этого пути.`,
         });
-        perVarReported = true;
       }
-    }
-
-    // Каждое требование выполнимо отдельно, но ни один путь не выполняет все
-    // одновременно — обычно это значит, что target-переменные тянут в разные
-    // стороны и ни один single path их не сводит.
-    if (!perVarReported) {
-      issues.push({
-        severity: 'error',
-        scope: 'state-reachability',
-        message: `каждое требование anchorTo (${ctx.anchorTo.id}) выполнимо отдельно, но ни один из ${paths.length} путей не выполняет все одновременно — нужен путь, который двигает все state-переменные согласованно`,
-      });
     }
   }
 
@@ -269,59 +266,124 @@ function isFeasible(
   return true;
 }
 
-function diagnoseVariable(
+/**
+ * Запас от границы feasible-интервала, который мы рекомендуем LLM-у. Цель —
+ * чтобы при перегенерации модель не садилась ровно на край, потому что
+ * следующий ретрай легко проигрывает 0.01-0.02 на rounding-е и ошибка
+ * возвращается. Полшага типичной дельты выбора (-0.1...+0.15) — норм запас.
+ */
+const RECOMMENDED_MARGIN = 0.05;
+
+type CandidateScore = {
+  summary: PathSummary;
+  varsFeasible: number;
+  flagsSatisfied: number;
+  totalGap: number;
+};
+
+/**
+ * Выбирает один путь, на котором меньше всего "не сходится". Метрика:
+ *   1) больше всего переменных уже feasible
+ *   2) больше всего требуемых флагов уже выставлено
+ *   3) минимальный суммарный gap на оставшихся переменных
+ *
+ * Это даёт LLM-у одну "почти решённую" ветку, на которой надо точечно
+ * докрутить дельты и/или флаги, вместо мерцания между разными путями.
+ */
+function pickBestCandidatePath(
+  summaries: PathSummary[],
+  startRanges: Record<StateVarPath, [number, number]>,
+  targetRanges: Record<StateVarPath, [number, number]>,
+  targetFlags: string[],
+): CandidateScore {
+  const scored: CandidateScore[] = summaries.map(s => {
+    let varsFeasible = 0;
+    let totalGap = 0;
+    for (const [p, [tLo, tHi]] of Object.entries(targetRanges)) {
+      const start = startRanges[p] ?? [0, 0];
+      const d = s.deltas[p] ?? 0;
+      const reachLo = start[0] + d;
+      const reachHi = start[1] + d;
+      if (reachHi < tLo - DELTA_TOLERANCE) {
+        totalGap += tLo - reachHi;
+      } else if (reachLo > tHi + DELTA_TOLERANCE) {
+        totalGap += reachLo - tHi;
+      } else {
+        varsFeasible++;
+      }
+    }
+    let flagsSatisfied = 0;
+    for (const f of targetFlags) {
+      if (s.flags.has(f)) flagsSatisfied++;
+    }
+    return { summary: s, varsFeasible, flagsSatisfied, totalGap };
+  });
+  scored.sort(
+    (a, b) => b.varsFeasible - a.varsFeasible || b.flagsSatisfied - a.flagsSatisfied || a.totalGap - b.totalGap,
+  );
+  return scored[0];
+}
+
+/**
+ * Diagnose одной переменной относительно ОДНОГО конкретного пути (а не
+ * "лучшего из всех путей по этой переменной"). Возвращает null, если этот
+ * путь уже feasible по этой переменной.
+ */
+function diagnoseVariableForPath(
   p: StateVarPath,
   [tLo, tHi]: [number, number],
-  summaries: PathSummary[],
+  s: PathSummary,
   startRanges: Record<StateVarPath, [number, number]>,
 ): SegmentIssue | null {
   const start = startRanges[p] ?? [0, 0];
   const sLo = start[0];
   const sHi = start[1];
+  const d = s.deltas[p] ?? 0;
+  const reachLo = sLo + d;
+  const reachHi = sHi + d;
 
-  let smallestGap = Infinity;
-  let bestDelta = 0;
-  let bestReachLo = sLo;
-  let bestReachHi = sHi;
-  let bestDirection: 'up' | 'down' = 'up';
-
-  for (const s of summaries) {
-    const d = s.deltas[p] ?? 0;
-    const reachLo = sLo + d;
-    const reachHi = sHi + d;
-    let gap = 0;
-    let direction: 'up' | 'down' = 'up';
-    if (reachHi < tLo - DELTA_TOLERANCE) {
-      gap = tLo - reachHi;
-      direction = 'up';
-    } else if (reachLo > tHi + DELTA_TOLERANCE) {
-      gap = reachLo - tHi;
-      direction = 'down';
-    } else {
-      // Этот путь feasible по этой переменной — переменная не проблема.
-      return null;
-    }
-    if (gap < smallestGap) {
-      smallestGap = gap;
-      bestDelta = d;
-      bestReachLo = reachLo;
-      bestReachHi = reachHi;
-      bestDirection = direction;
-    }
+  let direction: 'up' | 'down';
+  let gap: number;
+  if (reachHi < tLo - DELTA_TOLERANCE) {
+    direction = 'up';
+    gap = tLo - reachHi;
+  } else if (reachLo > tHi + DELTA_TOLERANCE) {
+    direction = 'down';
+    gap = reachLo - tHi;
+  } else {
+    return null;
   }
 
-  const sign = bestDelta >= 0 ? '+' : '';
-  const directionHint =
-    bestDirection === 'up'
-      ? `нужно ещё ~+${smallestGap.toFixed(2)} вверх`
-      : `нужно ещё ~-${smallestGap.toFixed(2)} вниз`;
+  // Feasibility (interval): должен ∃ start ∈ [sLo, sHi] такой, что
+  // start + Σdelta ∈ [tLo, tHi]. Эквивалентно: Σdelta ∈ [tLo - sHi, tHi - sLo].
+  const feasLo = tLo - sHi;
+  const feasHi = tHi - sLo;
+
+  // Рекомендуем число НЕ на самой границе, чтобы LLM на ретрае не топталась
+  // вокруг неё. Если интервал шире 2×margin — отступаем на margin от ближней
+  // границы; если узкий — берём середину.
+  let recommended: number;
+  if (feasHi - feasLo < RECOMMENDED_MARGIN * 2) {
+    recommended = (feasLo + feasHi) / 2;
+  } else if (direction === 'down') {
+    recommended = feasHi - RECOMMENDED_MARGIN;
+  } else {
+    recommended = feasLo + RECOMMENDED_MARGIN;
+  }
+  const extra = recommended - d;
+
+  const fmtSigned = (n: number) => `${n >= 0 ? '+' : ''}${n.toFixed(2)}`;
   return {
     severity: 'error',
     scope: `state-reachability/${p}`,
-    message: `target [${tLo.toFixed(2)}, ${tHi.toFixed(2)}], baseline [${sLo.toFixed(2)}, ${sHi.toFixed(
-      2,
-    )}], best path Σdelta=${sign}${bestDelta.toFixed(2)} → reachable [${bestReachLo.toFixed(2)}, ${bestReachHi.toFixed(
-      2,
-    )}]; ${directionHint} суммарной дельты`,
+    message:
+      `target [${tLo.toFixed(2)}, ${tHi.toFixed(2)}], baseline [${sLo.toFixed(2)}, ${sHi.toFixed(2)}], ` +
+      `на лучшем кандидат-пути Σdelta=${fmtSigned(d)} → reachable [${reachLo.toFixed(2)}, ${reachHi.toFixed(2)}]; ` +
+      `feasible Σdelta-диапазон для этой переменной [${fmtSigned(feasLo)}, ${fmtSigned(
+        feasHi,
+      )}], текущее значение вне него ` +
+      `(промах ${gap.toFixed(2)} ${direction === 'up' ? 'вниз' : 'вверх'}). ` +
+      `Цель: Σdelta по этому пути ≈ ${fmtSigned(recommended)} — добавь ещё ${fmtSigned(extra)} по этой переменной ` +
+      `к одному или нескольким выборам ИМЕННО на этом пути.`,
   };
 }

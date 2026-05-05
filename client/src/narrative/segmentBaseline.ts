@@ -21,6 +21,11 @@ import type { AnchorPlan, ArchetypeProfile, Range, StateVarPath } from './types'
  *        используем его;
  *      - иначе если archetype.additionalStateVars[path] есть — используем
  *        [default, default] (точка-значение из объявления переменной);
+ *      - иначе пробуем flat-форму "<var>_<X>" / "<X>_<var>" — это легаси-стиль,
+ *        который мог сгенерить старый outline-LLM до фикса промта (например,
+ *        "tension_asel" вместо "relationship[asel].tension"). Берём самое
+ *        длинное совпадение, чтобы "external_pressure_asel" матчился на
+ *        "external_pressure", а не на голое "pressure";
  *      - иначе fallback [0, 0].
  *
  * Возвращаемый объект покрывает ВСЕ переменные, которые валидатор будет
@@ -52,15 +57,34 @@ export function computeStartRanges(
 function baselineForPath(path: StateVarPath, archetype: ArchetypeProfile | null): Range {
   if (!archetype) return [0, 0];
 
+  const lookup = (key: string): Range | null => {
+    const fromInitial = archetype.initialState[key];
+    if (fromInitial) return [fromInitial[0], fromInitial[1]];
+    if (archetype.additionalStateVars && key in archetype.additionalStateVars) {
+      const decl = archetype.additionalStateVars[key];
+      return [decl.default, decl.default];
+    }
+    return null;
+  };
+
   const relMatch = path.match(/^relationship\[[^\]]+\]\.(.+)$/);
   const bareKey = relMatch ? relMatch[1] : path;
 
-  const fromInitial = archetype.initialState[bareKey];
-  if (fromInitial) return [fromInitial[0], fromInitial[1]];
+  const direct = lookup(bareKey);
+  if (direct) return direct;
 
-  if (archetype.additionalStateVars && bareKey in archetype.additionalStateVars) {
-    const decl = archetype.additionalStateVars[bareKey];
-    return [decl.default, decl.default];
+  // Flat-форма: "<var>_<X>" или "<X>_<var>". Сортируем var-имена по убыванию
+  // длины, чтобы самое специфичное совпадение выигрывало (external_pressure
+  // важнее, чем pressure).
+  const knownVars = [...Object.keys(archetype.initialState), ...Object.keys(archetype.additionalStateVars ?? {})].sort(
+    (a, b) => b.length - a.length,
+  );
+
+  for (const v of knownVars) {
+    if (path === v || path.startsWith(`${v}_`) || path.endsWith(`_${v}`)) {
+      const r = lookup(v);
+      if (r) return r;
+    }
   }
 
   return [0, 0];
