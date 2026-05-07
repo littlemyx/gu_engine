@@ -382,6 +382,8 @@ export type AnchorPlan = {
   act: number;
   /** id LI, на котором сфокусирован якорь (для li_introduction / route_*). null = общая сцена. */
   characterFocus: string | null;
+  /** Каноническая эмоция персонажа characterFocus в этом якоре. */
+  characterEmotion?: string;
   /** 1-2 предложения, что происходит в этом якоре. Авторский контекст для branch-генератора. */
   summary: string;
   /** Факты, которые становятся истинными после прохождения якоря. */
@@ -439,6 +441,7 @@ export function parseOutlinePlan(raw: string): OutlinePlan {
       routeId: String(anchor.routeId),
       act: typeof anchor.act === 'number' ? anchor.act : 1,
       characterFocus: anchor.characterFocus ? String(anchor.characterFocus) : null,
+      characterEmotion: anchor.characterEmotion ? String(anchor.characterEmotion) : undefined,
       summary: String(anchor.summary ?? ''),
       establishes: Array.isArray(anchor.establishes) ? (anchor.establishes as string[]) : [],
       entryStateRequired:
@@ -497,6 +500,8 @@ export type DraftScene = {
   location: string;
   timeMarker: string;
   charactersPresent: string[];
+  /** Доминантная эмоция каждого персонажа в сцене (charId → каноническая эмоция). */
+  characterEmotions?: Record<string, string>;
   narration: string;
   dialogue: DraftDialogueLine[];
   choices: DraftChoice[];
@@ -536,6 +541,10 @@ export function parseGeneratedSegment(raw: string): GeneratedSegment {
       location: String(scene.location ?? ''),
       timeMarker: String(scene.timeMarker ?? ''),
       charactersPresent: Array.isArray(scene.charactersPresent) ? (scene.charactersPresent as string[]) : [],
+      characterEmotions:
+        scene.characterEmotions && typeof scene.characterEmotions === 'object'
+          ? (scene.characterEmotions as Record<string, string>)
+          : undefined,
       narration: String(scene.narration ?? ''),
       dialogue: Array.isArray(scene.dialogue) ? (scene.dialogue as DraftDialogueLine[]) : [],
       choices: Array.isArray(scene.choices)

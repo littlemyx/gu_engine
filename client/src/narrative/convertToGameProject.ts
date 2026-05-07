@@ -1,11 +1,6 @@
 import type { AnchorPlan, Brief, DraftDialogueLine, GeneratedSegment, OutlinePlan } from './types';
 import type { CharacterGenState, ImageGenState } from './narrativeStore';
-
-/**
- * Базовый URL image-сервера, который раздаёт сгенерированные image_gen-ом
- * картинки. Тот же, что использует существующий main canvas.
- */
-export const IMAGE_SERVER_BASE = 'http://localhost:3007';
+import { IMAGE_SERVER_BASE, resolveEmotionToSpriteUrl, pickCharacterEmotion } from './emotionResolver';
 
 function imageUrlFor(state: ImageGenState | undefined): string {
   if (state?.status === 'done' && state.filename) {
@@ -14,52 +9,9 @@ function imageUrlFor(state: ImageGenState | undefined): string {
   return '';
 }
 
-const EMOTION_TO_POSE: Record<string, string> = {
-  happy: 'happy',
-  joy: 'happy',
-  cheerful: 'happy',
-  sad: 'sad',
-  melancholy: 'sad',
-  tense: 'tense',
-  nervous: 'tense',
-  anxious: 'tense',
-  soft: 'soft',
-  gentle: 'soft',
-  tender: 'soft',
-  thoughtful: 'thoughtful',
-  pensive: 'thoughtful',
-  contemplative: 'thoughtful',
-  surprised: 'surprised',
-  shocked: 'surprised',
-  angry: 'angry',
-  furious: 'angry',
-  irritated: 'angry',
-  neutral: 'idle',
-  calm: 'idle',
-};
-
-function spriteUrlForPose(state: CharacterGenState | undefined, emotion: string | undefined): string {
-  if (state?.status !== 'done') return '';
-  const pose = emotion ? EMOTION_TO_POSE[emotion.toLowerCase().trim()] : undefined;
-  if (pose && pose !== 'idle' && state.poseFilenames?.[pose]) {
-    return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.poseFilenames[pose])}`;
-  }
-  if (state.idleFilename) {
-    return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.idleFilename)}`;
-  }
-  return '';
-}
-
-function pickSpeakerEmotion(dialogue: DraftDialogueLine[], speakerId: string): string | undefined {
-  for (const line of dialogue) {
-    if (line.speaker === speakerId && line.emotion) return line.emotion;
-  }
-  return undefined;
-}
-
 function pickAnchorSprite(anchor: AnchorPlan, characters: Record<string, CharacterGenState>): string {
   if (!anchor.characterFocus) return '';
-  return spriteUrlForPose(characters[anchor.characterFocus], undefined);
+  return resolveEmotionToSpriteUrl(characters[anchor.characterFocus], anchor.characterEmotion).url;
 }
 
 /**
@@ -136,6 +88,8 @@ export type ConversionStats = {
   totalEdges: number;
   imagesEmbedded: number;
   spritesEmbedded: number;
+  emotionsMapped: number;
+  emotionsFallback: number;
 };
 
 export type ConversionResult = {
@@ -190,6 +144,8 @@ export function convertToGameProject(
   let generatedSegments = 0;
   let imagesEmbedded = 0;
   let spritesEmbedded = 0;
+  let emotionsMapped = 0;
+  let emotionsFallback = 0;
 
   // Сортировка маршрутов и порядок появления для y-позиций.
   const routes: string[] = [];
@@ -266,9 +222,11 @@ export function convertToGameProject(
         const sprites: GameSpriteEntry[] = [];
         for (let ci = 0; ci < draft.charactersPresent.length; ci++) {
           const liId = draft.charactersPresent[ci];
-          const emotion = pickSpeakerEmotion(draft.dialogue, liId);
-          const url = spriteUrlForPose(characters[liId], emotion);
+          const emotion = pickCharacterEmotion(draft, liId);
+          const { url, isFallback } = resolveEmotionToSpriteUrl(characters[liId], emotion);
           if (url) sprites.push({ url, position: positions[ci] ?? 'center' });
+          if (isFallback) emotionsFallback++;
+          else if (url) emotionsMapped++;
         }
         spritesEmbedded += sprites.length;
 
@@ -331,6 +289,8 @@ export function convertToGameProject(
     totalEdges: edges.length,
     imagesEmbedded,
     spritesEmbedded,
+    emotionsMapped,
+    emotionsFallback,
   };
 
   return { project, scenes: { nodes, edges }, stats };

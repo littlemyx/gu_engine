@@ -37,3 +37,17 @@ export {
   type GameSceneGraph,
   type GameProjectFile,
 } from './convertToGameProject';
+export {
+  CANONICAL_POSES,
+  EMOTION_TO_POSE,
+  IMAGE_SERVER_BASE,
+  resolveEmotionToPose,
+  resolveEmotionToSpriteUrl,
+  pickCharacterEmotion,
+  collectUsedEmotions,
+  findMissingPoses,
+  type CanonicalPose,
+  type SpriteResolution,
+} from './emotionResolver';
+export { useRegeneratePoses, poseKey } from './useRegeneratePoses';
+export type { PoseRegenEntry, PoseRegenStatus, PoseItemStatus } from './useRegeneratePoses';

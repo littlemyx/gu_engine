@@ -64,6 +64,7 @@ type NarrativeState = {
   setImage: (anchorId: string, state: ImageGenState) => void;
   clearImages: () => void;
   setCharacter: (liId: string, state: CharacterGenState) => void;
+  updateCharacterPose: (liId: string, pose: string, filename: string) => void;
   clearCharacters: () => void;
 
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
@@ -98,6 +99,19 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       setCharacter: (liId, state) => {
         set(s => ({ characters: { ...s.characters, [liId]: state } }));
+      },
+
+      updateCharacterPose: (liId, pose, filename) => {
+        set(s => {
+          const prev = s.characters[liId];
+          if (prev?.status !== 'done') return s;
+          return {
+            characters: {
+              ...s.characters,
+              [liId]: { ...prev, poseFilenames: { ...prev.poseFilenames, [pose]: filename } },
+            },
+          };
+        });
       },
 
       clearCharacters: () => set({ characters: {} }),
