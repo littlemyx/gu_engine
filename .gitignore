@@ -190,3 +190,6 @@ fastlane/test_output
 result-game/
 
 .cursorignore
+.claude/
+.cursor/
+.playwright-mcp/

@@ -33,6 +33,7 @@ import {
 import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
 import { SegmentDrawer } from './SegmentDrawer';
 import { BriefEditor } from './BriefEditor';
+import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
 import styles from './playground.module.css';
 
 const Playground = () => {
@@ -92,71 +93,73 @@ const Playground = () => {
         onReset={outlineGen.reset}
       />
 
-      {activeOutline &&
-        (() => {
-          const outline = activeOutline;
-          return (
-            <>
-              <OutlineGraph
-                outline={outline}
-                onEdgeClick={setSelectedSegment}
-                selected={selectedSegment}
-                generatingEdgeIds={generatingEdgeIds}
-              />
-              <BulkGenBar
-                status={bulkGen.status}
-                onStart={() => bulkGen.start(brief, outline)}
-                onCancel={bulkGen.cancel}
-                onReset={bulkGen.reset}
-              />
-              <ImageGenBar
-                status={imageGen.status}
-                onStart={() => imageGen.start(brief, outline)}
-                onCancel={imageGen.cancel}
-                onReset={imageGen.reset}
-                anchorCount={outline.anchors.length}
-              />
-              <CharacterGenBar
-                status={characterGen.status}
-                onStart={() => characterGen.start(brief, outline)}
-                onForceStart={() => characterGen.start(brief, outline, { force: true })}
-                onCancel={characterGen.cancel}
-                onReset={characterGen.reset}
-                onRegenMissing={entries => poseRegen.start(entries, brief, outline)}
-                liCount={brief.loveInterests.length}
-                outline={outline}
-              />
-              <MissingPosesBar
-                outline={outline}
-                regenStatus={poseRegen.status}
-                onStart={entries => poseRegen.start(entries, brief, outline)}
-                onReset={poseRegen.reset}
-              />
-              <ExportBar outline={outline} />
-              <div className={styles.outlineDetailsToggleRow}>
-                <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
-                  {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
-                </button>
-              </div>
-              {showAnchorList && <OutlineResult outline={outline} />}
-              {selectedSegment && (
-                <SegmentDrawer
-                  brief={brief}
+      <PlaygroundErrorBoundary>
+        {activeOutline &&
+          (() => {
+            const outline = activeOutline;
+            return (
+              <>
+                <OutlineGraph
                   outline={outline}
-                  selection={selectedSegment}
-                  status={segmentGen.status}
-                  onGenerate={segmentGen.generate}
-                  onGeneratePose={(liId, pose) => poseRegen.start([{ liId, pose }], brief, outline)}
-                  poseStatuses={poseRegen.poseStatuses}
-                  onClose={() => {
-                    setSelectedSegment(null);
-                    segmentGen.reset();
-                  }}
+                  onEdgeClick={setSelectedSegment}
+                  selected={selectedSegment}
+                  generatingEdgeIds={generatingEdgeIds}
                 />
-              )}
-            </>
-          );
-        })()}
+                <BulkGenBar
+                  status={bulkGen.status}
+                  onStart={() => bulkGen.start(brief, outline)}
+                  onCancel={bulkGen.cancel}
+                  onReset={bulkGen.reset}
+                />
+                <ImageGenBar
+                  status={imageGen.status}
+                  onStart={() => imageGen.start(brief, outline)}
+                  onCancel={imageGen.cancel}
+                  onReset={imageGen.reset}
+                  anchorCount={outline.anchors.length}
+                />
+                <CharacterGenBar
+                  status={characterGen.status}
+                  onStart={() => characterGen.start(brief, outline)}
+                  onForceStart={() => characterGen.start(brief, outline, { force: true })}
+                  onCancel={characterGen.cancel}
+                  onReset={characterGen.reset}
+                  onRegenMissing={entries => poseRegen.start(entries, brief, outline)}
+                  liCount={brief.loveInterests.length}
+                  outline={outline}
+                />
+                <MissingPosesBar
+                  outline={outline}
+                  regenStatus={poseRegen.status}
+                  onStart={entries => poseRegen.start(entries, brief, outline)}
+                  onReset={poseRegen.reset}
+                />
+                <ExportBar outline={outline} />
+                <div className={styles.outlineDetailsToggleRow}>
+                  <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
+                    {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
+                  </button>
+                </div>
+                {showAnchorList && <OutlineResult outline={outline} />}
+                {selectedSegment && (
+                  <SegmentDrawer
+                    brief={brief}
+                    outline={outline}
+                    selection={selectedSegment}
+                    status={segmentGen.status}
+                    onGenerate={segmentGen.generate}
+                    onGeneratePose={(liId, pose) => poseRegen.start([{ liId, pose }], brief, outline)}
+                    poseStatuses={poseRegen.poseStatuses}
+                    onClose={() => {
+                      setSelectedSegment(null);
+                      segmentGen.reset();
+                    }}
+                  />
+                )}
+              </>
+            );
+          })()}
+      </PlaygroundErrorBoundary>
 
       {outlineGen.status.state === 'error' && (
         <div className={styles.outlineResult}>

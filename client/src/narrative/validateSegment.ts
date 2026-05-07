@@ -51,6 +51,25 @@ type PathSummary = {
 };
 
 export function validateSegmentSemantics(segment: GeneratedSegment, ctx: SegmentValidationContext): SegmentIssue[] {
+  try {
+    return validateSegmentSemanticsImpl(segment, ctx);
+  } catch (e) {
+    // Любой throw здесь без ErrorBoundary унёс бы весь playground (валидатор
+    // вызывается в render-пути SegmentDrawer.storedIssues и в
+    // OutlineGraph.getAllSegmentValidations). Лучше вернуть один синтетический
+    // issue, чем схлопнуть UI до перезагрузки.
+    console.error('[validateSegmentSemantics] crashed', e, { segment, ctx });
+    return [
+      {
+        severity: 'error',
+        scope: 'validator-crash',
+        message: `валидатор сегмента упал: ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ];
+  }
+}
+
+function validateSegmentSemanticsImpl(segment: GeneratedSegment, ctx: SegmentValidationContext): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
   const sceneMap = new Map<string, DraftScene>(segment.scenes.map(s => [s.id, s]));
 
@@ -106,6 +125,7 @@ export function validateSegmentSemantics(segment: GeneratedSegment, ctx: Segment
     // подкрути Σdelta этих переменных и доустанови этот флаг", а не разбросанные
     // подсказки от разных путей, которые он не может скомбинировать.
     const best = pickBestCandidatePath(summaries, startRanges, targetRanges, targetFlags);
+    if (!best) return issues; // дополнительный страховочный guard, теоретически недостижим
     const totalReqs = Object.keys(targetRanges).length + targetFlags.length;
     const satisfiedReqs = best.varsFeasible + best.flagsSatisfied;
     issues.push({
@@ -200,16 +220,27 @@ export function getSegmentValidations(
   toId: string,
   segment: GeneratedSegment,
 ): SegmentIssue[] {
-  const anchorFrom = outline.anchors.find(a => a.id === fromId);
-  const anchorTo = outline.anchors.find(a => a.id === toId);
-  if (!anchorFrom || !anchorTo) return [];
-  const focusLiId = anchorTo.characterFocus ?? anchorFrom.characterFocus ?? null;
-  const li = focusLiId ? brief.loveInterests.find(l => l.id === focusLiId) : null;
-  const archetype: ArchetypeProfile | null = li ? ARCHETYPES[li.archetype] : null;
-  return [
-    ...validateGeneratedSegment(segment),
-    ...validateSegmentSemantics(segment, { anchorFrom, anchorTo, archetype }),
-  ];
+  try {
+    const anchorFrom = outline.anchors.find(a => a.id === fromId);
+    const anchorTo = outline.anchors.find(a => a.id === toId);
+    if (!anchorFrom || !anchorTo) return [];
+    const focusLiId = anchorTo.characterFocus ?? anchorFrom.characterFocus ?? null;
+    const li = focusLiId ? brief.loveInterests.find(l => l.id === focusLiId) : null;
+    const archetype: ArchetypeProfile | null = li ? ARCHETYPES[li.archetype] : null;
+    return [
+      ...validateGeneratedSegment(segment),
+      ...validateSegmentSemantics(segment, { anchorFrom, anchorTo, archetype }),
+    ];
+  } catch (e) {
+    console.error('[getSegmentValidations] crashed', e, { fromId, toId });
+    return [
+      {
+        severity: 'error',
+        scope: 'validator-crash',
+        message: `валидация сегмента упала: ${e instanceof Error ? e.message : String(e)}`,
+      },
+    ];
+  }
 }
 
 /**
@@ -238,10 +269,23 @@ export function getAllSegmentValidations(
     const li = focusLiId ? brief.loveInterests.find(l => l.id === focusLiId) : null;
     const archetype: ArchetypeProfile | null = li ? ARCHETYPES[li.archetype] : null;
 
-    const issues: SegmentIssue[] = [
-      ...validateGeneratedSegment(seg),
-      ...validateSegmentSemantics(seg, { anchorFrom, anchorTo, archetype }),
-    ];
+    let issues: SegmentIssue[];
+    try {
+      issues = [
+        ...validateGeneratedSegment(seg),
+        ...validateSegmentSemantics(seg, { anchorFrom, anchorTo, archetype }),
+      ];
+    } catch (err) {
+      // Один кривой сегмент в кэше не должен схлопывать весь outline-граф.
+      console.error('[getAllSegmentValidations] crashed for', key, err);
+      issues = [
+        {
+          severity: 'error',
+          scope: 'validator-crash',
+          message: `валидация сегмента упала: ${err instanceof Error ? err.message : String(err)}`,
+        },
+      ];
+    }
     if (issues.length > 0) result[key] = issues;
   }
   return result;
@@ -295,7 +339,8 @@ function pickBestCandidatePath(
   startRanges: Record<StateVarPath, [number, number]>,
   targetRanges: Record<StateVarPath, [number, number]>,
   targetFlags: string[],
-): CandidateScore {
+): CandidateScore | null {
+  if (summaries.length === 0) return null;
   const scored: CandidateScore[] = summaries.map(s => {
     let varsFeasible = 0;
     let totalGap = 0;
