@@ -90,6 +90,7 @@ export type ConversionStats = {
   spritesEmbedded: number;
   emotionsMapped: number;
   emotionsFallback: number;
+  idCollisionsFixed: number;
 };
 
 export type ConversionResult = {
@@ -146,6 +147,40 @@ export function convertToGameProject(
   let spritesEmbedded = 0;
   let emotionsMapped = 0;
   let emotionsFallback = 0;
+  let idCollisionsFixed = 0;
+
+  // ── 0. Дедупликация scene ID ──────────────────────────────────────────
+  //  LLM-генератор может выдать одинаковые scene.id в разных сегментах
+  //  или scene.id совпадающий с anchor.id. При конвертации это ломает
+  //  граф — рёбра из разных сегментов смешиваются через общий node.id.
+  const reservedIds = new Set(outline.anchors.map(a => a.id));
+  const segValues = Object.values(segments);
+  for (let si = 0; si < segValues.length; si++) {
+    const seg = segValues[si];
+    if (!seg) continue;
+    const renames = new Map<string, string>();
+    for (const scene of seg.scenes) {
+      if (reservedIds.has(scene.id)) {
+        const newId = `${scene.id}__${si}`;
+        renames.set(scene.id, newId);
+        scene.id = newId;
+        idCollisionsFixed++;
+      }
+      reservedIds.add(scene.id);
+    }
+    if (renames.size > 0) {
+      if (renames.has(seg.entrySceneId)) {
+        seg.entrySceneId = renames.get(seg.entrySceneId)!;
+      }
+      for (const scene of seg.scenes) {
+        for (const choice of scene.choices) {
+          if (choice.nextSceneId !== null && renames.has(choice.nextSceneId)) {
+            choice.nextSceneId = renames.get(choice.nextSceneId)!;
+          }
+        }
+      }
+    }
+  }
 
   // Сортировка маршрутов и порядок появления для y-позиций.
   const routes: string[] = [];
@@ -291,6 +326,7 @@ export function convertToGameProject(
     spritesEmbedded,
     emotionsMapped,
     emotionsFallback,
+    idCollisionsFixed,
   };
 
   return { project, scenes: { nodes, edges }, stats };
