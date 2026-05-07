@@ -7,6 +7,8 @@ import {
   MiniMap,
   Panel,
   useReactFlow,
+  applyNodeChanges,
+  type Node,
   type Edge,
   type NodeTypes,
   type OnNodesChange,
@@ -41,38 +43,42 @@ const InnerGraph: React.FC<{
     [outline, segments, validations, images, characters, generatingEdgeIds],
   );
 
-  // Позиции, изменяемые пользователем (drag). При смене структуры outline сбрасываются.
-  const [posOverrides, setPosOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  // Рабочие ноды: dagre-раскладка + пользовательские изменения (drag, dimensions).
+  // При смене структуры outline сбрасываем к dagre.
+  const [nodes, setNodes] = useState<Node[]>(dagreNodes);
   const anchorIdsKey = outline.anchors.map(a => a.id).join(',');
   const prevAnchorIdsRef = useRef(anchorIdsKey);
+  const prevDagreRef = useRef(dagreNodes);
   useEffect(() => {
     if (anchorIdsKey !== prevAnchorIdsRef.current) {
-      setPosOverrides({});
+      setNodes(dagreNodes);
       prevAnchorIdsRef.current = anchorIdsKey;
+      prevDagreRef.current = dagreNodes;
+    } else if (dagreNodes !== prevDagreRef.current) {
+      // Data changed (images, validations, etc.) but structure is the same —
+      // merge fresh data while keeping user positions and measured dims.
+      prevDagreRef.current = dagreNodes;
+      setNodes(prev => {
+        const posMap = new Map(prev.map(n => [n.id, { position: n.position, measured: n.measured }]));
+        return dagreNodes.map(n => {
+          const saved = posMap.get(n.id);
+          return saved ? { ...n, position: saved.position, measured: saved.measured } : n;
+        });
+      });
     }
-  }, [anchorIdsKey]);
-
-  const nodes = useMemo(
-    () =>
-      dagreNodes.map(n => ({
-        ...n,
-        position: posOverrides[n.id] ?? n.position,
-      })),
-    [dagreNodes, posOverrides],
-  );
+  }, [anchorIdsKey, dagreNodes]);
 
   const onNodesChange: OnNodesChange = useCallback(changes => {
-    for (const change of changes) {
-      if (change.type === 'position' && change.position) {
-        setPosOverrides(prev => ({ ...prev, [change.id]: change.position! }));
-      }
-    }
+    setNodes(nds => applyNodeChanges(changes, nds));
   }, []);
 
   const handleAutoLayout = useCallback(() => {
-    setPosOverrides({});
+    setNodes(prev => {
+      const dagrePos = new Map(dagreNodes.map(n => [n.id, n.position]));
+      return prev.map(n => ({ ...n, position: dagrePos.get(n.id) ?? n.position }));
+    });
     setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
-  }, [fitView]);
+  }, [fitView, dagreNodes]);
 
   // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {
