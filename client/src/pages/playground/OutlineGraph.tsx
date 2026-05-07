@@ -43,13 +43,11 @@ const InnerGraph: React.FC<{
 
   // Позиции, изменяемые пользователем (drag). При смене структуры outline сбрасываются.
   const [posOverrides, setPosOverrides] = useState<Record<string, { x: number; y: number }>>({});
-  const [measuredDims, setMeasuredDims] = useState<Record<string, { width: number; height: number }>>({});
   const anchorIdsKey = outline.anchors.map(a => a.id).join(',');
   const prevAnchorIdsRef = useRef(anchorIdsKey);
   useEffect(() => {
     if (anchorIdsKey !== prevAnchorIdsRef.current) {
       setPosOverrides({});
-      setMeasuredDims({});
       prevAnchorIdsRef.current = anchorIdsKey;
     }
   }, [anchorIdsKey]);
@@ -59,18 +57,14 @@ const InnerGraph: React.FC<{
       dagreNodes.map(n => ({
         ...n,
         position: posOverrides[n.id] ?? n.position,
-        ...(measuredDims[n.id] ? { measured: measuredDims[n.id] } : {}),
       })),
-    [dagreNodes, posOverrides, measuredDims],
+    [dagreNodes, posOverrides],
   );
 
   const onNodesChange: OnNodesChange = useCallback(changes => {
     for (const change of changes) {
       if (change.type === 'position' && change.position) {
         setPosOverrides(prev => ({ ...prev, [change.id]: change.position! }));
-      }
-      if (change.type === 'dimensions' && change.dimensions) {
-        setMeasuredDims(prev => ({ ...prev, [change.id]: change.dimensions! }));
       }
     }
   }, []);
