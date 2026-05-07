@@ -115,6 +115,8 @@ export function computeAnchorLayout(
       id: anchor.id,
       type: 'anchor',
       position: { x, y },
+      width: NODE_WIDTH,
+      height: NODE_HEIGHT,
       data: {
         ...anchor,
         routeColor: routeColor(anchor.routeId),
