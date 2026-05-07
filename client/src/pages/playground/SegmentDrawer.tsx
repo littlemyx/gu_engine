@@ -2,14 +2,20 @@ import React, { useMemo } from 'react';
 import {
   getSegmentValidations,
   useNarrativeStore,
+  pickCharacterEmotion,
+  resolveEmotionToSpriteUrl,
+  poseKey,
   type AnchorPlan,
   type Brief,
+  type CharacterGenState,
   type DraftScene,
   type GeneratedSegment,
   type OutlinePlan,
+  type PoseItemStatus,
   type SegmentGenStatus,
   type SegmentIssue,
 } from '@/narrative';
+import { SpritePreview } from './SpritePreview';
 import styles from './SegmentDrawer.module.css';
 
 type Props = {
@@ -24,6 +30,8 @@ type Props = {
     toId: string,
     retry?: { previousAttempt: GeneratedSegment; previousIssues: SegmentIssue[] },
   ) => void;
+  onGeneratePose?: (liId: string, pose: string) => void;
+  poseStatuses?: Record<string, PoseItemStatus>;
   onClose: () => void;
 };
 
@@ -33,10 +41,20 @@ type DisplayState =
   | { kind: 'error'; message: string }
   | { kind: 'done'; segment: GeneratedSegment; issues: SegmentIssue[]; fromStore: boolean };
 
-export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, status, onGenerate, onClose }) => {
+export const SegmentDrawer: React.FC<Props> = ({
+  brief,
+  outline,
+  selection,
+  status,
+  onGenerate,
+  onGeneratePose,
+  poseStatuses,
+  onClose,
+}) => {
   const anchorFrom = outline.anchors.find(a => a.id === selection.fromId);
   const anchorTo = outline.anchors.find(a => a.id === selection.toId);
   const storedSegment = useNarrativeStore(s => s.segments[`${selection.fromId}->${selection.toId}`]);
+  const characters = useNarrativeStore(s => s.characters);
   const storedIssues = useMemo(
     () => (storedSegment ? getSegmentValidations(brief, outline, selection.fromId, selection.toId, storedSegment) : []),
     [storedSegment, brief, outline, selection.fromId, selection.toId],
@@ -132,6 +150,9 @@ export const SegmentDrawer: React.FC<Props> = ({ brief, outline, selection, stat
             segment={displayState.segment}
             issues={displayState.issues}
             entrySceneId={displayState.segment.entrySceneId}
+            characters={characters}
+            onGeneratePose={onGeneratePose}
+            poseStatuses={poseStatuses}
           />
         )}
       </div>
@@ -150,7 +171,10 @@ const SegmentResult: React.FC<{
   segment: GeneratedSegment;
   issues: SegmentIssue[];
   entrySceneId: string;
-}> = ({ segment, issues, entrySceneId }) => {
+  characters: Record<string, CharacterGenState>;
+  onGeneratePose?: (liId: string, pose: string) => void;
+  poseStatuses?: Record<string, PoseItemStatus>;
+}> = ({ segment, issues, entrySceneId, characters, onGeneratePose, poseStatuses }) => {
   return (
     <>
       {issues.length > 0 && (
@@ -165,14 +189,27 @@ const SegmentResult: React.FC<{
       )}
       <div className={styles.scenesList}>
         {segment.scenes.map(scene => (
-          <SceneCard key={scene.id} scene={scene} isEntry={scene.id === entrySceneId} />
+          <SceneCard
+            key={scene.id}
+            scene={scene}
+            isEntry={scene.id === entrySceneId}
+            characters={characters}
+            onGeneratePose={onGeneratePose}
+            poseStatuses={poseStatuses}
+          />
         ))}
       </div>
     </>
   );
 };
 
-const SceneCard: React.FC<{ scene: DraftScene; isEntry: boolean }> = ({ scene, isEntry }) => {
+const SceneCard: React.FC<{
+  scene: DraftScene;
+  isEntry: boolean;
+  characters: Record<string, CharacterGenState>;
+  onGeneratePose?: (liId: string, pose: string) => void;
+  poseStatuses?: Record<string, PoseItemStatus>;
+}> = ({ scene, isEntry, characters, onGeneratePose, poseStatuses }) => {
   return (
     <div className={`${styles.sceneCard} ${isEntry ? styles.sceneCardEntry : ''}`}>
       <div className={styles.sceneHeader}>
@@ -194,6 +231,63 @@ const SceneCard: React.FC<{ scene: DraftScene; isEntry: boolean }> = ({ scene, i
           </>
         )}
       </div>
+      {scene.charactersPresent.length > 0 && (
+        <div className={styles.spriteStrip}>
+          {scene.charactersPresent.map(charId => {
+            const emotion = pickCharacterEmotion(scene, charId);
+            const charState = characters[charId];
+            const { url, pose, isFallback } = resolveEmotionToSpriteUrl(charState, emotion);
+            return (
+              <div key={charId} className={styles.spriteSlot}>
+                {url ? (
+                  <SpritePreview
+                    src={url}
+                    label={isFallback ? `${charId} — idle (нет «${emotion}»)` : `${charId} (${pose})`}
+                  >
+                    <img
+                      className={`${styles.spriteThumbnail} ${isFallback ? styles.spriteFallback : ''}`}
+                      src={url}
+                      alt={charId}
+                      title={isFallback ? `нет позы «${emotion}», показан idle` : `${charId} (${pose})`}
+                    />
+                  </SpritePreview>
+                ) : (
+                  <div className={styles.spriteMissing} title={`спрайт ${charId} не готов`}>
+                    ?
+                  </div>
+                )}
+                <span className={styles.spriteLabel}>{charId}</span>
+                {isFallback &&
+                  emotion &&
+                  onGeneratePose &&
+                  (() => {
+                    const ps = poseStatuses?.[poseKey(charId, emotion)];
+                    const isGen = ps === 'generating';
+                    return (
+                      <button
+                        type="button"
+                        className={`${styles.spriteGenBtn} ${isGen ? styles.spriteGenBtnActive : ''} ${
+                          ps === 'error' ? styles.spriteGenBtnError : ''
+                        }`}
+                        title={
+                          isGen
+                            ? `Генерация «${emotion}»...`
+                            : ps === 'error'
+                            ? `Ошибка генерации «${emotion}», попробовать снова`
+                            : `Сгенерировать позу «${emotion}»`
+                        }
+                        disabled={isGen}
+                        onClick={() => onGeneratePose(charId, emotion)}
+                      >
+                        {isGen ? '◌' : ps === 'error' ? '✗' : '⟳'}
+                      </button>
+                    );
+                  })()}
+              </div>
+            );
+          })}
+        </div>
+      )}
       <p className={styles.narration}>{scene.narration}</p>
       {scene.dialogue.length > 0 && (
         <div className={styles.dialogue}>

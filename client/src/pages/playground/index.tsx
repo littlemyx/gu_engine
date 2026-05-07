@@ -11,7 +11,13 @@ import {
   useBulkImageGeneration,
   useBulkCharacterGeneration,
   useNarrativeStore,
+  useRegeneratePoses,
+  CANONICAL_POSES,
+  EMOTION_TO_POSE,
+  collectUsedEmotions,
+  findMissingPoses,
   convertToGameProject,
+  type CanonicalPose,
   downloadJson,
   slugify,
   type AnchorPlan,
@@ -21,6 +27,8 @@ import {
   type ImageBulkStatus,
   type OutlineGenStatus,
   type OutlinePlan,
+  type PoseRegenEntry,
+  type PoseRegenStatus,
 } from '@/narrative';
 import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
 import { SegmentDrawer } from './SegmentDrawer';
@@ -40,6 +48,7 @@ const Playground = () => {
   const bulkGen = useBulkSegmentGeneration();
   const imageGen = useBulkImageGeneration();
   const characterGen = useBulkCharacterGeneration();
+  const poseRegen = useRegeneratePoses();
 
   const generatingEdgeIdsRef = useRef<Set<string>>(new Set());
   const generatingEdgeIds = useMemo(() => {
@@ -113,7 +122,15 @@ const Playground = () => {
                 onForceStart={() => characterGen.start(brief, outline, { force: true })}
                 onCancel={characterGen.cancel}
                 onReset={characterGen.reset}
+                onRegenMissing={entries => poseRegen.start(entries, brief, outline)}
                 liCount={brief.loveInterests.length}
+                outline={outline}
+              />
+              <MissingPosesBar
+                outline={outline}
+                regenStatus={poseRegen.status}
+                onStart={entries => poseRegen.start(entries, brief, outline)}
+                onReset={poseRegen.reset}
               />
               <ExportBar outline={outline} />
               <div className={styles.outlineDetailsToggleRow}>
@@ -129,6 +146,8 @@ const Playground = () => {
                   selection={selectedSegment}
                   status={segmentGen.status}
                   onGenerate={segmentGen.generate}
+                  onGeneratePose={(liId, pose) => poseRegen.start([{ liId, pose }], brief, outline)}
+                  poseStatuses={poseRegen.poseStatuses}
                   onClose={() => {
                     setSelectedSegment(null);
                     segmentGen.reset();
@@ -625,11 +644,46 @@ const CharacterGenBar: React.FC<{
   onForceStart: () => void;
   onCancel: () => void;
   onReset: () => void;
+  onRegenMissing: (entries: PoseRegenEntry[]) => void;
   liCount: number;
-}> = ({ status, onStart, onForceStart, onCancel, onReset, liCount }) => {
+  outline: OutlinePlan;
+}> = ({ status, onStart, onForceStart, onCancel, onReset, onRegenMissing, liCount, outline }) => {
   const characters = useNarrativeStore(s => s.characters);
+  const segments = useNarrativeStore(s => s.segments);
   const cachedDone = Object.values(characters).filter(c => c.status === 'done').length;
   const allDone = liCount > 0 && cachedDone >= liCount;
+
+  const poseStats = useMemo(() => {
+    const used = collectUsedEmotions(segments, outline);
+    const missing = findMissingPoses(used, characters);
+
+    let totalNeeded = 0;
+    let totalExisting = 0;
+    for (const [charId, emotions] of used) {
+      const state = characters[charId];
+      const hasPoses = state?.status === 'done';
+      for (const e of emotions) {
+        const n = e.toLowerCase().trim();
+        if (n === 'idle' || n === 'neutral' || n === 'calm') continue;
+        totalNeeded++;
+        if (hasPoses) {
+          const mapped = EMOTION_TO_POSE[n];
+          const pose = mapped ?? n;
+          if (pose !== 'idle' && state.poseFilenames?.[pose]) totalExisting++;
+          else if (CANONICAL_POSES.includes(pose as CanonicalPose) && state.poseFilenames?.[pose]) totalExisting++;
+        }
+      }
+    }
+    totalNeeded += liCount;
+    totalExisting += cachedDone;
+
+    const missingEntries: PoseRegenEntry[] = [];
+    for (const [liId, poses] of missing) {
+      for (const pose of poses) missingEntries.push({ liId, pose });
+    }
+
+    return { totalNeeded, totalExisting, missingEntries, missingCount: missingEntries.length };
+  }, [segments, outline, characters, liCount, cachedDone]);
 
   if (status.state === 'idle') {
     return (
@@ -639,18 +693,30 @@ const CharacterGenBar: React.FC<{
             Генерация спрайтов персонажей · {cachedDone} / {liCount} готово
           </span>
           <span className={styles.bulkMeta}>
-            8 поз на LI (idle + 7 эмоций, прозрачный фон) · 2 параллельно · ~4–6 мин на полный каст
+            {poseStats.totalExisting} / {poseStats.totalNeeded} поз (idle + эмоции)
+            {poseStats.missingCount > 0 && ` · ${poseStats.missingCount} не хватает`}
           </span>
         </div>
-        {allDone ? (
-          <button type="button" className={styles.secondaryBtn} onClick={onForceStart}>
-            Перегенерировать
-          </button>
-        ) : (
-          <button type="button" className={styles.primaryBtn} onClick={onStart} disabled={liCount === 0}>
-            Сгенерировать спрайты
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 6 }}>
+          {allDone && poseStats.missingCount > 0 && (
+            <button
+              type="button"
+              className={styles.primaryBtn}
+              onClick={() => onRegenMissing(poseStats.missingEntries)}
+            >
+              Догенерировать ({poseStats.missingCount})
+            </button>
+          )}
+          {allDone ? (
+            <button type="button" className={styles.secondaryBtn} onClick={onForceStart}>
+              Перегенерировать всё
+            </button>
+          ) : (
+            <button type="button" className={styles.primaryBtn} onClick={onStart} disabled={liCount === 0}>
+              Сгенерировать спрайты
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -704,6 +770,97 @@ const CharacterGenBar: React.FC<{
       </div>
       <button type="button" className={styles.secondaryBtn} onClick={onReset}>
         OK
+      </button>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// MISSING POSES BAR (detect unmapped emotions, offer regeneration)
+// ────────────────────────────────────────────────────────────────────────────
+
+const MissingPosesBar: React.FC<{
+  outline: OutlinePlan;
+  regenStatus: PoseRegenStatus;
+  onStart: (entries: PoseRegenEntry[]) => void;
+  onReset: () => void;
+}> = ({ outline, regenStatus, onStart, onReset }) => {
+  const segments = useNarrativeStore(s => s.segments);
+  const characters = useNarrativeStore(s => s.characters);
+  const [expanded, setExpanded] = useState(false);
+
+  const missingData = useMemo(() => {
+    const hasSegments = Object.keys(segments).length > 0;
+    const hasCharacters = Object.values(characters).some(c => c.status === 'done');
+    if (!hasSegments || !hasCharacters) return null;
+
+    const used = collectUsedEmotions(segments, outline);
+    const missing = findMissingPoses(used, characters);
+    if (missing.size === 0) return null;
+
+    const entries: PoseRegenEntry[] = [];
+    for (const [liId, poses] of missing) {
+      for (const pose of poses) entries.push({ liId, pose });
+    }
+    return { missing, entries, totalPoses: entries.length, totalChars: missing.size };
+  }, [segments, characters, outline]);
+
+  if (!missingData && regenStatus.state === 'idle') return null;
+
+  if (regenStatus.state === 'running') {
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Догенерация поз · {regenStatus.completed} / {regenStatus.total}
+          </span>
+          <span className={styles.bulkMeta}>{regenStatus.current}</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (regenStatus.state === 'done') {
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Догенерация завершена · {regenStatus.completed} / {regenStatus.total}
+          </span>
+          <span className={styles.bulkMeta}>
+            {regenStatus.failed.length > 0 ? `✗ ${regenStatus.failed.length} не удалось` : 'все позы сгенерированы'}
+          </span>
+        </div>
+        <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+          OK
+        </button>
+      </div>
+    );
+  }
+
+  if (!missingData) return null;
+
+  return (
+    <div className={styles.bulkBar}>
+      <div className={styles.bulkLeft}>
+        <span className={styles.bulkTitle}>
+          {missingData.totalPoses} отсутств. поз у {missingData.totalChars} перс.
+        </span>
+        <span
+          className={styles.bulkMeta}
+          style={{ cursor: 'pointer', textDecoration: 'underline dotted' }}
+          onClick={() => setExpanded(v => !v)}
+        >
+          {expanded ? 'свернуть' : 'подробнее'}
+        </span>
+        {expanded && (
+          <span className={styles.bulkMeta}>
+            {[...missingData.missing.entries()].map(([id, poses]) => `${id}: ${poses.join(', ')}`).join(' · ')}
+          </span>
+        )}
+      </div>
+      <button type="button" className={styles.primaryBtn} onClick={() => onStart(missingData.entries)}>
+        Догенерировать
       </button>
     </div>
   );

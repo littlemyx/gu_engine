@@ -1,15 +1,15 @@
 import type { Node, Edge } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
-import type {
-  AnchorPlan,
-  CharacterGenState,
-  GeneratedSegment,
-  ImageGenState,
-  OutlinePlan,
-  SegmentIssue,
+import {
+  type AnchorPlan,
+  type CharacterGenState,
+  type GeneratedSegment,
+  type ImageGenState,
+  type OutlinePlan,
+  type SegmentIssue,
+  IMAGE_SERVER_BASE,
+  resolveEmotionToSpriteUrl,
 } from '@/narrative';
-
-const IMAGE_SERVER_BASE = 'http://localhost:3007';
 
 export type AnchorNodeData = AnchorPlan & {
   routeColor: string;
@@ -80,11 +80,9 @@ export function computeAnchorLayout(
     }
     return null;
   };
-  const spriteUrlFor = (s: CharacterGenState | undefined): string | null => {
-    if (s?.status === 'done' && s.idleFilename) {
-      return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(s.idleFilename)}`;
-    }
-    return null;
+  const spriteUrlFor = (s: CharacterGenState | undefined, emotion?: string): string | null => {
+    const { url } = resolveEmotionToSpriteUrl(s, emotion);
+    return url || null;
   };
 
   // Раскладка через dagre — слева направо, без перекрытий.
@@ -109,7 +107,9 @@ export function computeAnchorLayout(
     const y = dn.y - dn.height / 2;
 
     const imageUrl = imageUrlFor(images[anchor.id]);
-    const spriteUrl = anchor.characterFocus ? spriteUrlFor(characters[anchor.characterFocus]) : null;
+    const spriteUrl = anchor.characterFocus
+      ? spriteUrlFor(characters[anchor.characterFocus], anchor.characterEmotion)
+      : null;
 
     return {
       id: anchor.id,

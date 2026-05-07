@@ -10,6 +10,7 @@ import {
   type Format,
   type LoveInterestCard,
 } from '@/narrative';
+import { SpritePreview } from './SpritePreview';
 import styles from './BriefEditor.module.css';
 
 const IMAGE_SERVER_BASE = 'http://localhost:3007';
@@ -282,11 +283,23 @@ const LoveInterestEditor: React.FC<{ li: LoveInterestCard }> = ({ li }) => {
   const specificsSchema = archetype.archetypeSpecificsSchema;
   const specifics = li.archetypeSpecifics ?? {};
 
-  const spriteUrl =
-    characterState?.status === 'done'
-      ? `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(characterState.idleFilename)}`
-      : null;
   const spriteStatus = characterState?.status;
+
+  const allSprites: { pose: string; url: string }[] = [];
+  if (characterState?.status === 'done') {
+    allSprites.push({
+      pose: 'idle',
+      url: `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(characterState.idleFilename)}`,
+    });
+    if (characterState.poseFilenames) {
+      for (const [pose, filename] of Object.entries(characterState.poseFilenames)) {
+        allSprites.push({
+          pose,
+          url: `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(filename)}`,
+        });
+      }
+    }
+  }
 
   return (
     <div className={styles.liCard}>
@@ -329,8 +342,17 @@ const LoveInterestEditor: React.FC<{ li: LoveInterestCard }> = ({ li }) => {
 
       <div className={styles.liBodyRow}>
         <div className={styles.liSpriteSlot}>
-          {spriteUrl ? (
-            <img className={styles.liSprite} src={spriteUrl} alt={li.name} />
+          {allSprites.length > 0 ? (
+            <div className={styles.liSpriteGallery}>
+              {allSprites.map(s => (
+                <SpritePreview key={s.pose} src={s.url} label={`${li.id} (${s.pose})`}>
+                  <div className={styles.liSpriteThumb}>
+                    <img className={styles.liSprite} src={s.url} alt={`${li.id} ${s.pose}`} />
+                    <span className={styles.liSpriteLabel}>{s.pose}</span>
+                  </div>
+                </SpritePreview>
+              ))}
+            </div>
           ) : spriteStatus === 'generating' ? (
             <span className={styles.liSpritePlaceholder}>генерируется...</span>
           ) : spriteStatus === 'failed' ? (
