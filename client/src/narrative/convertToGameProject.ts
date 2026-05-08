@@ -1,6 +1,8 @@
 import type { AnchorPlan, Brief, DraftDialogueLine, GeneratedSegment, OutlinePlan } from './types';
+import { COMMON_RELATIONSHIP_VARS } from './types';
 import type { CharacterGenState, ImageGenState } from './narrativeStore';
 import { IMAGE_SERVER_BASE, resolveEmotionToSpriteUrl, pickCharacterEmotion } from './emotionResolver';
+import { ARCHETYPES } from './archetypes';
 
 function imageUrlFor(state: ImageGenState | undefined): string {
   if (state?.status === 'done' && state.filename) {
@@ -31,9 +33,18 @@ function pickAnchorSprite(anchor: AnchorPlan, characters: Record<string, Charact
 
 // ── game/-схема, локально воспроизведена ──────────────────────────────────
 
+export type GameSceneType = 'narration' | 'dialogue' | 'branch' | 'router';
+
+export type GameOutputEffects = {
+  stateDeltas?: Record<string, number>;
+  flagSet?: string[];
+  flagClear?: string[];
+};
+
 export type GameSceneOutput = {
   id: string;
   text: string;
+  effects?: GameOutputEffects;
 };
 
 export type GameSpriteEntry = {
@@ -47,6 +58,7 @@ export type GameSceneNodeData = {
   sprite?: string;
   sprites?: GameSpriteEntry[];
   outputs: GameSceneOutput[];
+  sceneType?: GameSceneType;
 };
 
 export type GameSceneNode = {
@@ -56,16 +68,33 @@ export type GameSceneNode = {
   data: GameSceneNodeData;
 };
 
+export type GameStateCondition = {
+  path: string;
+  gte?: number;
+  lte?: number;
+};
+
 export type GameSceneEdge = {
   id: string;
   source: string;
   sourceHandle: string;
   target: string;
+  condition?: GameStateCondition[];
 };
 
 export type GameSceneGraph = {
   nodes: GameSceneNode[];
   edges: GameSceneEdge[];
+};
+
+export type GameStateVarSchema = {
+  range: [number, number];
+  default: number;
+};
+
+export type GameStateSchema = {
+  vars: Record<string, GameStateVarSchema>;
+  flags: string[];
 };
 
 export type GameProjectFile = {
@@ -75,6 +104,7 @@ export type GameProjectFile = {
     sceneFadeInMs?: number;
     choiceAppearDelayMs?: number;
     endFadeInMs?: number;
+    stateSchema?: GameStateSchema;
   };
 };
 
@@ -98,6 +128,33 @@ export type ConversionResult = {
   scenes: GameSceneGraph;
   stats: ConversionStats;
 };
+
+function buildStateSchema(brief: Brief, outline: OutlinePlan): GameStateSchema {
+  const vars: Record<string, GameStateVarSchema> = {};
+  for (const li of brief.loveInterests) {
+    const arch = ARCHETYPES[li.archetype];
+    for (const v of COMMON_RELATIONSHIP_VARS) {
+      const key = `relationship[${li.id}].${v}`;
+      const initial = arch?.initialState?.[v];
+      vars[key] = {
+        range: [-1, 1],
+        default: initial ? (initial[0] + initial[1]) / 2 : 0,
+      };
+    }
+    if (arch?.additionalStateVars) {
+      for (const [k, decl] of Object.entries(arch.additionalStateVars)) {
+        vars[k] = { range: decl.range, default: decl.default };
+      }
+    }
+  }
+  const flags: string[] = [];
+  for (const a of outline.anchors) {
+    for (const f of a.establishes) {
+      if (!flags.includes(f)) flags.push(f);
+    }
+  }
+  return { vars, flags };
+}
 
 function assignPositions(count: number): Array<'left' | 'center' | 'right'> {
   if (count <= 1) return ['center'];
@@ -266,6 +323,25 @@ export function convertToGameProject(
         spritesEmbedded += sprites.length;
 
         const legacySprite = sprites[0]?.url;
+        const isNarration = draft.choices.length === 0;
+        const outputs: GameSceneOutput[] = isNarration
+          ? []
+          : draft.choices.map(c => {
+              const out: GameSceneOutput = { id: c.id, text: c.text };
+              const hasEffects =
+                Object.keys(c.effects.stateDeltas).length > 0 ||
+                c.effects.flagSet.length > 0 ||
+                c.effects.flagClear.length > 0;
+              if (hasEffects) {
+                out.effects = {
+                  stateDeltas: Object.keys(c.effects.stateDeltas).length > 0 ? c.effects.stateDeltas : undefined,
+                  flagSet: c.effects.flagSet.length > 0 ? c.effects.flagSet : undefined,
+                  flagClear: c.effects.flagClear.length > 0 ? c.effects.flagClear : undefined,
+                };
+              }
+              return out;
+            });
+
         nodes.push({
           id: draft.id,
           type: 'scene',
@@ -280,32 +356,49 @@ export function convertToGameProject(
             image: segmentImage,
             sprite: legacySprite || undefined,
             sprites: sprites.length ? sprites : undefined,
-            outputs: draft.choices.map(c => ({ id: c.id, text: c.text })),
+            outputs,
+            sceneType: isNarration ? ('narration' as const) : undefined,
           },
         });
 
-        // Рёбра choice -> next.
-        for (const choice of draft.choices) {
-          const target = choice.nextSceneId === null ? e.to : choice.nextSceneId;
+        if (isNarration) {
+          const nextScene = seg.scenes[idx + 1];
+          const target = nextScene ? nextScene.id : e.to;
+          const autoOutId = `${draft.id}__auto_continue`;
+          outputs.push({ id: autoOutId, text: '' });
           edges.push({
-            id: `e_${choice.id}`,
+            id: `e_${autoOutId}`,
             source: draft.id,
-            sourceHandle: choice.id,
+            sourceHandle: autoOutId,
             target,
           });
+        } else {
+          for (const choice of draft.choices) {
+            const target = choice.nextSceneId === null ? e.to : choice.nextSceneId;
+            edges.push({
+              id: `e_${choice.id}`,
+              source: draft.id,
+              sourceHandle: choice.id,
+              target,
+            });
+          }
         }
       });
     }
   }
 
-  // ── 3. Применяем накопленные outputs к anchor-нодам ────────────────────
+  // ── 3. Применяем накопленные outputs + sceneType к anchor-нодам ────────
   for (const node of nodes) {
     const outs = anchorOutputs.get(node.id);
-    if (outs) node.data.outputs = outs;
+    if (outs) {
+      node.data.outputs = outs;
+      node.data.sceneType = outs.length <= 1 ? 'narration' : 'branch';
+    }
   }
 
   // ── 4. Метаданные проекта ──────────────────────────────────────────────
   const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
+  const stateSchema = buildStateSchema(brief, outline);
   const project: GameProjectFile = {
     title,
     scenes: './scenes.json',
@@ -313,6 +406,7 @@ export function convertToGameProject(
       sceneFadeInMs: 600,
       choiceAppearDelayMs: 100,
       endFadeInMs: 400,
+      stateSchema,
     },
   };
 

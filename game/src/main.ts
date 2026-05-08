@@ -134,7 +134,7 @@ function showProjectScreen(): void {
       const key = input.dataset.key as keyof ProjectSettings;
       const val = parseInt(input.value, 10);
       if (!isNaN(val) && val >= 0) {
-        (p.settings as Record<string, number>)[key] = val;
+        (p.settings as unknown as Record<string, number>)[key] = val;
       }
     });
   });

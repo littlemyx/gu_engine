@@ -606,6 +606,10 @@ export function validateGeneratedSegment(seg: GeneratedSegment): SegmentIssue[] 
 
   let exitCount = 0;
   for (const scene of seg.scenes) {
+    if (scene.choices.length === 0) {
+      exitCount++;
+      continue;
+    }
     for (const choice of scene.choices) {
       if (choice.nextSceneId === null) {
         exitCount++;

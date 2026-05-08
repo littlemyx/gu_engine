@@ -298,6 +298,74 @@ body {
   background: #222234;
 }
 
+/* Narration — click to continue */
+.scene-continue {
+  margin-top: auto;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  transition: opacity 0.3s;
+}
+
+.scene-continue:hover {
+  opacity: 0.7;
+}
+
+.scene-continue-hint {
+  color: #666;
+  font-size: 1.4rem;
+  letter-spacing: 0.4em;
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* Branch — action-oriented choices */
+.branch-btn {
+  padding: 16px 20px 16px 36px;
+  font-size: 1.05rem;
+  font-family: inherit;
+  background: #12121a;
+  color: #b8b4a8;
+  border: 1px solid #2a2a36;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+  line-height: 1.4;
+  position: relative;
+}
+
+.branch-btn::before {
+  content: '›';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.3rem;
+  color: #555;
+  transition: color 0.2s, transform 0.2s;
+}
+
+.branch-btn:hover {
+  background: #1a1a28;
+  border-color: #4a4a5a;
+  color: #e0ddd5;
+}
+
+.branch-btn:hover::before {
+  color: #c8c4b8;
+  transform: translateY(-50%) translateX(3px);
+}
+
+.branch-btn:active {
+  background: #222234;
+}
+
 /* Конец */
 .scene-end {
   margin-top: auto;

@@ -1,6 +1,15 @@
+export type SceneType = 'narration' | 'dialogue' | 'branch' | 'router';
+
+export type OutputEffects = {
+  stateDeltas?: Record<string, number>;
+  flagSet?: string[];
+  flagClear?: string[];
+};
+
 export type SceneOutput = {
   id: string;
   text: string;
+  effects?: OutputEffects;
 };
 
 export type SpriteEntry = {
@@ -15,6 +24,7 @@ export type SceneNodeData = {
   sprite?: string;
   sprites?: SpriteEntry[];
   outputs: SceneOutput[];
+  sceneType?: SceneType;
 };
 
 export type SceneNode = {
@@ -24,11 +34,18 @@ export type SceneNode = {
   data: SceneNodeData;
 };
 
+export type StateCondition = {
+  path: string;
+  gte?: number;
+  lte?: number;
+};
+
 export type SceneEdge = {
   id: string;
   source: string;
   sourceHandle: string;
   target: string;
+  condition?: StateCondition[];
 };
 
 export type SceneGraph = {
@@ -36,10 +53,21 @@ export type SceneGraph = {
   edges: SceneEdge[];
 };
 
+export type StateVarSchema = {
+  range: [number, number];
+  default: number;
+};
+
+export type StateSchema = {
+  vars: Record<string, StateVarSchema>;
+  flags: string[];
+};
+
 export type ProjectSettings = {
   sceneFadeInMs: number;
   choiceAppearDelayMs: number;
   endFadeInMs: number;
+  stateSchema?: StateSchema;
 };
 
 export type ProjectFile = {
