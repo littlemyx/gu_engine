@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { generateBackground, getBatchStatus, type BatchStatus } from '@root/image_gen/generated_client';
-import type { AnchorPlan, Brief, OutlinePlan } from './types';
+import type { Brief } from './types';
 import { useNarrativeStore } from './narrativeStore';
 
 /**
@@ -54,7 +54,10 @@ function buildMasterPrompt(brief: Brief): string {
   return parts.join(', ') || 'high quality digital art';
 }
 
-function buildSceneDescription(anchor: AnchorPlan, brief: Brief): string {
+type AnchorLike = { id: string; summary: string };
+type OutlineLike = { title?: string; logline?: string; anchors: AnchorLike[] };
+
+function buildSceneDescription(anchor: AnchorLike, brief: Brief): string {
   const place = brief.world.setting.place;
   const era = brief.world.setting.era;
   const specifics = brief.world.setting.specifics;
@@ -65,7 +68,7 @@ function buildSceneDescription(anchor: AnchorPlan, brief: Brief): string {
   return [summary, ctx ? `Setting: ${ctx}` : ''].filter(Boolean).join('\n').slice(0, 1200); // отрезаем чтобы не превысить размер промпта
 }
 
-function buildStoryContext(brief: Brief, outline: OutlinePlan): string {
+function buildStoryContext(brief: Brief, outline: OutlineLike): string {
   return [
     outline.title ? `Title: ${outline.title}` : '',
     outline.logline ? `Logline: ${outline.logline}` : '',
@@ -82,13 +85,13 @@ export function useBulkImageGeneration() {
   const cancelledRef = useRef(false);
   const runningRef = useRef(false);
 
-  const start = useCallback(async (brief: Brief, outline: OutlinePlan) => {
+  const start = useCallback(async (brief: Brief, outline: OutlineLike) => {
     if (runningRef.current) return;
     runningRef.current = true;
     cancelledRef.current = false;
 
     const existing = useNarrativeStore.getState().images;
-    const queue: AnchorPlan[] = outline.anchors.filter(
+    const queue: AnchorLike[] = outline.anchors.filter(
       a => !existing[a.id] || existing[a.id].status === 'failed' || existing[a.id].status === 'pending',
     );
 
@@ -120,7 +123,7 @@ export function useBulkImageGeneration() {
 
     const setStore = useNarrativeStore.getState().setImage;
 
-    const processOne = async (anchor: AnchorPlan): Promise<void> => {
+    const processOne = async (anchor: AnchorLike): Promise<void> => {
       inFlight++;
       setStore(anchor.id, { status: 'pending' });
       publish();

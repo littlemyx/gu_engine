@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { regenerateCharacterPose, getBatchStatus } from '@root/image_gen/generated_client';
-import type { Brief, LoveInterestCard, OutlinePlan } from './types';
+import type { Brief, LoveInterestCard } from './types';
+
+type OutlineLike = { title?: string; logline?: string } | null;
 import { useNarrativeStore } from './narrativeStore';
 import { IMAGE_SERVER_BASE } from './emotionResolver';
 
@@ -44,7 +46,7 @@ function buildCharacterDescription(li: LoveInterestCard): string {
   return lines.join('\n');
 }
 
-function buildStoryContext(brief: Brief, outline: OutlinePlan | null): string {
+function buildStoryContext(brief: Brief, outline: OutlineLike): string {
   const lines: string[] = [];
   if (outline?.title) lines.push(`Story: ${outline.title}`);
   if (outline?.logline) lines.push(`Logline: ${outline.logline}`);
@@ -72,7 +74,7 @@ export function useRegeneratePoses() {
   const [poseStatuses, setPoseStatuses] = useState<Record<string, PoseItemStatus>>({});
   const runningRef = useRef(false);
 
-  const start = useCallback(async (entries: PoseRegenEntry[], brief: Brief, outline: OutlinePlan | null) => {
+  const start = useCallback(async (entries: PoseRegenEntry[], brief: Brief, outline: OutlineLike) => {
     if (runningRef.current || entries.length === 0) return;
     runningRef.current = true;
 

@@ -1,6 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { generateCharacter, getBatchStatus, type BatchStatus } from '@root/image_gen/generated_client';
-import type { Brief, LoveInterestCard, OutlinePlan } from './types';
+import type { Brief, LoveInterestCard } from './types';
+
+type OutlineLike = { title?: string; logline?: string } | null;
 import { useNarrativeStore } from './narrativeStore';
 
 /**
@@ -68,7 +70,7 @@ function buildCharacterDescription(li: LoveInterestCard): string {
   return lines.join('\n');
 }
 
-function buildStoryContext(brief: Brief, outline: OutlinePlan | null): string {
+function buildStoryContext(brief: Brief, outline: OutlineLike): string {
   const lines: string[] = [];
   if (outline?.title) lines.push(`Story: ${outline.title}`);
   if (outline?.logline) lines.push(`Logline: ${outline.logline}`);
@@ -81,7 +83,7 @@ export function useBulkCharacterGeneration() {
   const cancelledRef = useRef(false);
   const runningRef = useRef(false);
 
-  const start = useCallback(async (brief: Brief, outline: OutlinePlan | null, opts?: { force?: boolean }) => {
+  const start = useCallback(async (brief: Brief, outline: OutlineLike, opts?: { force?: boolean }) => {
     if (runningRef.current) return;
     runningRef.current = true;
     cancelledRef.current = false;

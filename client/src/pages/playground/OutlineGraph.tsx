@@ -14,9 +14,9 @@ import {
   type OnNodesChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { getAllSegmentValidations, useBriefStore, useNarrativeStore, type OutlinePlan } from '@/narrative';
+import { useNarrativeStore, type StoryOutlinePlan } from '@/narrative';
 import { AnchorNode } from './AnchorNode';
-import { computeAnchorLayout } from './outlineLayout';
+import { computeAnchorLayout, actColor } from './outlineLayout';
 import styles from './OutlineGraph.module.css';
 import playgroundStyles from './playground.module.css';
 
@@ -27,24 +27,18 @@ const nodeTypes: NodeTypes = {
 export type SelectedSegment = { fromId: string; toId: string };
 
 const InnerGraph: React.FC<{
-  outline: OutlinePlan;
+  outline: StoryOutlinePlan;
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
-  generatingEdgeIds?: Set<string>;
-}> = ({ outline, onEdgeClick, selected, generatingEdgeIds }) => {
+}> = ({ outline, onEdgeClick, selected }) => {
   const { fitView } = useReactFlow();
-  const brief = useBriefStore(s => s.brief);
-  const segments = useNarrativeStore(s => s.segments);
+  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
   const images = useNarrativeStore(s => s.images);
-  const characters = useNarrativeStore(s => s.characters);
-  const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
   const { nodes: dagreNodes, edges } = useMemo(
-    () => computeAnchorLayout(outline, segments, validations, images, characters, generatingEdgeIds),
-    [outline, segments, validations, images, characters, generatingEdgeIds],
+    () => computeAnchorLayout(outline, narrationWebs, images),
+    [outline, narrationWebs, images],
   );
 
-  // Рабочие ноды: dagre-раскладка + пользовательские изменения (drag, dimensions).
-  // При смене структуры outline сбрасываем к dagre.
   const [nodes, setNodes] = useState<Node[]>(dagreNodes);
   const anchorIdsKey = outline.anchors.map(a => a.id).join(',');
   const prevAnchorIdsRef = useRef(anchorIdsKey);
@@ -55,8 +49,6 @@ const InnerGraph: React.FC<{
       prevAnchorIdsRef.current = anchorIdsKey;
       prevDagreRef.current = dagreNodes;
     } else if (dagreNodes !== prevDagreRef.current) {
-      // Data changed (images, validations, etc.) but structure is the same —
-      // merge fresh data while keeping user positions and measured dims.
       prevDagreRef.current = dagreNodes;
       setNodes(prev => {
         const posMap = new Map(prev.map(n => [n.id, { position: n.position, measured: n.measured }]));
@@ -80,7 +72,6 @@ const InnerGraph: React.FC<{
     setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
   }, [fitView, dagreNodes]);
 
-  // Подсветить выбранное ребро
   const styledEdges: Edge[] = useMemo(() => {
     if (!selected) return edges;
     return edges.map(e =>
@@ -109,7 +100,7 @@ const InnerGraph: React.FC<{
     >
       <Background gap={20} color="#e5e7eb" />
       <Controls showInteractive={false} />
-      <MiniMap pannable zoomable nodeColor={n => (n.data as { routeColor?: string })?.routeColor ?? '#9ca3af'} />
+      <MiniMap pannable zoomable nodeColor={n => (n.data as { actColor?: string })?.actColor ?? '#9ca3af'} />
       <Panel position="top-right">
         <button className={playgroundStyles.secondaryBtn} onClick={handleAutoLayout}>
           Автораскладка
@@ -120,35 +111,18 @@ const InnerGraph: React.FC<{
 };
 
 export const OutlineGraph: React.FC<{
-  outline: OutlinePlan;
+  outline: StoryOutlinePlan;
   onEdgeClick?: (s: SelectedSegment) => void;
   selected?: SelectedSegment | null;
-  generatingEdgeIds?: Set<string>;
-}> = ({ outline, onEdgeClick, selected, generatingEdgeIds }) => {
-  const brief = useBriefStore(s => s.brief);
-  const segments = useNarrativeStore(s => s.segments);
-  const validations = useMemo(() => getAllSegmentValidations(brief, outline, segments), [brief, outline, segments]);
-  const validationCounts = useMemo(() => {
-    let errors = 0;
-    let warnings = 0;
-    for (const issues of Object.values(validations)) {
-      if (issues.some(it => it.severity === 'error')) errors++;
-      else if (issues.some(it => it.severity === 'warning')) warnings++;
-    }
-    return { errors, warnings };
-  }, [validations]);
+}> = ({ outline, onEdgeClick, selected }) => {
+  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
+  const webCount = Object.keys(narrationWebs).length;
 
   return (
     <div className={styles.graphContainer}>
       <div className={styles.graphHeader}>
-        <h2 className={styles.graphTitle}>{outline.title || 'Outline-граф'}</h2>
+        <h2 className={styles.graphTitle}>{outline.title || 'Story Outline'}</h2>
         {outline.logline && <p className={styles.graphLogline}>{outline.logline}</p>}
-        {outline.centralConflict && (
-          <p className={styles.graphConflict}>
-            <strong>Центральный конфликт: </strong>
-            {outline.centralConflict}
-          </p>
-        )}
         <div className={styles.actsStrip}>
           {outline.acts.map(a => (
             <div key={a.act} className={styles.actChip}>
@@ -160,45 +134,27 @@ export const OutlineGraph: React.FC<{
       </div>
       <div className={styles.graphCanvas}>
         <ReactFlowProvider>
-          <InnerGraph
-            outline={outline}
-            onEdgeClick={onEdgeClick}
-            selected={selected}
-            generatingEdgeIds={generatingEdgeIds}
-          />
+          <InnerGraph outline={outline} onEdgeClick={onEdgeClick} selected={selected} />
         </ReactFlowProvider>
       </div>
       {onEdgeClick && (
-        <div className={styles.graphHint}>Нажми на ребро между якорями, чтобы открыть генератор сцен сегмента →</div>
+        <div className={styles.graphHint}>Нажми на ребро между якорями, чтобы посмотреть narration web →</div>
       )}
       <div className={styles.graphLegend}>
-        <span className={styles.legendItem}>
-          <span className={styles.legendDot} style={{ background: '#fbbf24' }} />
-          common-route
-        </span>
         {(() => {
-          const seen = new Set<string>();
+          const seen = new Set<number>();
           return outline.anchors
-            .filter(a => a.routeId !== 'common' && !seen.has(a.routeId) && (seen.add(a.routeId), true))
-            .map((a, i) => {
-              const palette = ['#8b5cf6', '#0ea5e9', '#ec4899', '#f97316', '#22c55e'];
-              return (
-                <span key={a.routeId} className={styles.legendItem}>
-                  <span className={styles.legendDot} style={{ background: palette[i % palette.length] }} />
-                  {a.routeId}
-                </span>
-              );
-            });
+            .filter(a => !seen.has(a.act) && (seen.add(a.act), true))
+            .sort((a, b) => a.act - b.act)
+            .map(a => (
+              <span key={a.act} className={styles.legendItem}>
+                <span className={styles.legendDot} style={{ background: actColor(a.act) }} />
+                акт {a.act}
+              </span>
+            ));
         })()}
-        {(validationCounts.errors > 0 || validationCounts.warnings > 0) && (
-          <span className={styles.legendItem} style={{ color: validationCounts.errors > 0 ? '#dc2626' : '#d97706' }}>
-            {validationCounts.errors > 0 && <>✗ {validationCounts.errors} невалидных</>}
-            {validationCounts.errors > 0 && validationCounts.warnings > 0 && ' · '}
-            {validationCounts.warnings > 0 && <>⚠ {validationCounts.warnings} с warning</>}
-          </span>
-        )}
         <span className={styles.legendMeta}>
-          {outline.anchors.length} якорей · {outline.anchorEdges.length} рёбер
+          {outline.anchors.length} якорей · {outline.anchorEdges.length} рёбер · {webCount} narration web
         </span>
       </div>
     </div>

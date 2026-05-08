@@ -1,75 +1,52 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ARCHETYPES,
   ARCHETYPE_IDS,
   validateBrief,
   useBriefStore,
-  useOutlineGeneration,
-  useSegmentGeneration,
-  useBulkSegmentGeneration,
+  useStoryOutlineGeneration,
+  useBulkStoryGeneration,
   useBulkImageGeneration,
   useBulkCharacterGeneration,
   useNarrativeStore,
   useRegeneratePoses,
   CANONICAL_POSES,
-  EMOTION_TO_POSE,
-  collectUsedEmotions,
-  findMissingPoses,
-  convertToGameProject,
-  type CanonicalPose,
+  convertStoryToGameProject,
   downloadJson,
   slugify,
-  type AnchorPlan,
   type ArchetypeProfile,
-  type BulkGenStatus,
+  type StoryOutlineGenStatus,
+  type BulkStoryGenStatus,
   type CharacterBulkStatus,
   type ImageBulkStatus,
-  type OutlineGenStatus,
-  type OutlinePlan,
+  type StoryAnchor,
+  type StoryOutlinePlan,
   type PoseRegenEntry,
   type PoseRegenStatus,
 } from '@/narrative';
 import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
-import { SegmentDrawer } from './SegmentDrawer';
+import { NarrationWebDrawer } from './NarrationWebDrawer';
 import { BriefEditor } from './BriefEditor';
 import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
 import styles from './playground.module.css';
 
 const Playground = () => {
   const brief = useBriefStore(s => s.brief);
-  const persistedOutline = useNarrativeStore(s => s.outline);
+  const persistedOutline = useNarrativeStore(s => s.storyOutline);
   const [showRawBrief, setShowRawBrief] = useState(false);
   const [showAnchorList, setShowAnchorList] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null);
   const issues = useMemo(() => validateBrief(brief), [brief]);
   const errorCount = issues.filter(i => i.severity === 'error').length;
-  const outlineGen = useOutlineGeneration();
-  const segmentGen = useSegmentGeneration();
-  const bulkGen = useBulkSegmentGeneration();
+  const outlineGen = useStoryOutlineGeneration();
+  const bulkGen = useBulkStoryGeneration();
   const imageGen = useBulkImageGeneration();
   const characterGen = useBulkCharacterGeneration();
   const poseRegen = useRegeneratePoses();
 
-  const generatingEdgeIdsRef = useRef<Set<string>>(new Set());
-  const generatingEdgeIds = useMemo(() => {
-    const next = new Set<string>();
-    if (segmentGen.status.state === 'generating') {
-      next.add(`${segmentGen.status.fromId}->${segmentGen.status.toId}`);
-    }
-    if (bulkGen.status.state === 'running') {
-      for (const key of bulkGen.status.inFlightKeys) next.add(key);
-    }
-    const prev = generatingEdgeIdsRef.current;
-    if (prev.size === next.size && [...prev].every(k => next.has(k))) return prev;
-    generatingEdgeIdsRef.current = next;
-    return next;
-  }, [segmentGen.status, bulkGen.status]);
-
   const isBlocked = errorCount > 0;
 
-  // Активный outline = свежесгенерированный, либо закэшированный в localStorage.
-  // Это позволяет UI показывать граф и downstream-секции после reload.
   const activeOutline = outlineGen.status.state === 'done' ? outlineGen.status.outline : persistedOutline;
 
   return (
@@ -77,7 +54,7 @@ const Playground = () => {
       <header className={styles.header}>
         <div>
           <span className={styles.headerTitle}>Procedural Narrative Pilot</span>
-          <span className={styles.headerSubtitle}>бриф · архетипы · валидация</span>
+          <span className={styles.headerSubtitle}>бриф · архетипы · story pipeline</span>
         </div>
         <nav className={styles.headerNav}>
           <Link className={styles.navLink} to="/">
@@ -99,13 +76,8 @@ const Playground = () => {
             const outline = activeOutline;
             return (
               <>
-                <OutlineGraph
-                  outline={outline}
-                  onEdgeClick={setSelectedSegment}
-                  selected={selectedSegment}
-                  generatingEdgeIds={generatingEdgeIds}
-                />
-                <BulkGenBar
+                <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />
+                <BulkStoryBar
                   status={bulkGen.status}
                   onStart={() => bulkGen.start(brief, outline)}
                   onCancel={bulkGen.cancel}
@@ -126,10 +98,8 @@ const Playground = () => {
                   onReset={characterGen.reset}
                   onRegenMissing={entries => poseRegen.start(entries, brief, outline)}
                   liCount={brief.loveInterests.length}
-                  outline={outline}
                 />
                 <MissingPosesBar
-                  outline={outline}
                   regenStatus={poseRegen.status}
                   onStart={entries => poseRegen.start(entries, brief, outline)}
                   onReset={poseRegen.reset}
@@ -142,18 +112,11 @@ const Playground = () => {
                 </div>
                 {showAnchorList && <OutlineResult outline={outline} />}
                 {selectedSegment && (
-                  <SegmentDrawer
-                    brief={brief}
+                  <NarrationWebDrawer
                     outline={outline}
-                    selection={selectedSegment}
-                    status={segmentGen.status}
-                    onGenerate={segmentGen.generate}
-                    onGeneratePose={(liId, pose) => poseRegen.start([{ liId, pose }], brief, outline)}
-                    poseStatuses={poseRegen.poseStatuses}
-                    onClose={() => {
-                      setSelectedSegment(null);
-                      segmentGen.reset();
-                    }}
+                    fromId={selectedSegment.fromId}
+                    toId={selectedSegment.toId}
+                    onClose={() => setSelectedSegment(null)}
                   />
                 )}
               </>
@@ -168,7 +131,6 @@ const Playground = () => {
       )}
 
       <div className={styles.body}>
-        {/* ────────────── ЛЕВАЯ КОЛОНКА: редактор брифа ────────────── */}
         <div className={styles.column}>
           <BriefEditor brief={brief} />
           <BriefIssues issues={issues} />
@@ -193,7 +155,6 @@ const Playground = () => {
           </section>
         </div>
 
-        {/* ────────────── ПРАВАЯ КОЛОНКА: архетипы ────────────── */}
         <div className={styles.column}>
           <section className={styles.section}>
             <h2 className={styles.sectionTitle}>
@@ -311,7 +272,7 @@ const ArchetypeView: React.FC<{ archetype: ArchetypeProfile }> = ({ archetype })
 // ────────────────────────────────────────────────────────────────────────────
 
 const OutlineBar: React.FC<{
-  status: OutlineGenStatus;
+  status: StoryOutlineGenStatus;
   disabled: boolean;
   onGenerate: () => void;
   onReset: () => void;
@@ -335,7 +296,7 @@ const OutlineBar: React.FC<{
   return (
     <div className={styles.outlineBar}>
       <div className={styles.outlineBarLeft}>
-        <span className={styles.outlineBarTitle}>Outline-генератор</span>
+        <span className={styles.outlineBarTitle}>Story Outline</span>
         <span className={styles.outlineBarMeta}>
           <span className={`${styles.statusDot} ${statusDot}`} />
           {statusLabel}
@@ -365,21 +326,15 @@ const OutlineBar: React.FC<{
   );
 };
 
-const OutlineResult: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
-  // group anchors by route
-  const byRoute = useMemo(() => {
-    const map = new Map<string, AnchorPlan[]>();
+const OutlineResult: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
+  const byAct = useMemo(() => {
+    const map = new Map<number, StoryAnchor[]>();
     for (const a of outline.anchors) {
-      const list = map.get(a.routeId) ?? [];
+      const list = map.get(a.act) ?? [];
       list.push(a);
-      map.set(a.routeId, list);
+      map.set(a.act, list);
     }
-    // sort common first, остальные по имени маршрута
-    return Array.from(map.entries()).sort(([a], [b]) => {
-      if (a === 'common') return -1;
-      if (b === 'common') return 1;
-      return a.localeCompare(b);
-    });
+    return Array.from(map.entries()).sort(([a], [b]) => a - b);
   }, [outline.anchors]);
 
   return (
@@ -387,12 +342,6 @@ const OutlineResult: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
       <div className={styles.outlineHeader}>
         <h2 className={styles.outlineTitle}>{outline.title || 'Без названия'}</h2>
         {outline.logline && <p className={styles.outlineLogline}>{outline.logline}</p>}
-        {outline.centralConflict && (
-          <p className={styles.outlineConflict}>
-            <strong>Центральный конфликт: </strong>
-            {outline.centralConflict}
-          </p>
-        )}
       </div>
 
       <div className={styles.actsRow}>
@@ -405,48 +354,39 @@ const OutlineResult: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
         ))}
       </div>
 
-      {byRoute.map(([routeId, anchors]) => (
-        <div key={routeId} className={`${styles.routeBlock} ${routeId === 'common' ? styles.routeBlockCommon : ''}`}>
+      {byAct.map(([act, anchors]) => (
+        <div key={act} className={styles.routeBlock}>
           <div className={styles.routeTitle}>
-            <span className={styles.routeTitleLi}>{routeId}</span>
+            <span className={styles.routeTitleLi}>акт {act}</span>
             <span style={{ color: '#9ca3af', fontSize: 11 }}>{anchors.length} якорей</span>
           </div>
-          {anchors
-            .sort((a, b) => a.act - b.act)
-            .map(anchor => (
-              <AnchorRow key={anchor.id} anchor={anchor} />
-            ))}
+          {anchors.map(anchor => (
+            <AnchorRow key={anchor.id} anchor={anchor} />
+          ))}
         </div>
       ))}
     </div>
   );
 };
 
-const AnchorRow: React.FC<{ anchor: AnchorPlan }> = ({ anchor }) => {
-  const entryReq = anchor.entryStateRequired;
-  const flagsReq = entryReq?.flagsRequired ?? [];
-  const rangesReq = entryReq?.ranges ?? {};
+const AnchorRow: React.FC<{ anchor: StoryAnchor }> = ({ anchor }) => {
   return (
     <div className={styles.anchorRow}>
       <div className={styles.anchorIdCell}>
         <span className={styles.anchorIdName}>{anchor.id}</span>
         <span className={styles.anchorTypeTag}>
           {anchor.type} · акт {anchor.act}
-          {anchor.characterFocus ? ` · ${anchor.characterFocus}` : ''}
+          {anchor.location ? ` · ${anchor.location}` : ''}
         </span>
       </div>
       <div className={styles.anchorBodyCell}>
         <span>{anchor.summary}</span>
-        {(flagsReq.length > 0 || Object.keys(rangesReq).length > 0) && (
-          <div>
-            {flagsReq.map(f => (
-              <span key={f} className={styles.anchorEntryReq}>
-                flag: {f}
-              </span>
-            ))}
-            {Object.entries(rangesReq).map(([path, range]) => (
-              <span key={path} className={styles.anchorEntryReq}>
-                {path} ∈ [{range[0]}, {range[1]}]
+        {anchor.timeMarker && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{anchor.timeMarker}</div>}
+        {anchor.availableLIs.length > 0 && (
+          <div className={styles.anchorEstablishes}>
+            {anchor.availableLIs.map(li => (
+              <span key={li} className={styles.anchorEstablish}>
+                {li}
               </span>
             ))}
           </div>
@@ -466,11 +406,16 @@ const AnchorRow: React.FC<{ anchor: AnchorPlan }> = ({ anchor }) => {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// BULK SEGMENT GENERATION (все сегменты outline-а в один клик)
+// BULK STORY GENERATION (narration webs + dialogue variants)
 // ────────────────────────────────────────────────────────────────────────────
 
-const BulkGenBar: React.FC<{
-  status: BulkGenStatus;
+const PHASE_LABEL: Record<string, string> = {
+  narration_webs: 'Narration Webs',
+  dialogue_variants: 'Dialogue Variants',
+};
+
+const BulkStoryBar: React.FC<{
+  status: BulkStoryGenStatus;
   onStart: () => void;
   onCancel: () => void;
   onReset: () => void;
@@ -479,13 +424,11 @@ const BulkGenBar: React.FC<{
     return (
       <div className={styles.bulkBar}>
         <div className={styles.bulkLeft}>
-          <span className={styles.bulkTitle}>Bulk-генерация всех сегментов</span>
-          <span className={styles.bulkMeta}>
-            запустит сразу 3 LLM-вызова, остальные встанут в очередь · ~5–10 минут на полный outline
-          </span>
+          <span className={styles.bulkTitle}>Bulk Story Generation</span>
+          <span className={styles.bulkMeta}>narration webs + dialogue variants · 3 параллельно · ~5–10 минут</span>
         </div>
         <button type="button" className={styles.primaryBtn} onClick={onStart}>
-          Сгенерировать все сегменты
+          Сгенерировать всё
         </button>
       </div>
     );
@@ -497,14 +440,14 @@ const BulkGenBar: React.FC<{
       <div className={styles.bulkBar}>
         <div className={styles.bulkLeft}>
           <span className={styles.bulkTitle}>
-            Bulk-генерация · {status.completed} / {status.total}
+            {PHASE_LABEL[status.phase] ?? status.phase} · {status.completed} / {status.total}
             {status.cancelled && ' (отменяется...)'}
           </span>
           <div className={styles.progressTrack}>
             <div className={styles.progressFill} style={{ width: `${pct}%` }} />
           </div>
           <span className={styles.bulkMeta}>
-            ⚙ в процессе: {status.inFlight} · ⌛ в очереди: {status.remaining}
+            ⚙ в процессе: {status.inFlight}
             {status.failures.length > 0 && ` · ✗ ошибок: ${status.failures.length}`}
           </span>
         </div>
@@ -520,7 +463,7 @@ const BulkGenBar: React.FC<{
     <div className={styles.bulkBar}>
       <div className={styles.bulkLeft}>
         <span className={styles.bulkTitle}>
-          Bulk-генерация завершена · {status.completed} / {status.total}
+          Генерация завершена · {status.websGenerated} webs · {status.variantsGenerated} variants
           {status.cancelled && ' (остановлено)'}
         </span>
         <span className={styles.bulkMeta}>
@@ -529,21 +472,16 @@ const BulkGenBar: React.FC<{
               ✗ {status.failures.length} ошибок:{' '}
               {status.failures
                 .slice(0, 3)
-                .map(f => `${f.fromId}→${f.toId}`)
+                .map(f => f.key)
                 .join(', ')}
               {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
             </>
           ) : (
-            'все сегменты сгенерированы успешно'
+            'все narration webs и dialogue variants сгенерированы'
           )}
         </span>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-        {status.failures.length > 0 && (
-          <button type="button" className={styles.secondaryBtn} onClick={onReset}>
-            Скрыть
-          </button>
-        )}
         <button type="button" className={styles.secondaryBtn} onClick={onReset}>
           OK
         </button>
@@ -649,44 +587,23 @@ const CharacterGenBar: React.FC<{
   onReset: () => void;
   onRegenMissing: (entries: PoseRegenEntry[]) => void;
   liCount: number;
-  outline: OutlinePlan;
-}> = ({ status, onStart, onForceStart, onCancel, onReset, onRegenMissing, liCount, outline }) => {
+}> = ({ status, onStart, onForceStart, onCancel, onReset, onRegenMissing, liCount }) => {
   const characters = useNarrativeStore(s => s.characters);
-  const segments = useNarrativeStore(s => s.segments);
   const cachedDone = Object.values(characters).filter(c => c.status === 'done').length;
   const allDone = liCount > 0 && cachedDone >= liCount;
 
-  const poseStats = useMemo(() => {
-    const used = collectUsedEmotions(segments, outline);
-    const missing = findMissingPoses(used, characters);
-
-    let totalNeeded = 0;
-    let totalExisting = 0;
-    for (const [charId, emotions] of used) {
-      const state = characters[charId];
-      const hasPoses = state?.status === 'done';
-      for (const e of emotions) {
-        const n = e.toLowerCase().trim();
-        if (n === 'idle' || n === 'neutral' || n === 'calm') continue;
-        totalNeeded++;
-        if (hasPoses) {
-          const mapped = EMOTION_TO_POSE[n];
-          const pose = mapped ?? n;
-          if (pose !== 'idle' && state.poseFilenames?.[pose]) totalExisting++;
-          else if (CANONICAL_POSES.includes(pose as CanonicalPose) && state.poseFilenames?.[pose]) totalExisting++;
-        }
+  const missingEntries = useMemo(() => {
+    if (!allDone) return [];
+    const entries: PoseRegenEntry[] = [];
+    for (const [liId, state] of Object.entries(characters)) {
+      if (state.status !== 'done') continue;
+      for (const pose of CANONICAL_POSES) {
+        if (pose === 'idle') continue;
+        if (!state.poseFilenames?.[pose]) entries.push({ liId, pose });
       }
     }
-    totalNeeded += liCount;
-    totalExisting += cachedDone;
-
-    const missingEntries: PoseRegenEntry[] = [];
-    for (const [liId, poses] of missing) {
-      for (const pose of poses) missingEntries.push({ liId, pose });
-    }
-
-    return { totalNeeded, totalExisting, missingEntries, missingCount: missingEntries.length };
-  }, [segments, outline, characters, liCount, cachedDone]);
+    return entries;
+  }, [characters, allDone]);
 
   if (status.state === 'idle') {
     return (
@@ -696,18 +613,13 @@ const CharacterGenBar: React.FC<{
             Генерация спрайтов персонажей · {cachedDone} / {liCount} готово
           </span>
           <span className={styles.bulkMeta}>
-            {poseStats.totalExisting} / {poseStats.totalNeeded} поз (idle + эмоции)
-            {poseStats.missingCount > 0 && ` · ${poseStats.missingCount} не хватает`}
+            {missingEntries.length > 0 && `${missingEntries.length} поз не хватает`}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          {allDone && poseStats.missingCount > 0 && (
-            <button
-              type="button"
-              className={styles.primaryBtn}
-              onClick={() => onRegenMissing(poseStats.missingEntries)}
-            >
-              Догенерировать ({poseStats.missingCount})
+          {allDone && missingEntries.length > 0 && (
+            <button type="button" className={styles.primaryBtn} onClick={() => onRegenMissing(missingEntries)}>
+              Догенерировать ({missingEntries.length})
             </button>
           )}
           {allDone ? (
@@ -783,22 +695,27 @@ const CharacterGenBar: React.FC<{
 // ────────────────────────────────────────────────────────────────────────────
 
 const MissingPosesBar: React.FC<{
-  outline: OutlinePlan;
   regenStatus: PoseRegenStatus;
   onStart: (entries: PoseRegenEntry[]) => void;
   onReset: () => void;
-}> = ({ outline, regenStatus, onStart, onReset }) => {
-  const segments = useNarrativeStore(s => s.segments);
+}> = ({ regenStatus, onStart, onReset }) => {
   const characters = useNarrativeStore(s => s.characters);
   const [expanded, setExpanded] = useState(false);
 
   const missingData = useMemo(() => {
-    const hasSegments = Object.keys(segments).length > 0;
     const hasCharacters = Object.values(characters).some(c => c.status === 'done');
-    if (!hasSegments || !hasCharacters) return null;
+    if (!hasCharacters) return null;
 
-    const used = collectUsedEmotions(segments, outline);
-    const missing = findMissingPoses(used, characters);
+    const missing = new Map<string, string[]>();
+    for (const [liId, state] of Object.entries(characters)) {
+      if (state.status !== 'done') continue;
+      const missingPoses: string[] = [];
+      for (const pose of CANONICAL_POSES) {
+        if (pose === 'idle') continue;
+        if (!state.poseFilenames?.[pose]) missingPoses.push(pose);
+      }
+      if (missingPoses.length > 0) missing.set(liId, missingPoses);
+    }
     if (missing.size === 0) return null;
 
     const entries: PoseRegenEntry[] = [];
@@ -806,7 +723,7 @@ const MissingPosesBar: React.FC<{
       for (const pose of poses) entries.push({ liId, pose });
     }
     return { missing, entries, totalPoses: entries.length, totalChars: missing.size };
-  }, [segments, characters, outline]);
+  }, [characters]);
 
   if (!missingData && regenStatus.state === 'idle') return null;
 
@@ -873,22 +790,23 @@ const MissingPosesBar: React.FC<{
 // EXPORT BAR (.gu.json + scenes.json для game/-движка)
 // ────────────────────────────────────────────────────────────────────────────
 
-const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
+const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
-  const segments = useNarrativeStore(s => s.segments);
+  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
+  const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
-  const segmentCount = Object.keys(segments).length;
+  const webCount = Object.keys(narrationWebs).length;
+  const variantCount = Object.keys(dialogueVariants).length;
   const imageCount = Object.values(images).filter(i => i.status === 'done').length;
   const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
   const edgeCount = outline.anchorEdges.length;
   const liCount = brief.loveInterests.length;
 
   const onExport = () => {
-    const result = convertToGameProject(brief, outline, segments, images, characters);
+    const result = convertStoryToGameProject(brief, outline, narrationWebs, dialogueVariants, images, characters);
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
-    // Небольшой timeout, чтобы браузер не схлопнул два «download» подряд.
     setTimeout(() => downloadJson('scenes.json', result.scenes), 250);
   };
 
@@ -897,11 +815,8 @@ const ExportBar: React.FC<{ outline: OutlinePlan }> = ({ outline }) => {
       <div className={styles.exportLeft}>
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
-          {segmentCount}/{edgeCount} сегментов · {imageCount}/{outline.anchors.length} фонов · {characterCount}/
-          {liCount} спрайтов
-          {segmentCount < edgeCount && (
-            <span className={styles.exportHint}> · placeholder-переходы для несгенерированных</span>
-          )}
+          {webCount}/{edgeCount} narration webs · {variantCount} dialogue variants · {imageCount}/
+          {outline.anchors.length} фонов · {characterCount}/{liCount} спрайтов
         </span>
       </div>
       <button type="button" className={styles.primaryBtn} onClick={onExport}>

@@ -30,13 +30,19 @@ export { useBulkCharacterGeneration } from './useBulkCharacterGeneration';
 export type { CharacterBulkStatus, CharacterBulkFailure } from './useBulkCharacterGeneration';
 export {
   convertToGameProject,
+  convertStoryToGameProject,
   downloadJson,
   slugify,
   type ConversionStats,
   type ConversionResult,
+  type StoryConversionResult,
   type GameSceneGraph,
   type GameProjectFile,
 } from './convertToGameProject';
+export { useStoryOutlineGeneration } from './useStoryOutlineGeneration';
+export type { StoryOutlineGenStatus } from './useStoryOutlineGeneration';
+export { useBulkStoryGeneration } from './useBulkStoryGeneration';
+export type { BulkStoryGenStatus, BulkStoryFailure } from './useBulkStoryGeneration';
 export {
   CANONICAL_POSES,
   EMOTION_TO_POSE,
