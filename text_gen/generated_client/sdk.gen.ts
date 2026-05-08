@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -59,6 +59,42 @@ export const generateOutline = <ThrowOnError extends boolean = false>(options: O
  */
 export const generateSegment = <ThrowOnError extends boolean = false>(options: Options<GenerateSegmentData, ThrowOnError>) => (options.client ?? client).post<GenerateSegmentResponses, unknown, ThrowOnError>({
     url: '/generate/segment',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate love interest character cards from a story master prompt
+ */
+export const generateLiCards = <ThrowOnError extends boolean = false>(options: Options<GenerateLiCardsData, ThrowOnError>) => (options.client ?? client).post<GenerateLiCardsResponses, unknown, ThrowOnError>({
+    url: '/generate/liCards',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate a narration web (exploration DAG) between two story anchors
+ */
+export const generateNarrationWeb = <ThrowOnError extends boolean = false>(options: Options<GenerateNarrationWebData, ThrowOnError>) => (options.client ?? client).post<GenerateNarrationWebResponses, unknown, ThrowOnError>({
+    url: '/generate/narrationWeb',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate a dialogue variant for a character encounter at a given relationship bracket
+ */
+export const generateDialogueVariant = <ThrowOnError extends boolean = false>(options: Options<GenerateDialogueVariantData, ThrowOnError>) => (options.client ?? client).post<GenerateDialogueVariantResponses, unknown, ThrowOnError>({
+    url: '/generate/dialogueVariant',
     ...options,
     headers: {
         'Content-Type': 'application/json',

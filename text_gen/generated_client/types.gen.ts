@@ -185,6 +185,105 @@ export type SegmentRequest = {
     previousIssues?: Array<string>;
 };
 
+export type LiCardsRequest = {
+    /**
+     * The story master prompt text describing the world and setting
+     */
+    storyMasterPrompt: string;
+    /**
+     * Number of love interest characters to generate
+     */
+    count: number;
+    /**
+     * Optional hints to guide LI generation
+     */
+    hints?: {
+        /**
+         * Preferred archetype IDs (slow_burn, enemies_to_lovers, etc.)
+         */
+        archetypes?: Array<string>;
+        /**
+         * Additional constraints for LI generation
+         */
+        constraints?: string;
+    };
+};
+
+export type NarrationWebRequest = {
+    /**
+     * Brief context (world, tone, protagonist).
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * StoryAnchor of the source (segment entry).
+     */
+    storyAnchorFrom: {
+        [key: string]: unknown;
+    };
+    /**
+     * StoryAnchor of the target (segment exit).
+     */
+    storyAnchorTo: {
+        [key: string]: unknown;
+    };
+    /**
+     * Love interests available for encounter in this location.
+     */
+    availableLIs: Array<{
+        liId: string;
+        liName: string;
+        roleInWorld: string;
+    }>;
+    /**
+     * Flags already established by prior story anchors.
+     */
+    existingFlags?: Array<string>;
+};
+
+export type DialogueVariantRequest = {
+    /**
+     * Brief context.
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Full LoveInterestCard of the character.
+     */
+    liCard: {
+        [key: string]: unknown;
+    };
+    /**
+     * ArchetypeProfile for the character's archetype.
+     */
+    archetypeProfile: {
+        [key: string]: unknown;
+    };
+    /**
+     * Current story context (where/when the encounter happens).
+     */
+    storyContext: {
+        location: string;
+        timeMarker: string;
+        recentEvents: string;
+    };
+    /**
+     * Relationship bracket determining dialogue tone.
+     */
+    bracket: 'positive' | 'neutral' | 'negative';
+    /**
+     * Expected relationship state ranges at encounter entry.
+     */
+    stateRanges: {
+        [key: string]: [
+            number,
+            number
+        ];
+    };
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -252,6 +351,54 @@ export type GenerateSegmentResponses = {
 };
 
 export type GenerateSegmentResponse = GenerateSegmentResponses[keyof GenerateSegmentResponses];
+
+export type GenerateLiCardsData = {
+    body: LiCardsRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/liCards';
+};
+
+export type GenerateLiCardsResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateLiCardsResponse = GenerateLiCardsResponses[keyof GenerateLiCardsResponses];
+
+export type GenerateNarrationWebData = {
+    body: NarrationWebRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/narrationWeb';
+};
+
+export type GenerateNarrationWebResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateNarrationWebResponse = GenerateNarrationWebResponses[keyof GenerateNarrationWebResponses];
+
+export type GenerateDialogueVariantData = {
+    body: DialogueVariantRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/dialogueVariant';
+};
+
+export type GenerateDialogueVariantResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateDialogueVariantResponse = GenerateDialogueVariantResponses[keyof GenerateDialogueVariantResponses];
 
 export type ListBatchesData = {
     body?: never;

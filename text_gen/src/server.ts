@@ -1,12 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processDialogueVariant } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
   OutlineRequest,
   SegmentRequest,
+  LiCardsRequest,
+  NarrationWebRequest,
+  DialogueVariantRequest,
   ItemState,
   BatchState,
 } from './types.js';
@@ -126,6 +129,81 @@ app.post('/generate/segment', (req, res) => {
   logger.log(`[POST /generate/segment] batch=${batchId} ${fromId} -> ${toId}`);
 
   processSegment(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/liCards', (req, res) => {
+  const body = req.body as LiCardsRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'liCards';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/liCards] batch=${batchId} count=${body.count}`);
+
+  processLiCards(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/narrationWeb', (req, res) => {
+  const body = req.body as NarrationWebRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'narrationWeb';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const fromId = (body.storyAnchorFrom as { id?: string })?.id ?? '?';
+  const toId = (body.storyAnchorTo as { id?: string })?.id ?? '?';
+  logger.log(`[POST /generate/narrationWeb] batch=${batchId} ${fromId} -> ${toId} availableLIs=${body.availableLIs?.length ?? 0}`);
+
+  processNarrationWeb(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/dialogueVariant', (req, res) => {
+  const body = req.body as DialogueVariantRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'dialogueVariant';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const liId = (body.liCard as { id?: string })?.id ?? '?';
+  logger.log(`[POST /generate/dialogueVariant] batch=${batchId} li=${liId} bracket=${body.bracket}`);
+
+  processDialogueVariant(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

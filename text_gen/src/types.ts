@@ -58,6 +58,36 @@ export interface SegmentRequest {
   previousIssues?: string[];
 }
 
+export interface LiCardsRequest {
+  storyMasterPrompt: string;
+  count: number;
+  hints?: {
+    archetypes?: string[];
+    constraints?: string;
+  };
+}
+
+export interface NarrationWebRequest {
+  brief: unknown;
+  storyAnchorFrom: unknown;
+  storyAnchorTo: unknown;
+  availableLIs: { liId: string; liName: string; roleInWorld: string }[];
+  existingFlags?: string[];
+}
+
+export interface DialogueVariantRequest {
+  brief: unknown;
+  liCard: unknown;
+  archetypeProfile: unknown;
+  storyContext: {
+    location: string;
+    timeMarker: string;
+    recentEvents: string;
+  };
+  bracket: 'positive' | 'neutral' | 'negative';
+  stateRanges: Record<string, [number, number]>;
+}
+
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ItemState {
