@@ -27,6 +27,7 @@ import {
 } from '@/narrative';
 import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
 import { NarrationWebDrawer } from './NarrationWebDrawer';
+import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
 import { BriefEditor } from './BriefEditor';
 import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
 import styles from './playground.module.css';
@@ -77,6 +78,7 @@ const Playground = () => {
             return (
               <>
                 <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />
+                <CharacterRelationshipPanel outline={outline} />
                 <BulkStoryBar
                   status={bulkGen.status}
                   onStart={() => bulkGen.start(brief, outline)}

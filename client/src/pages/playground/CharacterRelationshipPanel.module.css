@@ -1,0 +1,208 @@
+.panel {
+  margin: 0 24px 16px;
+  padding: 20px 24px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.panelTitle {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 16px;
+  color: #1f2937;
+}
+
+.liGrid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.liCard {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.liHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.liSprite {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #e5e7eb;
+  background: #f3f4f6;
+}
+
+.liName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.liMeta {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+/* ── Timeline ── */
+
+.timeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  padding: 8px 0 4px;
+  overflow-x: auto;
+  position: relative;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  left: 12px;
+  right: 12px;
+  height: 2px;
+  background: #e5e7eb;
+  z-index: 0;
+}
+
+.dotWrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 56px;
+  position: relative;
+  z-index: 1;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid #d1d5db;
+  background: #fff;
+  transition: all 0.15s;
+}
+
+.dotAbsent {
+  border-color: #e5e7eb;
+  background: #f3f4f6;
+  opacity: 0.5;
+}
+
+.dotPresent {
+  border-color: #93c5fd;
+  background: #dbeafe;
+}
+
+.dotEncounter {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+}
+
+.dotComplete {
+  border-color: #16a34a;
+  background: #dcfce7;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.15);
+}
+
+.dotBrackets {
+  display: flex;
+  gap: 2px;
+  margin-top: 3px;
+}
+
+.microBadge {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dotLabel {
+  font-size: 9px;
+  color: #9ca3af;
+  margin-top: 3px;
+  text-align: center;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Encounter list ── */
+
+.encounterList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 12px;
+}
+
+.encounterRow {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.encounterLocation {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.encounterEdge {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4f46e5;
+}
+
+.encounterPlace {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+.encounterChoice {
+  font-size: 11px;
+  color: #374151;
+}
+
+.bracketRow {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.bracketBadge {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+}
+
+.emptyState {
+  font-size: 12px;
+  color: #9ca3af;
+  font-style: italic;
+  padding: 8px 0;
+}
