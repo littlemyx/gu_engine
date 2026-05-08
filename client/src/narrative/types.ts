@@ -633,3 +633,273 @@ export function validateGeneratedSegment(seg: GeneratedSegment): SegmentIssue[] 
 
   return issues;
 }
+
+// ============================================================================
+// STORY OUTLINE (story-layer only, replaces per-LI route outline)
+// ============================================================================
+
+export type StoryAnchorType = 'setup' | 'location_enter' | 'story_beat' | 'climax' | 'resolution';
+
+export type StoryAnchor = {
+  id: string;
+  type: StoryAnchorType;
+  act: number;
+  location: string;
+  timeMarker: string;
+  summary: string;
+  establishes: string[];
+  availableLIs: string[];
+};
+
+export type StoryOutlinePlan = {
+  title: string;
+  logline: string;
+  acts: OutlineAct[];
+  anchors: StoryAnchor[];
+  anchorEdges: AnchorEdge[];
+};
+
+export function parseStoryOutline(raw: string): StoryOutlinePlan {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`story outline JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('story outline must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.anchors) || !Array.isArray(obj.anchorEdges) || !Array.isArray(obj.acts)) {
+    throw new Error('story outline missing required arrays: acts/anchors/anchorEdges');
+  }
+
+  const validTypes: StoryAnchorType[] = ['setup', 'location_enter', 'story_beat', 'climax', 'resolution'];
+
+  const anchors: StoryAnchor[] = obj.anchors.map((a, i) => {
+    const anchor = a as Record<string, unknown>;
+    if (!anchor.id || !anchor.type) {
+      throw new Error(`anchors[${i}] missing required fields (id/type)`);
+    }
+    const anchorType = String(anchor.type) as StoryAnchorType;
+    if (!validTypes.includes(anchorType)) {
+      throw new Error(`anchors[${i}] invalid type "${anchor.type}", expected one of: ${validTypes.join(', ')}`);
+    }
+    if (!anchor.location || typeof anchor.location !== 'string') {
+      throw new Error(`anchors[${i}] missing required field: location`);
+    }
+    return {
+      id: String(anchor.id),
+      type: anchorType,
+      act: typeof anchor.act === 'number' ? anchor.act : 1,
+      location: String(anchor.location),
+      timeMarker: String(anchor.timeMarker ?? ''),
+      summary: String(anchor.summary ?? ''),
+      establishes: Array.isArray(anchor.establishes) ? (anchor.establishes as string[]) : [],
+      availableLIs: Array.isArray(anchor.availableLIs) ? (anchor.availableLIs as string[]) : [],
+    };
+  });
+
+  return {
+    title: String(obj.title ?? ''),
+    logline: String(obj.logline ?? ''),
+    acts: obj.acts as OutlineAct[],
+    anchors,
+    anchorEdges: obj.anchorEdges as AnchorEdge[],
+  };
+}
+
+// ============================================================================
+// NARRATION WEB (exploration DAG between story anchors)
+// ============================================================================
+
+export type NarrationWebChoice = {
+  id: string;
+  text: string;
+  nextSceneId: string | null;
+  encounterTrigger?: string;
+  effects?: { flagSet?: string[] };
+};
+
+export type NarrationWebScene = {
+  id: string;
+  location: string;
+  narration: string;
+  choices: NarrationWebChoice[];
+};
+
+export type NarrationWeb = {
+  fromAnchorId: string;
+  toAnchorId: string;
+  entrySceneId: string;
+  scenes: NarrationWebScene[];
+};
+
+export function parseNarrationWeb(raw: string): NarrationWeb {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`narration web JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('narration web must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.scenes) || !obj.entrySceneId) {
+    throw new Error('narration web missing scenes or entrySceneId');
+  }
+
+  const scenes: NarrationWebScene[] = (obj.scenes as unknown[]).map((s, i) => {
+    const scene = s as Record<string, unknown>;
+    if (!scene.id) throw new Error(`scenes[${i}] missing id`);
+
+    const choices: NarrationWebChoice[] = Array.isArray(scene.choices)
+      ? (scene.choices as unknown[]).map((c, j) => {
+          const ch = c as Record<string, unknown>;
+          return {
+            id: String(ch.id ?? `${scene.id}_c${j}`),
+            text: String(ch.text ?? ''),
+            nextSceneId: ch.nextSceneId ? String(ch.nextSceneId) : null,
+            encounterTrigger: ch.encounterTrigger ? String(ch.encounterTrigger) : undefined,
+            effects: ch.effects
+              ? {
+                  flagSet: Array.isArray((ch.effects as Record<string, unknown>).flagSet)
+                    ? ((ch.effects as Record<string, unknown>).flagSet as string[])
+                    : undefined,
+                }
+              : undefined,
+          };
+        })
+      : [];
+
+    return {
+      id: String(scene.id),
+      location: String(scene.location ?? ''),
+      narration: String(scene.narration ?? ''),
+      choices,
+    };
+  });
+
+  return {
+    fromAnchorId: String(obj.fromAnchorId ?? ''),
+    toAnchorId: String(obj.toAnchorId ?? ''),
+    entrySceneId: String(obj.entrySceneId),
+    scenes,
+  };
+}
+
+export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]): SegmentIssue[] {
+  const issues: SegmentIssue[] = [];
+  const sceneIds = new Set(web.scenes.map(s => s.id));
+
+  if (!sceneIds.has(web.entrySceneId)) {
+    issues.push({
+      severity: 'error',
+      scope: 'entry',
+      message: `entrySceneId "${web.entrySceneId}" не найден среди сцен`,
+    });
+  }
+
+  let hasExitPath = false;
+  let hasNonEncounterExit = false;
+
+  for (const scene of web.scenes) {
+    if (scene.choices.length === 0) {
+      hasExitPath = true;
+      hasNonEncounterExit = true;
+      continue;
+    }
+
+    for (const choice of scene.choices) {
+      if (choice.nextSceneId === null && !choice.encounterTrigger) {
+        hasExitPath = true;
+        hasNonEncounterExit = true;
+      } else if (choice.nextSceneId === null && choice.encounterTrigger) {
+        hasExitPath = true;
+      } else if (choice.nextSceneId !== null && !sceneIds.has(choice.nextSceneId)) {
+        issues.push({
+          severity: 'error',
+          scope: `${scene.id}/choice/${choice.id}`,
+          message: `nextSceneId "${choice.nextSceneId}" не найден среди сцен`,
+        });
+      }
+
+      if (choice.encounterTrigger && !availableLIIds.includes(choice.encounterTrigger)) {
+        issues.push({
+          severity: 'error',
+          scope: `${scene.id}/choice/${choice.id}`,
+          message: `encounterTrigger "${choice.encounterTrigger}" не найден в availableLIs`,
+        });
+      }
+    }
+  }
+
+  if (!hasExitPath) {
+    issues.push({
+      severity: 'error',
+      scope: 'exit',
+      message: 'нет пути к выходу (ни один choice не ведёт к anchorTo)',
+    });
+  }
+
+  if (!hasNonEncounterExit) {
+    issues.push({
+      severity: 'warning',
+      scope: 'exit',
+      message: 'нет пути к выходу без encounter-а (игрок не может пройти мимо)',
+    });
+  }
+
+  return issues;
+}
+
+// ============================================================================
+// DIALOGUE VARIANT (encounter dialogue per relationship bracket)
+// ============================================================================
+
+export type DialogueVariantBracket = 'positive' | 'neutral' | 'negative';
+
+export type DialogueVariant = {
+  bracket: DialogueVariantBracket;
+  liId: string;
+  entrySceneId: string;
+  scenes: DraftScene[];
+};
+
+export function parseDialogueVariant(raw: string): DialogueVariant {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`dialogue variant JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('dialogue variant must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.scenes) || !obj.entrySceneId) {
+    throw new Error('dialogue variant missing scenes or entrySceneId');
+  }
+
+  const validBrackets: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
+  const bracket = String(obj.bracket ?? 'neutral') as DialogueVariantBracket;
+  if (!validBrackets.includes(bracket)) {
+    throw new Error(`invalid bracket "${obj.bracket}", expected one of: ${validBrackets.join(', ')}`);
+  }
+
+  const innerSegment = parseGeneratedSegment(raw);
+
+  return {
+    bracket,
+    liId: String(obj.liId ?? ''),
+    entrySceneId: innerSegment.entrySceneId,
+    scenes: innerSegment.scenes,
+  };
+}

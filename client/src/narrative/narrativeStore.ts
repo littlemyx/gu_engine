@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { GeneratedSegment, OutlinePlan } from './types';
+import type { GeneratedSegment, OutlinePlan, StoryOutlinePlan, NarrationWeb, DialogueVariant } from './types';
 
 /**
  * Стор для procedural-narrative-пилота.
@@ -25,6 +25,7 @@ import type { GeneratedSegment, OutlinePlan } from './types';
  */
 
 const segmentKey = (fromId: string, toId: string) => `${fromId}->${toId}`;
+const encounterKey = (anchorId: string, liId: string) => `${anchorId}:${liId}`;
 
 export type ImageGenState =
   | { status: 'pending' }
@@ -58,6 +59,10 @@ type NarrativeState = {
    */
   characters: Record<string, CharacterGenState>;
 
+  storyOutline: StoryOutlinePlan | null;
+  narrationWebs: Record<string, NarrationWeb>;
+  dialogueVariants: Record<string, DialogueVariant[]>;
+
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
   clearSegments: () => void;
@@ -67,7 +72,15 @@ type NarrativeState = {
   updateCharacterPose: (liId: string, pose: string, filename: string) => void;
   clearCharacters: () => void;
 
+  setStoryOutline: (outline: StoryOutlinePlan | null) => void;
+  setNarrationWeb: (fromId: string, toId: string, web: NarrationWeb) => void;
+  clearNarrationWebs: () => void;
+  setDialogueVariants: (anchorId: string, liId: string, variants: DialogueVariant[]) => void;
+  clearDialogueVariants: () => void;
+
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
+  getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
+  getDialogueVariants: (anchorId: string, liId: string) => DialogueVariant[] | undefined;
 };
 
 export const useNarrativeStore = create<NarrativeState>()(
@@ -77,6 +90,9 @@ export const useNarrativeStore = create<NarrativeState>()(
       segments: {},
       images: {},
       characters: {},
+      storyOutline: null,
+      narrationWebs: {},
+      dialogueVariants: {},
 
       setOutline: outline => {
         // При установке нового outline сбрасываем outline-зависимые кэши:
@@ -116,7 +132,27 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       clearCharacters: () => set({ characters: {} }),
 
+      setStoryOutline: storyOutline => {
+        set({ storyOutline, narrationWebs: {}, dialogueVariants: {} });
+      },
+
+      setNarrationWeb: (fromId, toId, web) => {
+        set(s => ({ narrationWebs: { ...s.narrationWebs, [segmentKey(fromId, toId)]: web } }));
+      },
+
+      clearNarrationWebs: () => set({ narrationWebs: {}, dialogueVariants: {} }),
+
+      setDialogueVariants: (anchorId, liId, variants) => {
+        set(s => ({ dialogueVariants: { ...s.dialogueVariants, [encounterKey(anchorId, liId)]: variants } }));
+      },
+
+      clearDialogueVariants: () => set({ dialogueVariants: {} }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
+
+      getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
+
+      getDialogueVariants: (anchorId, liId) => get().dialogueVariants[encounterKey(anchorId, liId)],
     }),
     {
       name: 'gu-narrative-state',
@@ -127,6 +163,9 @@ export const useNarrativeStore = create<NarrativeState>()(
         segments: state.segments,
         images: state.images,
         characters: state.characters,
+        storyOutline: state.storyOutline,
+        narrationWebs: state.narrationWebs,
+        dialogueVariants: state.dialogueVariants,
       }),
     },
   ),

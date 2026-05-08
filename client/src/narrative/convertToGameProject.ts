@@ -1,4 +1,14 @@
-import type { AnchorPlan, Brief, DraftDialogueLine, GeneratedSegment, OutlinePlan } from './types';
+import type {
+  AnchorPlan,
+  Brief,
+  DraftDialogueLine,
+  GeneratedSegment,
+  OutlinePlan,
+  StoryOutlinePlan,
+  NarrationWeb,
+  DialogueVariant,
+  DialogueVariantBracket,
+} from './types';
 import { COMMON_RELATIONSHIP_VARS } from './types';
 import type { CharacterGenState, ImageGenState } from './narrativeStore';
 import { IMAGE_SERVER_BASE, resolveEmotionToSpriteUrl, pickCharacterEmotion } from './emotionResolver';
@@ -424,6 +434,341 @@ export function convertToGameProject(
   };
 
   return { project, scenes: { nodes, edges }, stats };
+}
+
+// ── Story-layer conversion (two-layer architecture) ──────────────────────
+
+function buildStoryStateSchema(brief: Brief, outline: StoryOutlinePlan): GameStateSchema {
+  const vars: Record<string, GameStateVarSchema> = {};
+  for (const li of brief.loveInterests) {
+    const arch = ARCHETYPES[li.archetype];
+    for (const v of COMMON_RELATIONSHIP_VARS) {
+      const key = `relationship[${li.id}].${v}`;
+      const initial = arch?.initialState?.[v];
+      vars[key] = {
+        range: [-1, 1],
+        default: initial ? (initial[0] + initial[1]) / 2 : 0,
+      };
+    }
+    if (arch?.additionalStateVars) {
+      for (const [k, decl] of Object.entries(arch.additionalStateVars)) {
+        vars[k] = { range: decl.range, default: decl.default };
+      }
+    }
+  }
+  const flags: string[] = [];
+  for (const a of outline.anchors) {
+    for (const f of a.establishes) {
+      if (!flags.includes(f)) flags.push(f);
+    }
+  }
+  return { vars, flags };
+}
+
+export type StoryConversionStats = {
+  anchorScenes: number;
+  narrationScenes: number;
+  routerNodes: number;
+  dialogueScenes: number;
+  totalEdges: number;
+  encountersWired: number;
+};
+
+export type StoryConversionResult = {
+  project: GameProjectFile;
+  scenes: GameSceneGraph;
+  stats: StoryConversionStats;
+};
+
+export function convertStoryToGameProject(
+  brief: Brief,
+  outline: StoryOutlinePlan,
+  narrationWebs: Record<string, NarrationWeb>,
+  dialogueVariants: Record<string, DialogueVariant[]>,
+  images: Record<string, ImageGenState> = {},
+  characters: Record<string, CharacterGenState> = {},
+): StoryConversionResult {
+  const nodes: GameSceneNode[] = [];
+  const edges: GameSceneEdge[] = [];
+  const allIds = new Set<string>();
+  let routerCount = 0;
+  let encountersWired = 0;
+  let narrationSceneCount = 0;
+  let dialogueSceneCount = 0;
+
+  const uniqueId = (base: string): string => {
+    let id = base;
+    let i = 0;
+    while (allIds.has(id)) {
+      id = `${base}__${++i}`;
+    }
+    allIds.add(id);
+    return id;
+  };
+
+  // Reserve anchor IDs
+  for (const a of outline.anchors) allIds.add(a.id);
+
+  // ── 1. Story anchor nodes ─────────────────────────────────────────────
+  const anchorOutputs = new Map<string, GameSceneOutput[]>();
+  for (let ai = 0; ai < outline.anchors.length; ai++) {
+    const anchor = outline.anchors[ai];
+    const image = imageUrlFor(images[anchor.id]);
+    nodes.push({
+      id: anchor.id,
+      type: 'scene',
+      position: { x: anchor.act * ANCHOR_X_STEP, y: ai * ANCHOR_Y_STEP },
+      data: {
+        label: renderAnchorText(anchor.summary, anchor.id),
+        image,
+        outputs: [],
+      },
+    });
+    anchorOutputs.set(anchor.id, []);
+  }
+
+  // ── 2. Narration webs ─────────────────────────────────────────────────
+  for (const edge of outline.anchorEdges) {
+    const webKey = `${edge.from}->${edge.to}`;
+    const web = narrationWebs[webKey];
+
+    if (!web) {
+      const outId = uniqueId(`${edge.from}__to__${edge.to}`);
+      const toAnchor = outline.anchors.find(a => a.id === edge.to);
+      anchorOutputs.get(edge.from)!.push({ id: outId, text: `→ ${toAnchor?.summary || edge.to}` });
+      edges.push({ id: `e_${outId}`, source: edge.from, sourceHandle: outId, target: edge.to });
+      continue;
+    }
+
+    // Link anchor → web entry
+    const entryOutId = uniqueId(`${edge.from}__enter__${web.entrySceneId}`);
+    const toAnchor = outline.anchors.find(a => a.id === edge.to);
+    anchorOutputs.get(edge.from)!.push({ id: entryOutId, text: `→ ${toAnchor?.summary || edge.to}` });
+    edges.push({
+      id: `e_${entryOutId}`,
+      source: edge.from,
+      sourceHandle: entryOutId,
+      target: uniqueId(web.entrySceneId),
+    });
+
+    // We need a pre-pass to assign unique IDs for web scenes
+    const webSceneIdMap = new Map<string, string>();
+    for (const scene of web.scenes) {
+      const sid = allIds.has(scene.id) ? uniqueId(scene.id) : scene.id;
+      allIds.add(sid);
+      webSceneIdMap.set(scene.id, sid);
+    }
+
+    // Fix the entry edge to use mapped ID
+    edges[edges.length - 1].target = webSceneIdMap.get(web.entrySceneId) ?? web.entrySceneId;
+
+    const segImage = imageUrlFor(images[edge.from]);
+    const fromAnchor = outline.anchors.find(a => a.id === edge.from);
+
+    for (const scene of web.scenes) {
+      const sceneId = webSceneIdMap.get(scene.id)!;
+      const isNarration = scene.choices.length === 0;
+      narrationSceneCount++;
+
+      const outputs: GameSceneOutput[] = [];
+      if (isNarration) {
+        const autoId = uniqueId(`${sceneId}__auto`);
+        outputs.push({ id: autoId, text: '' });
+        edges.push({ id: `e_${autoId}`, source: sceneId, sourceHandle: autoId, target: edge.to });
+      } else {
+        for (const choice of scene.choices) {
+          const choiceId = uniqueId(choice.id);
+          const choiceEffects: GameOutputEffects | undefined = choice.effects?.flagSet?.length
+            ? { flagSet: choice.effects.flagSet }
+            : undefined;
+          outputs.push({ id: choiceId, text: choice.text, effects: choiceEffects });
+
+          if (choice.encounterTrigger) {
+            // Wire encounter: choice → router → variants → return
+            const liId = choice.encounterTrigger;
+            const routerId = uniqueId(`router_${sceneId}_${liId}`);
+            const returnTarget = choice.nextSceneId
+              ? webSceneIdMap.get(choice.nextSceneId) ?? choice.nextSceneId
+              : edge.to;
+
+            edges.push({ id: `e_${choiceId}`, source: sceneId, sourceHandle: choiceId, target: routerId });
+
+            // Router node
+            nodes.push({
+              id: routerId,
+              type: 'scene',
+              position: { x: 0, y: 0 },
+              data: { label: '', image: '', outputs: [], sceneType: 'router' },
+            });
+            routerCount++;
+
+            const varKey = `${fromAnchor?.id ?? edge.from}:${liId}`;
+            const variants = dialogueVariants[varKey] ?? [];
+
+            if (variants.length === 0) {
+              // No variants generated — skip through router
+              const skipId = uniqueId(`${routerId}__skip`);
+              nodes[nodes.length - 1].data.outputs.push({ id: skipId, text: '' });
+              edges.push({ id: `e_${skipId}`, source: routerId, sourceHandle: skipId, target: returnTarget });
+            } else {
+              encountersWired++;
+              for (const variant of variants) {
+                const condition = bracketCondition(liId, variant.bracket);
+                const varEntryId = uniqueId(variant.entrySceneId);
+                const routerOutId = uniqueId(`${routerId}__${variant.bracket}`);
+                nodes[nodes.length - 1].data.outputs.push({ id: routerOutId, text: '' });
+
+                const condEdge: GameSceneEdge = {
+                  id: `e_${routerOutId}`,
+                  source: routerId,
+                  sourceHandle: routerOutId,
+                  target: varEntryId,
+                };
+                if (condition.length > 0) condEdge.condition = condition;
+                edges.push(condEdge);
+
+                // Variant scenes (DraftScene[])
+                const varSceneIdMap = new Map<string, string>();
+                for (const vs of variant.scenes) {
+                  const vsId = allIds.has(vs.id) ? uniqueId(vs.id) : vs.id;
+                  allIds.add(vsId);
+                  varSceneIdMap.set(vs.id, vsId);
+                }
+
+                for (const vs of variant.scenes) {
+                  const vsId = varSceneIdMap.get(vs.id)!;
+                  dialogueSceneCount++;
+
+                  const positions = assignPositions(vs.charactersPresent.length);
+                  const sprites: GameSpriteEntry[] = [];
+                  for (let ci = 0; ci < vs.charactersPresent.length; ci++) {
+                    const charId = vs.charactersPresent[ci];
+                    const emotion = pickCharacterEmotion(vs, charId);
+                    const { url } = resolveEmotionToSpriteUrl(characters[charId], emotion);
+                    if (url) sprites.push({ url, position: positions[ci] ?? 'center' });
+                  }
+
+                  const vsOutputs: GameSceneOutput[] =
+                    vs.choices.length === 0
+                      ? []
+                      : vs.choices.map(c => {
+                          const cId = uniqueId(c.id);
+                          const out: GameSceneOutput = { id: cId, text: c.text };
+                          const hasEff =
+                            Object.keys(c.effects.stateDeltas).length > 0 ||
+                            c.effects.flagSet.length > 0 ||
+                            c.effects.flagClear.length > 0;
+                          if (hasEff) {
+                            out.effects = {
+                              stateDeltas:
+                                Object.keys(c.effects.stateDeltas).length > 0 ? c.effects.stateDeltas : undefined,
+                              flagSet: c.effects.flagSet.length > 0 ? c.effects.flagSet : undefined,
+                              flagClear: c.effects.flagClear.length > 0 ? c.effects.flagClear : undefined,
+                            };
+                          }
+                          return out;
+                        });
+
+                  if (vs.choices.length === 0) {
+                    const autoId = uniqueId(`${vsId}__auto`);
+                    vsOutputs.push({ id: autoId, text: '' });
+                    const nextVs = variant.scenes[variant.scenes.indexOf(vs) + 1];
+                    const target = nextVs ? varSceneIdMap.get(nextVs.id) ?? nextVs.id : returnTarget;
+                    edges.push({ id: `e_${autoId}`, source: vsId, sourceHandle: autoId, target });
+                  } else {
+                    for (const c of vs.choices) {
+                      const cId = vsOutputs.find(o => o.text === c.text)?.id ?? c.id;
+                      const target =
+                        c.nextSceneId === null ? returnTarget : varSceneIdMap.get(c.nextSceneId) ?? c.nextSceneId;
+                      edges.push({ id: `e_${cId}`, source: vsId, sourceHandle: cId, target });
+                    }
+                  }
+
+                  nodes.push({
+                    id: vsId,
+                    type: 'scene',
+                    position: { x: 0, y: 0 },
+                    data: {
+                      label: renderDraftSceneText(vs.narration, vs.dialogue),
+                      image: segImage,
+                      sprite: sprites[0]?.url,
+                      sprites: sprites.length ? sprites : undefined,
+                      outputs: vsOutputs,
+                      sceneType: vs.choices.length === 0 ? 'narration' : 'dialogue',
+                    },
+                  });
+                }
+              }
+            }
+          } else {
+            // Regular choice — wire to next scene or to anchor
+            const target = choice.nextSceneId ? webSceneIdMap.get(choice.nextSceneId) ?? choice.nextSceneId : edge.to;
+            edges.push({ id: `e_${choiceId}`, source: sceneId, sourceHandle: choiceId, target });
+          }
+        }
+      }
+
+      nodes.push({
+        id: sceneId,
+        type: 'scene',
+        position: { x: 0, y: 0 },
+        data: {
+          label: escapeNL(scene.narration),
+          image: segImage,
+          outputs,
+          sceneType: isNarration ? 'narration' : 'branch',
+        },
+      });
+    }
+  }
+
+  // ── 3. Apply accumulated outputs + sceneType to anchor nodes ──────────
+  for (const node of nodes) {
+    const outs = anchorOutputs.get(node.id);
+    if (outs) {
+      node.data.outputs = outs;
+      node.data.sceneType = outs.length <= 1 ? 'narration' : 'branch';
+    }
+  }
+
+  // ── 4. Project metadata ───────────────────────────────────────────────
+  const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
+  const stateSchema = buildStoryStateSchema(brief, outline);
+  const project: GameProjectFile = {
+    title,
+    scenes: './scenes.json',
+    settings: {
+      sceneFadeInMs: 600,
+      choiceAppearDelayMs: 100,
+      endFadeInMs: 400,
+      stateSchema,
+    },
+  };
+
+  return {
+    project,
+    scenes: { nodes, edges },
+    stats: {
+      anchorScenes: outline.anchors.length,
+      narrationScenes: narrationSceneCount,
+      routerNodes: routerCount,
+      dialogueScenes: dialogueSceneCount,
+      totalEdges: edges.length,
+      encountersWired,
+    },
+  };
+}
+
+function bracketCondition(liId: string, bracket: DialogueVariantBracket): GameStateCondition[] {
+  const path = `relationship[${liId}].affection`;
+  switch (bracket) {
+    case 'positive':
+      return [{ path, gte: 0.3 }];
+    case 'negative':
+      return [{ path, lte: 0 }];
+    case 'neutral':
+      return [];
+  }
 }
 
 function truncate(s: string, max: number): string {
