@@ -241,7 +241,60 @@ export type NarrationWebRequest = {
      */
     existingFlags?: Array<string>;
     /**
+     * Beat scene text of the FROM anchor the player just saw; the web continues right after it.
+     */
+    fromAnchorBeatText?: string;
+    /**
      * Previously generated NarrationWeb that failed validation.
+     * When present alongside previousIssues, the LLM is asked to
+     * produce a corrected version.
+     *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
+export type AnchorBeatRequest = {
+    /**
+     * Brief context (world, tone, protagonist).
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * StoryAnchor whose event this beat scene plays on screen.
+     */
+    anchor: {
+        [key: string]: unknown;
+    };
+    /**
+     * Purpose of the act this anchor belongs to (outline.acts[act-1].purpose).
+     */
+    actPurpose: string;
+    /**
+     * Ancestor beat chain in topological order (last 4).
+     */
+    predecessorBeats: Array<{
+        anchorId: string;
+        summary: string;
+        beatText?: string;
+    }>;
+    /**
+     * Outgoing anchor targets requiring diegetic transition labels.
+     */
+    outgoingTargets: Array<{
+        anchorId: string;
+        summary: string;
+        location: string;
+        timeMarker: string;
+    }>;
+    /**
+     * Previously generated AnchorBeat that failed validation.
      * When present alongside previousIssues, the LLM is asked to
      * produce a corrected version.
      *
@@ -396,6 +449,22 @@ export type GenerateNarrationWebResponses = {
 };
 
 export type GenerateNarrationWebResponse = GenerateNarrationWebResponses[keyof GenerateNarrationWebResponses];
+
+export type GenerateAnchorBeatData = {
+    body: AnchorBeatRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/anchorBeat';
+};
+
+export type GenerateAnchorBeatResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateAnchorBeatResponse = GenerateAnchorBeatResponses[keyof GenerateAnchorBeatResponses];
 
 export type GenerateDialogueVariantData = {
     body: DialogueVariantRequest;

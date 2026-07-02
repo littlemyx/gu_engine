@@ -9,6 +9,7 @@ import type {
   SegmentRequest,
   LiCardsRequest,
   NarrationWebRequest,
+  AnchorBeatRequest,
   DialogueVariantRequest,
 } from './types.js';
 
@@ -642,6 +643,12 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
       `## Уже установленные флаги\n${flagsJson}`,
     ];
 
+    if (body.fromAnchorBeatText) {
+      parts.push(
+        `## Сцена-событие, которую игрок только что видел\n${body.fromAnchorBeatText}\n\nПаутина начинается СРАЗУ ПОСЛЕ этой сцены: не повторяй её, не пересказывай и не противоречь ей.`,
+      );
+    }
+
     // Retry-with-feedback: показываем предыдущую неудачную попытку и ошибки.
     const hasFeedback =
       body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
@@ -683,6 +690,107 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[narrationWeb] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// ANCHOR BEAT GENERATION
+// ============================================================================
+
+const ANCHOR_BEAT_SYSTEM_PROMPT = `Ты — сценарист якорных сцен-событий для романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, протагонист.
+  2. anchor — сюжетный якорь: событие (summary), локация, время, act.
+  3. actPurpose — функция этого акта в истории (завязка/эскалация/кульминация/развязка).
+  4. predecessorBeats — сцены-события, которые игрок УЖЕ видел (в порядке сюжета).
+  5. outgoingTargets — якоря, к которым игрок может перейти из этой сцены.
+
+Твоя задача — написать **сцену-событие** и подписи переходов.
+
+Жёсткие правила:
+  1. beatText — 3-6 предложений от 2-го лица ("Ты входишь...", "Перед тобой...").
+     Событие из anchor.summary происходит НА ЭКРАНЕ, здесь и сейчас — не пересказ,
+     не анонс и не воспоминание. Вплети location и timeMarker естественно.
+  2. Согласованность: не противоречь predecessorBeats и не повторяй их.
+     Факты из anchor.establishes становятся истинными ИМЕННО в этой сцене.
+  3. actPurpose задаёт драматическую функцию сцены — соблюдай тон и накал.
+     Для type=climax это пик истории; для type=resolution — развязка.
+  4. transitions — РОВНО по одной записи на каждый элемент outgoingTargets.
+     label — диегетическое действие игрока: 2-6 слов, начинается с глагола
+     ("Пойти в библиотеку", "Остаться во дворе", "Заглянуть в кофейню").
+     Без стрелок, без мета-формулировок ("перейти к сцене..."), все labels
+     попарно различимы. label должен логично вытекать из beatText и вести
+     к location/timeMarker целевого якоря.
+  5. Если outgoingTargets пуст (финальный якорь) — transitions: [].
+  6. Все тексты — по-русски.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "anchorId": "school_morning",
+  "beatText": "Ты проходишь через школьные ворота, стряхивая капли дождя с зонта...",
+  "transitions": [
+    { "toAnchorId": "library_noon", "label": "Пойти в библиотеку" },
+    { "toAnchorId": "cafe_evening", "label": "Заглянуть в кофейню" }
+  ]
+}`;
+
+export async function processAnchorBeat(batch: BatchState, body: AnchorBeatRequest): Promise<void> {
+  const itemId = 'anchorBeat';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Якорь (событие этой сцены)\n${JSON.stringify(body.anchor, null, 2)}`,
+      `## Функция акта\n${body.actPurpose || '(не задана)'}`,
+      `## Что игрок уже видел (предыдущие сцены-события)\n${JSON.stringify(body.predecessorBeats, null, 2)}`,
+      `## Исходящие переходы (outgoingTargets)\n${JSON.stringify(body.outgoingTargets, null, 2)}`,
+    ];
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
+      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(
+        `## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${prevJson}`,
+      );
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННУЮ beat-сцену. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Напиши beat-сцену этого якоря и подписи переходов. Только JSON.');
+    }
+
+    const anchorId = (body.anchor as { id?: string })?.id ?? '?';
+    logger.log(`[anchorBeat] batch=${batch.batchId} — generating anchor=${anchorId} (${body.outgoingTargets.length} transitions)...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: ANCHOR_BEAT_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!parsed.beatText || !Array.isArray(parsed.transitions)) {
+      throw new Error('Invalid response: missing beatText or transitions');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[anchorBeat] batch=${batch.batchId} — completed (${String(parsed.beatText).length} chars, ${parsed.transitions.length} transitions)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[anchorBeat] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 

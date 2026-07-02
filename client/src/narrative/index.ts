@@ -19,6 +19,8 @@ export { useSegmentGeneration } from './useSegmentGeneration';
 export type { SegmentGenStatus } from './useSegmentGeneration';
 export { validateSegmentSemantics, getAllSegmentValidations, getSegmentValidations } from './validateSegment';
 export type { SegmentValidationContext } from './validateSegment';
+export { topoOrderAnchors, ancestorChain, directPredecessors, outgoingOf } from './anchorOrder';
+export { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 export { useNarrativeStore } from './narrativeStore';
 export type { ImageGenState, CharacterGenState } from './narrativeStore';
 export { useBriefStore } from './briefStore';

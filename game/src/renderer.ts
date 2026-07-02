@@ -79,7 +79,7 @@ export class GameRenderer {
           ${spriteHtml}
         </div>
         <div class="scene-body">
-          <div class="scene-label">${sceneType === "anchor" ? "" : escapeHtml(node.data.label)}</div>
+          <div class="scene-label">${escapeHtml(node.data.label)}</div>
           <div class="scene-choices">
             ${interactionHtml}
           </div>

@@ -1002,3 +1002,120 @@ export function parseDialogueVariant(raw: string): DialogueVariant {
     scenes: innerSegment.scenes,
   };
 }
+
+// ============================================================================
+// ANCHOR BEAT (on-screen event scene of a story anchor)
+// ============================================================================
+
+export type AnchorBeatTransition = {
+  /** Целевой якорь исходящего ребра. */
+  toAnchorId: string;
+  /** Диегетическая подпись действия игрока («Пойти в библиотеку»). */
+  label: string;
+};
+
+export type AnchorBeat = {
+  anchorId: string;
+  /** 3-6 предложений от 2-го лица: событие якоря, разыгранное на экране. */
+  beatText: string;
+  transitions: AnchorBeatTransition[];
+};
+
+export function parseAnchorBeat(raw: string): AnchorBeat {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`anchor beat JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('anchor beat must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!obj.beatText || !Array.isArray(obj.transitions)) {
+    throw new Error('anchor beat missing beatText or transitions');
+  }
+
+  const transitions: AnchorBeatTransition[] = (obj.transitions as unknown[]).map((t, i) => {
+    const tr = t as Record<string, unknown>;
+    if (!tr.toAnchorId) throw new Error(`transitions[${i}] missing toAnchorId`);
+    return {
+      toAnchorId: String(tr.toAnchorId),
+      label: String(tr.label ?? ''),
+    };
+  });
+
+  return {
+    anchorId: String(obj.anchorId ?? ''),
+    beatText: String(obj.beatText),
+    transitions,
+  };
+}
+
+export function validateAnchorBeat(beat: AnchorBeat, anchorId: string, outgoingAnchorIds: string[]): SegmentIssue[] {
+  const issues: SegmentIssue[] = [];
+
+  if (beat.anchorId !== anchorId) {
+    issues.push({
+      severity: 'error',
+      scope: 'anchorId',
+      message: `beat.anchorId "${beat.anchorId}" не совпадает с якорем "${anchorId}"`,
+    });
+  }
+
+  if (beat.beatText.trim().length < 80) {
+    issues.push({
+      severity: 'error',
+      scope: 'beatText',
+      message: `beatText слишком короткий (${
+        beat.beatText.trim().length
+      } символов) для сцены-события — нужно 3-6 предложений`,
+    });
+  }
+
+  const expected = new Set(outgoingAnchorIds);
+  const got = new Set(beat.transitions.map(t => t.toAnchorId));
+  for (const id of expected) {
+    if (!got.has(id)) {
+      issues.push({
+        severity: 'error',
+        scope: `transitions/${id}`,
+        message: `нет перехода к исходящему якорю "${id}"`,
+      });
+    }
+  }
+  for (const id of got) {
+    if (!expected.has(id)) {
+      issues.push({
+        severity: 'error',
+        scope: `transitions/${id}`,
+        message: `переход к "${id}" не соответствует ни одному исходящему ребру`,
+      });
+    }
+  }
+
+  const seenLabels = new Set<string>();
+  for (const t of beat.transitions) {
+    const label = t.label.trim();
+    if (!label || label.length > 60 || /^[→\->]/.test(label)) {
+      issues.push({
+        severity: 'error',
+        scope: `transitions/${t.toAnchorId}/label`,
+        message: `label "${t.label}" пуст, длиннее 60 символов или начинается со стрелки — нужна диегетическая фраза с глагола`,
+      });
+    }
+    const key = label.toLowerCase();
+    if (seenLabels.has(key)) {
+      issues.push({
+        severity: 'warning',
+        scope: `transitions/${t.toAnchorId}/label`,
+        message: `label "${t.label}" дублирует другой переход`,
+      });
+    }
+    seenLabels.add(key);
+  }
+
+  return issues;
+}

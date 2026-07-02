@@ -74,7 +74,36 @@ export interface NarrationWebRequest {
   availableLIs: { liId: string; liName: string; roleInWorld: string }[];
   existingFlags?: string[];
   /**
+   * Beat-сцена FROM-якоря, которую игрок только что видел. Паутина должна
+   * продолжаться сразу после неё, не повторяя и не противореча.
+   */
+  fromAnchorBeatText?: string;
+  /**
    * Previously generated web that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос на генерацию beat-сцены якоря: событие anchor.summary,
+ * разыгранное на экране от 2-го лица, + диегетические подписи переходов
+ * к исходящим якорям.
+ */
+export interface AnchorBeatRequest {
+  brief: unknown;
+  /** StoryAnchor: id, type, act, location, timeMarker, summary, establishes, availableLIs. */
+  anchor: unknown;
+  /** outline.acts[anchor.act - 1].purpose — функция сцены в акте. */
+  actPurpose: string;
+  /** Цепочка предков (топологический порядок, последние 4). */
+  predecessorBeats: { anchorId: string; summary: string; beatText?: string }[];
+  /** Целевые якоря исходящих рёбер — для подписей переходов. */
+  outgoingTargets: { anchorId: string; summary: string; location: string; timeMarker: string }[];
+  /**
+   * Previously generated beat that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
    */
   previousAttempt?: unknown | null;

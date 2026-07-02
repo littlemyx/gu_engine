@@ -1,4 +1,5 @@
 import type {
+  AnchorBeat,
   AnchorPlan,
   Brief,
   DraftDialogueLine,
@@ -485,9 +486,16 @@ export function convertStoryToGameProject(
   outline: StoryOutlinePlan,
   narrationWebs: Record<string, NarrationWeb>,
   dialogueVariants: Record<string, DialogueVariant[]>,
+  anchorBeats: Record<string, AnchorBeat> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
 ): StoryConversionResult {
+  const transitionLabel = (fromId: string, toId: string): string => {
+    const label = anchorBeats[fromId]?.transitions.find(t => t.toAnchorId === toId)?.label?.trim();
+    if (label) return label;
+    const toAnchor = outline.anchors.find(a => a.id === toId);
+    return `→ ${toAnchor?.summary || toId}`;
+  };
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
   const allIds = new Set<string>();
@@ -519,7 +527,7 @@ export function convertStoryToGameProject(
       type: 'scene',
       position: { x: anchor.act * ANCHOR_X_STEP, y: ai * ANCHOR_Y_STEP },
       data: {
-        label: renderAnchorText(anchor.summary, anchor.id),
+        label: anchorBeats[anchor.id]?.beatText?.trim() || renderAnchorText(anchor.summary, anchor.id),
         image,
         outputs: [],
       },
@@ -534,24 +542,13 @@ export function convertStoryToGameProject(
 
     if (!web) {
       const outId = uniqueId(`${edge.from}__to__${edge.to}`);
-      const toAnchor = outline.anchors.find(a => a.id === edge.to);
-      anchorOutputs.get(edge.from)!.push({ id: outId, text: `→ ${toAnchor?.summary || edge.to}` });
+      anchorOutputs.get(edge.from)!.push({ id: outId, text: transitionLabel(edge.from, edge.to) });
       edges.push({ id: `e_${outId}`, source: edge.from, sourceHandle: outId, target: edge.to });
       continue;
     }
 
-    // Link anchor → web entry
-    const entryOutId = uniqueId(`${edge.from}__enter__${web.entrySceneId}`);
-    const toAnchor = outline.anchors.find(a => a.id === edge.to);
-    anchorOutputs.get(edge.from)!.push({ id: entryOutId, text: `→ ${toAnchor?.summary || edge.to}` });
-    edges.push({
-      id: `e_${entryOutId}`,
-      source: edge.from,
-      sourceHandle: entryOutId,
-      target: uniqueId(web.entrySceneId),
-    });
-
-    // We need a pre-pass to assign unique IDs for web scenes
+    // Pre-pass: уникальные id для сцен паутины (ДО ребра входа, чтобы не
+    // «сжечь» id entry-сцены лишним uniqueId и не патчить ребро постфактум).
     const webSceneIdMap = new Map<string, string>();
     for (const scene of web.scenes) {
       const sid = allIds.has(scene.id) ? uniqueId(scene.id) : scene.id;
@@ -559,8 +556,15 @@ export function convertStoryToGameProject(
       webSceneIdMap.set(scene.id, sid);
     }
 
-    // Fix the entry edge to use mapped ID
-    edges[edges.length - 1].target = webSceneIdMap.get(web.entrySceneId) ?? web.entrySceneId;
+    // Link anchor → web entry
+    const entryOutId = uniqueId(`${edge.from}__enter__${web.entrySceneId}`);
+    anchorOutputs.get(edge.from)!.push({ id: entryOutId, text: transitionLabel(edge.from, edge.to) });
+    edges.push({
+      id: `e_${entryOutId}`,
+      source: edge.from,
+      sourceHandle: entryOutId,
+      target: webSceneIdMap.get(web.entrySceneId) ?? web.entrySceneId,
+    });
 
     const segImage = imageUrlFor(images[edge.from]);
     const fromAnchor = outline.anchors.find(a => a.id === edge.from);
@@ -738,11 +742,14 @@ export function convertStoryToGameProject(
   }
 
   // ── 3. Apply accumulated outputs + sceneType to anchor nodes ──────────
+  // Якорь — полноценная сцена-событие (beat), а не немой роутер: игрок
+  // читает beatText и сам выбирает переход. Финальный якорь без выходов —
+  // narration, движок отрисует его как конец.
   for (const node of nodes) {
     const outs = anchorOutputs.get(node.id);
     if (outs) {
       node.data.outputs = outs;
-      node.data.sceneType = 'router';
+      node.data.sceneType = outs.length > 0 ? 'anchor' : 'narration';
     }
   }
 

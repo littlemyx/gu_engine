@@ -116,6 +116,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/anchorBeat:
+    post:
+      operationId: generateAnchorBeat
+      summary: Generate an on-screen beat scene for a story anchor with diegetic transition labels
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnchorBeatRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /generate/dialogueVariant:
     post:
       operationId: generateDialogueVariant
@@ -488,12 +506,83 @@ components:
           items:
             type: string
           description: Flags already established by prior story anchors.
+        fromAnchorBeatText:
+          type: string
+          description: Beat scene text of the FROM anchor the player just saw; the web continues right after it.
         previousAttempt:
           type: object
           additionalProperties: true
           nullable: true
           description: |
             Previously generated NarrationWeb that failed validation.
+            When present alongside previousIssues, the LLM is asked to
+            produce a corrected version.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
+
+    AnchorBeatRequest:
+      type: object
+      required:
+        - brief
+        - anchor
+        - actPurpose
+        - predecessorBeats
+        - outgoingTargets
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+          description: Brief context (world, tone, protagonist).
+        anchor:
+          type: object
+          additionalProperties: true
+          description: StoryAnchor whose event this beat scene plays on screen.
+        actPurpose:
+          type: string
+          description: Purpose of the act this anchor belongs to (outline.acts[act-1].purpose).
+        predecessorBeats:
+          type: array
+          items:
+            type: object
+            required:
+              - anchorId
+              - summary
+            properties:
+              anchorId:
+                type: string
+              summary:
+                type: string
+              beatText:
+                type: string
+          description: Ancestor beat chain in topological order (last 4).
+        outgoingTargets:
+          type: array
+          items:
+            type: object
+            required:
+              - anchorId
+              - summary
+              - location
+              - timeMarker
+            properties:
+              anchorId:
+                type: string
+              summary:
+                type: string
+              location:
+                type: string
+              timeMarker:
+                type: string
+          description: Outgoing anchor targets requiring diegetic transition labels.
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Previously generated AnchorBeat that failed validation.
             When present alongside previousIssues, the LLM is asked to
             produce a corrected version.
         previousIssues:

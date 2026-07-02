@@ -3,6 +3,7 @@ import {
   useNarrativeStore,
   useBriefStore,
   IMAGE_SERVER_BASE,
+  topoOrderAnchors,
   type StoryOutlinePlan,
   type DialogueVariant,
 } from '@/narrative';
@@ -51,16 +52,24 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
     return brief.loveInterests.map(li => {
       const anchorsPresent = outline.anchors.filter(a => a.availableLIs.includes(li.id)).map(a => a.id);
 
+      // Обходим рёбра в топологическом порядке якорей, а не в порядке
+      // вставки в стор — таймлайн встреч должен совпадать с порядком сюжета.
+      const topoIndex = new Map(topoOrderAnchors(outline).map((a, i) => [a.id, i]));
+      const orderedEdges = [...outline.anchorEdges].sort(
+        (a, b) => (topoIndex.get(a.from) ?? 0) - (topoIndex.get(b.from) ?? 0),
+      );
+
       const encounters: EncounterPoint[] = [];
-      for (const [segKey, web] of Object.entries(narrationWebs)) {
+      for (const edge of orderedEdges) {
+        const web = narrationWebs[`${edge.from}->${edge.to}`];
+        if (!web) continue;
+        const fromAnchor = outline.anchors.find(a => a.id === edge.from);
         for (const scene of web.scenes) {
           for (const choice of scene.choices) {
             if (choice.encounterTrigger === li.id) {
-              const [fromId, toId] = segKey.split('->');
-              const fromAnchor = outline.anchors.find(a => a.id === fromId);
               encounters.push({
-                fromId,
-                toId,
+                fromId: edge.from,
+                toId: edge.to,
                 sceneId: scene.id,
                 choiceText: choice.text,
                 location: scene.location || fromAnchor?.location || '',
@@ -92,7 +101,7 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
         variants,
       };
     });
-  }, [brief.loveInterests, outline.anchors, narrationWebs, dialogueVariants, characters]);
+  }, [brief.loveInterests, outline, narrationWebs, dialogueVariants, characters]);
 
   if (liData.length === 0) return null;
 

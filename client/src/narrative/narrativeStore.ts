@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { GeneratedSegment, OutlinePlan, StoryOutlinePlan, NarrationWeb, DialogueVariant } from './types';
+import type {
+  AnchorBeat,
+  GeneratedSegment,
+  OutlinePlan,
+  StoryOutlinePlan,
+  NarrationWeb,
+  DialogueVariant,
+} from './types';
 
 /**
  * Стор для procedural-narrative-пилота.
@@ -62,6 +69,8 @@ type NarrativeState = {
   storyOutline: StoryOutlinePlan | null;
   narrationWebs: Record<string, NarrationWeb>;
   dialogueVariants: Record<string, DialogueVariant[]>;
+  /** Beat-сцены якорей (событие на экране + подписи переходов). Ключ — anchorId. */
+  anchorBeats: Record<string, AnchorBeat>;
 
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
@@ -77,10 +86,13 @@ type NarrativeState = {
   clearNarrationWebs: () => void;
   setDialogueVariants: (anchorId: string, liId: string, variants: DialogueVariant[]) => void;
   clearDialogueVariants: () => void;
+  setAnchorBeat: (anchorId: string, beat: AnchorBeat) => void;
+  clearAnchorBeats: () => void;
 
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
   getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
   getDialogueVariants: (anchorId: string, liId: string) => DialogueVariant[] | undefined;
+  getAnchorBeat: (anchorId: string) => AnchorBeat | undefined;
 };
 
 export const useNarrativeStore = create<NarrativeState>()(
@@ -93,6 +105,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       storyOutline: null,
       narrationWebs: {},
       dialogueVariants: {},
+      anchorBeats: {},
 
       setOutline: outline => {
         // При установке нового outline сбрасываем outline-зависимые кэши:
@@ -133,7 +146,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       clearCharacters: () => set({ characters: {} }),
 
       setStoryOutline: storyOutline => {
-        set({ storyOutline, narrationWebs: {}, dialogueVariants: {} });
+        set({ storyOutline, narrationWebs: {}, dialogueVariants: {}, anchorBeats: {} });
       },
 
       setNarrationWeb: (fromId, toId, web) => {
@@ -148,15 +161,23 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       clearDialogueVariants: () => set({ dialogueVariants: {} }),
 
+      setAnchorBeat: (anchorId, beat) => {
+        set(s => ({ anchorBeats: { ...s.anchorBeats, [anchorId]: beat } }));
+      },
+
+      clearAnchorBeats: () => set({ anchorBeats: {} }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
       getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
 
       getDialogueVariants: (anchorId, liId) => get().dialogueVariants[encounterKey(anchorId, liId)],
+
+      getAnchorBeat: anchorId => get().anchorBeats[anchorId],
     }),
     {
       name: 'gu-narrative-state',
-      version: 2,
+      version: 3,
       // Персистим только данные, не действия.
       partialize: state => ({
         outline: state.outline,
@@ -166,6 +187,13 @@ export const useNarrativeStore = create<NarrativeState>()(
         storyOutline: state.storyOutline,
         narrationWebs: state.narrationWebs,
         dialogueVariants: state.dialogueVariants,
+        anchorBeats: state.anchorBeats,
+      }),
+      // Без migrate zustand выбрасывает состояние при несовпадении версии —
+      // дорогие кэши генерации должны переживать апгрейд схемы.
+      migrate: persisted => ({
+        anchorBeats: {},
+        ...(persisted as Record<string, unknown>),
       }),
     },
   ),

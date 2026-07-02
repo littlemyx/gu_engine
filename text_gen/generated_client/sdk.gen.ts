@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -83,6 +83,18 @@ export const generateLiCards = <ThrowOnError extends boolean = false>(options: O
  */
 export const generateNarrationWeb = <ThrowOnError extends boolean = false>(options: Options<GenerateNarrationWebData, ThrowOnError>) => (options.client ?? client).post<GenerateNarrationWebResponses, unknown, ThrowOnError>({
     url: '/generate/narrationWeb',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate an on-screen beat scene for a story anchor with diegetic transition labels
+ */
+export const generateAnchorBeat = <ThrowOnError extends boolean = false>(options: Options<GenerateAnchorBeatData, ThrowOnError>) => (options.client ?? client).post<GenerateAnchorBeatResponses, unknown, ThrowOnError>({
+    url: '/generate/anchorBeat',
     ...options,
     headers: {
         'Content-Type': 'application/json',

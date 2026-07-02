@@ -412,6 +412,7 @@ const AnchorRow: React.FC<{ anchor: StoryAnchor }> = ({ anchor }) => {
 // ────────────────────────────────────────────────────────────────────────────
 
 const PHASE_LABEL: Record<string, string> = {
+  anchor_beats: 'Anchor Beats',
   narration_webs: 'Narration Webs',
   dialogue_variants: 'Dialogue Variants',
 };
@@ -796,9 +797,11 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
   const narrationWebs = useNarrativeStore(s => s.narrationWebs);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
+  const anchorBeats = useNarrativeStore(s => s.anchorBeats);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const webCount = Object.keys(narrationWebs).length;
+  const beatCount = Object.keys(anchorBeats).length;
   const variantCount = Object.keys(dialogueVariants).length;
   const imageCount = Object.values(images).filter(i => i.status === 'done').length;
   const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
@@ -806,7 +809,15 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const liCount = brief.loveInterests.length;
 
   const onExport = () => {
-    const result = convertStoryToGameProject(brief, outline, narrationWebs, dialogueVariants, images, characters);
+    const result = convertStoryToGameProject(
+      brief,
+      outline,
+      narrationWebs,
+      dialogueVariants,
+      anchorBeats,
+      images,
+      characters,
+    );
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
     setTimeout(() => downloadJson('scenes.json', result.scenes), 250);
@@ -817,8 +828,8 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
       <div className={styles.exportLeft}>
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
-          {webCount}/{edgeCount} narration webs · {variantCount} dialogue variants · {imageCount}/
-          {outline.anchors.length} фонов · {characterCount}/{liCount} спрайтов
+          {beatCount}/{outline.anchors.length} beat-сцен · {webCount}/{edgeCount} narration webs · {variantCount}{' '}
+          dialogue variants · {imageCount}/{outline.anchors.length} фонов · {characterCount}/{liCount} спрайтов
         </span>
       </div>
       <button type="button" className={styles.primaryBtn} onClick={onExport}>
