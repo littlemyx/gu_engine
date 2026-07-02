@@ -793,7 +793,11 @@ export function parseNarrationWeb(raw: string): NarrationWeb {
   };
 }
 
-export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]): SegmentIssue[] {
+export function validateNarrationWeb(
+  web: NarrationWeb,
+  availableLIIds: string[],
+  plannedEncounterLIs?: string[],
+): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
   const sceneById = new Map(web.scenes.map(s => [s.id, s]));
 
@@ -868,6 +872,25 @@ export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]
       scope: 'exit',
       message: 'нет пути к выходу без encounter-а (игрок не может пройти мимо)',
     });
+  }
+
+  // Запланированные beat-планом встречи обязаны присутствовать в паутине.
+  if (plannedEncounterLIs && plannedEncounterLIs.length > 0) {
+    const present = new Set<string>();
+    for (const scene of web.scenes) {
+      for (const choice of scene.choices) {
+        if (choice.encounterTrigger) present.add(choice.encounterTrigger);
+      }
+    }
+    for (const liId of plannedEncounterLIs) {
+      if (!present.has(liId)) {
+        issues.push({
+          severity: 'error',
+          scope: `planned/${liId}`,
+          message: `запланированная встреча с "${liId}" отсутствует — нужен choice с encounterTrigger: "${liId}"`,
+        });
+      }
+    }
   }
 
   // ── Графовые проверки ────────────────────────────────────────────────
@@ -1118,4 +1141,68 @@ export function validateAnchorBeat(beat: AnchorBeat, anchorId: string, outgoingA
   }
 
   return issues;
+}
+
+// ============================================================================
+// BEAT PLAN (relationship beats scheduled over encounter slots)
+// ============================================================================
+
+export type EncounterSlot = {
+  anchorId: string;
+  act: number;
+  location: string;
+  liIds: string[];
+};
+
+export type PlannedEncounter = {
+  liId: string;
+  anchorId: string;
+  /** Размещённый required beat архетипа или null (обычная встреча-прогрессия). */
+  beatType: BeatType | null;
+  /** 1 предложение: что должно произойти между героями в эту встречу. */
+  goal: string;
+};
+
+export type BeatPlan = {
+  encounters: PlannedEncounter[];
+  liArcs: { liId: string; arcSummary: string }[];
+};
+
+export function parseBeatPlan(raw: string): BeatPlan {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`beat plan JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('beat plan must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.encounters) || !Array.isArray(obj.liArcs)) {
+    throw new Error('beat plan missing encounters or liArcs');
+  }
+
+  const encounters: PlannedEncounter[] = (obj.encounters as unknown[]).map((e, i) => {
+    const enc = e as Record<string, unknown>;
+    if (!enc.liId || !enc.anchorId) {
+      throw new Error(`encounters[${i}] missing liId or anchorId`);
+    }
+    return {
+      liId: String(enc.liId),
+      anchorId: String(enc.anchorId),
+      beatType: enc.beatType ? (String(enc.beatType) as BeatType) : null,
+      goal: String(enc.goal ?? ''),
+    };
+  });
+
+  const liArcs = (obj.liArcs as unknown[]).map((a, i) => {
+    const arc = a as Record<string, unknown>;
+    if (!arc.liId) throw new Error(`liArcs[${i}] missing liId`);
+    return { liId: String(arc.liId), arcSummary: String(arc.arcSummary ?? '') };
+  });
+
+  return { encounters, liArcs };
 }

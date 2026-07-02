@@ -10,6 +10,7 @@ import type {
   LiCardsRequest,
   NarrationWebRequest,
   AnchorBeatRequest,
+  BeatPlanRequest,
   DialogueVariantRequest,
 } from './types.js';
 
@@ -649,6 +650,12 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
       );
     }
 
+    if (body.plannedEncounterLIs && body.plannedEncounterLIs.length > 0) {
+      parts.push(
+        `## Запланированные встречи\nВ этой паутине ОБЯЗАТЕЛЬНО должен быть хотя бы один choice с encounterTrigger для КАЖДОГО из этих liId: ${body.plannedEncounterLIs.join(', ')}. Размести встречи естественно (персонаж виден в локации, к нему можно подойти).`,
+      );
+    }
+
     // Retry-with-feedback: показываем предыдущую неудачную попытку и ошибки.
     const hasFeedback =
       body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
@@ -690,6 +697,105 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[narrationWeb] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// BEAT PLAN GENERATION
+// ============================================================================
+
+const BEAT_PLAN_SYSTEM_PROMPT = `Ты — планировщик романтических арок поверх готового сюжетного скелета (romance VN).
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, каст LI с архетипами.
+  2. outline — сюжетные якоря в порядке сюжета (акты, локации, события).
+  3. archetypeProfiles — профили архетипов; их requiredBeats нужно разместить.
+  4. encounterSlots — допустимые пары: в каком якоре какие LI доступны.
+
+Твоя задача — назначить каждому LI последовательность встреч и разложить
+обязательные биты его архетипа по этим встречам.
+
+Жёсткие правила:
+  1. Используй ТОЛЬКО пары (liId, anchorId) из encounterSlots. Ничего не выдумывай.
+  2. Каждому LI назначь 3-5 встреч (минимум 2), по возрастанию актов;
+     не более одной встречи одного LI на якорь.
+  3. Для каждого LI размести ВСЕ requiredBeats его архетипа, ровно по одному разу.
+     Соблюдай position: 'obstacle_reveal' и 'after_obstacle_reveal' — середина
+     арки (примерно акт 2 из 4); 'before_crisis' — предпоследняя встреча;
+     'crisis' — последняя встреча перед climax-якорем. beatType бери из профиля.
+  4. Встречи без required beat получают goal-прогрессию по стадиям:
+     знакомство → узнавание → сближение → уязвимость. Первая встреча LI
+     без preExistingRelationship — всегда знакомство.
+  5. goal — 1 конкретное предложение по-русски: что должно произойти между
+     героями в эту встречу. Привяжи к location якоря. НЕ пересказывай
+     requiredBeat.purpose дословно.
+  6. liArcs — 1-2 предложения на LI: общая линия отношений от первой до
+     последней встречи.
+  7. Не сваливай биты всех LI в один якорь; в финальном акте не более
+     1 встречи на LI.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "encounters": [
+    { "liId": "kira", "anchorId": "school_morning", "beatType": null, "goal": "Первое настороженное знакомство у расписания." }
+  ],
+  "liArcs": [
+    { "liId": "kira", "arcSummary": "От соперничества через уязвимость к признанию." }
+  ]
+}`;
+
+export async function processBeatPlan(batch: BatchState, body: BeatPlanRequest): Promise<void> {
+  const itemId = 'beatPlan';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Outline (якоря в порядке сюжета)\n${JSON.stringify(body.outline, null, 2)}`,
+      `## Профили архетипов (requiredBeats)\n${JSON.stringify(body.archetypeProfiles, null, 2)}`,
+      `## Допустимые encounter-слоты\n${JSON.stringify(body.encounterSlots, null, 2)}`,
+    ];
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
+      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${prevJson}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ план битов. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Составь план битов отношений. Только JSON.');
+    }
+
+    logger.log(`[beatPlan] batch=${batch.batchId} — planning (slots=${body.encounterSlots.length})...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: BEAT_PLAN_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.encounters) || !Array.isArray(parsed.liArcs)) {
+      throw new Error('Invalid response: missing encounters or liArcs');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[beatPlan] batch=${batch.batchId} — completed (${parsed.encounters.length} encounters)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[beatPlan] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 

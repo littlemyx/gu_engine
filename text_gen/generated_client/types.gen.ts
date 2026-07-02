@@ -245,7 +245,54 @@ export type NarrationWebRequest = {
      */
     fromAnchorBeatText?: string;
     /**
+     * LI ids whose encounters are planned at this anchor; the web must contain a trigger for each.
+     */
+    plannedEncounterLIs?: Array<string>;
+    /**
      * Previously generated NarrationWeb that failed validation.
+     * When present alongside previousIssues, the LLM is asked to
+     * produce a corrected version.
+     *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
+export type BeatPlanRequest = {
+    /**
+     * Brief context (world, tone, LI cast).
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * StoryOutlinePlan with anchors pre-sorted topologically.
+     */
+    outline: {
+        [key: string]: unknown;
+    };
+    /**
+     * Archetype profiles keyed by archetype id (requiredBeats source).
+     */
+    archetypeProfiles: {
+        [key: string]: unknown;
+    };
+    /**
+     * Allowed (anchor x LI) encounter slots.
+     */
+    encounterSlots: Array<{
+        anchorId: string;
+        act: number;
+        location: string;
+        liIds: Array<string>;
+    }>;
+    /**
+     * Previously generated BeatPlan that failed validation.
      * When present alongside previousIssues, the LLM is asked to
      * produce a corrected version.
      *
@@ -449,6 +496,22 @@ export type GenerateNarrationWebResponses = {
 };
 
 export type GenerateNarrationWebResponse = GenerateNarrationWebResponses[keyof GenerateNarrationWebResponses];
+
+export type GenerateBeatPlanData = {
+    body: BeatPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/beatPlan';
+};
+
+export type GenerateBeatPlanResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateBeatPlanResponse = GenerateBeatPlanResponses[keyof GenerateBeatPlanResponses];
 
 export type GenerateAnchorBeatData = {
     body: AnchorBeatRequest;

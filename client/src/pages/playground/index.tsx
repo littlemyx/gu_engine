@@ -412,6 +412,7 @@ const AnchorRow: React.FC<{ anchor: StoryAnchor }> = ({ anchor }) => {
 // ────────────────────────────────────────────────────────────────────────────
 
 const PHASE_LABEL: Record<string, string> = {
+  beat_plan: 'Beat Plan',
   anchor_beats: 'Anchor Beats',
   narration_webs: 'Narration Webs',
   dialogue_variants: 'Dialogue Variants',

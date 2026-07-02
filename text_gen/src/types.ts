@@ -79,7 +79,33 @@ export interface NarrationWebRequest {
    */
   fromAnchorBeatText?: string;
   /**
+   * LI, встречи с которыми запланированы beat-планом в этом якоре: паутина
+   * ОБЯЗАНА содержать encounter-триггер для каждого из них.
+   */
+  plannedEncounterLIs?: string[];
+  /**
    * Previously generated web that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос на планирование битов отношений: раскладка requiredBeats архетипов
+ * по encounter-слотам (liId × anchorId) поверх готового outline.
+ */
+export interface BeatPlanRequest {
+  brief: unknown;
+  /** StoryOutlinePlan, якоря предварительно топологически отсортированы. */
+  outline: unknown;
+  /** Профили использованных архетипов (requiredBeats живут здесь). */
+  archetypeProfiles: Record<string, unknown>;
+  /** Допустимые пары (anchorId × liIds) для встреч. */
+  encounterSlots: { anchorId: string; act: number; location: string; liIds: string[] }[];
+  /**
+   * Previously generated plan that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
    */
   previousAttempt?: unknown | null;

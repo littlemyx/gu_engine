@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type {
   AnchorBeat,
+  BeatPlan,
   GeneratedSegment,
   OutlinePlan,
   StoryOutlinePlan,
@@ -71,6 +72,8 @@ type NarrativeState = {
   dialogueVariants: Record<string, DialogueVariant[]>;
   /** Beat-сцены якорей (событие на экране + подписи переходов). Ключ — anchorId. */
   anchorBeats: Record<string, AnchorBeat>;
+  /** План битов отношений (какая встреча какой бит арки реализует). */
+  beatPlan: BeatPlan | null;
 
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
@@ -88,12 +91,26 @@ type NarrativeState = {
   clearDialogueVariants: () => void;
   setAnchorBeat: (anchorId: string, beat: AnchorBeat) => void;
   clearAnchorBeats: () => void;
+  setBeatPlan: (plan: BeatPlan | null) => void;
 
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
   getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
   getDialogueVariants: (anchorId: string, liId: string) => DialogueVariant[] | undefined;
   getAnchorBeat: (anchorId: string) => AnchorBeat | undefined;
 };
+
+type PersistedNarrativeState = Pick<
+  NarrativeState,
+  | 'outline'
+  | 'segments'
+  | 'images'
+  | 'characters'
+  | 'storyOutline'
+  | 'narrationWebs'
+  | 'dialogueVariants'
+  | 'anchorBeats'
+  | 'beatPlan'
+>;
 
 export const useNarrativeStore = create<NarrativeState>()(
   persist(
@@ -106,6 +123,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       narrationWebs: {},
       dialogueVariants: {},
       anchorBeats: {},
+      beatPlan: null,
 
       setOutline: outline => {
         // При установке нового outline сбрасываем outline-зависимые кэши:
@@ -146,7 +164,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       clearCharacters: () => set({ characters: {} }),
 
       setStoryOutline: storyOutline => {
-        set({ storyOutline, narrationWebs: {}, dialogueVariants: {}, anchorBeats: {} });
+        set({ storyOutline, narrationWebs: {}, dialogueVariants: {}, anchorBeats: {}, beatPlan: null });
       },
 
       setNarrationWeb: (fromId, toId, web) => {
@@ -167,6 +185,8 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       clearAnchorBeats: () => set({ anchorBeats: {} }),
 
+      setBeatPlan: beatPlan => set({ beatPlan }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
       getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
@@ -177,7 +197,7 @@ export const useNarrativeStore = create<NarrativeState>()(
     }),
     {
       name: 'gu-narrative-state',
-      version: 3,
+      version: 4,
       // Персистим только данные, не действия.
       partialize: state => ({
         outline: state.outline,
@@ -188,13 +208,26 @@ export const useNarrativeStore = create<NarrativeState>()(
         narrationWebs: state.narrationWebs,
         dialogueVariants: state.dialogueVariants,
         anchorBeats: state.anchorBeats,
+        beatPlan: state.beatPlan,
       }),
       // Без migrate zustand выбрасывает состояние при несовпадении версии —
       // дорогие кэши генерации должны переживать апгрейд схемы.
-      migrate: persisted => ({
-        anchorBeats: {},
-        ...(persisted as Record<string, unknown>),
-      }),
+      migrate: persisted => {
+        // Старые версии не имели полей anchorBeats/beatPlan — дозаполняем
+        // дефолтами, не трогая накопленные кэши генерации.
+        const prev = (persisted ?? {}) as Partial<PersistedNarrativeState>;
+        return {
+          outline: prev.outline ?? null,
+          segments: prev.segments ?? {},
+          images: prev.images ?? {},
+          characters: prev.characters ?? {},
+          storyOutline: prev.storyOutline ?? null,
+          narrationWebs: prev.narrationWebs ?? {},
+          dialogueVariants: prev.dialogueVariants ?? {},
+          anchorBeats: prev.anchorBeats ?? {},
+          beatPlan: prev.beatPlan ?? null,
+        };
+      },
     },
   ),
 );

@@ -3,11 +3,13 @@ import {
   generateNarrationWeb,
   generateDialogueVariant,
   generateAnchorBeat,
+  generateBeatPlan,
   getBatchStatus,
   type BatchStatus,
 } from '@root/text_gen/generated_client';
 import type {
   AnchorBeat,
+  BeatPlan,
   Brief,
   StoryOutlinePlan,
   NarrationWeb,
@@ -20,7 +22,10 @@ import {
   parseDialogueVariant,
   parseAnchorBeat,
   validateAnchorBeat,
+  parseBeatPlan,
 } from './types';
+import { validateBeatPlan } from './validateBeatPlan';
+import { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
 import { buildNarrationWebRequestPayload } from './buildNarrationWebRequest';
 import { buildDialogueVariantRequestPayload } from './buildDialogueVariantRequest';
 import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
@@ -34,7 +39,7 @@ const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 export type BulkStoryFailure = { key: string; error: string };
 
-export type BulkStoryPhase = 'anchor_beats' | 'narration_webs' | 'dialogue_variants';
+export type BulkStoryPhase = 'beat_plan' | 'anchor_beats' | 'narration_webs' | 'dialogue_variants';
 
 export type BulkStoryGenStatus =
   | { state: 'idle' }
@@ -68,6 +73,80 @@ export function useBulkStoryGeneration() {
 
     const store = useNarrativeStore.getState();
     const failures: BulkStoryFailure[] = [];
+
+    // Phase −1: beat plan — один вызов, планирует биты отношений по встречам.
+    // При окончательном фейле пайплайн продолжает БЕЗ плана (деградация).
+    if (!store.beatPlan) {
+      setStatus({
+        state: 'running',
+        phase: 'beat_plan',
+        total: 1,
+        completed: 0,
+        inFlight: 1,
+        failures: failures.slice(),
+        cancelled: cancelledRef.current,
+      });
+      try {
+        const slots = computeEncounterSlots(outline);
+        const basePayload = buildBeatPlanRequestPayload(brief, outline);
+        let best: { plan: BeatPlan; errorCount: number; errors: string[] } | null = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          type BeatPlanPayload = typeof basePayload & {
+            previousAttempt?: BeatPlan;
+            previousIssues?: string[];
+          };
+          const payload: BeatPlanPayload =
+            attempt === 0 || !best
+              ? basePayload
+              : { ...basePayload, previousAttempt: best.plan, previousIssues: best.errors };
+          const { data, error } = await generateBeatPlan({ body: payload });
+          if (error || !data) throw new Error('не удалось запустить планирование битов');
+          const plan = await pollBatchResult(data.batchId, parseBeatPlan);
+          const issues = validateBeatPlan(plan, outline, brief, slots);
+          const errors = issues
+            .filter(i => i.severity === 'error')
+            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+          if (!best || errors.length < best.errorCount) {
+            best = { plan, errorCount: errors.length, errors };
+          }
+          if (errors.length === 0) break;
+        }
+        if (best && best.errorCount === 0) {
+          useNarrativeStore.getState().setBeatPlan(best.plan);
+        } else {
+          failures.push({
+            key: 'beatPlan',
+            error: `план битов не прошёл валидацию (${
+              best?.errorCount ?? '?'
+            } ошибок) — генерация продолжится без плана`,
+          });
+        }
+      } catch (e) {
+        failures.push({ key: 'beatPlan', error: e instanceof Error ? e.message : String(e) });
+      }
+    }
+    const beatPlan = useNarrativeStore.getState().beatPlan;
+    const plannedLIsByAnchor = new Map<string, string[]>();
+    if (beatPlan) {
+      for (const enc of beatPlan.encounters) {
+        const list = plannedLIsByAnchor.get(enc.anchorId) ?? [];
+        if (!list.includes(enc.liId)) list.push(enc.liId);
+        plannedLIsByAnchor.set(enc.anchorId, list);
+      }
+    }
+
+    if (cancelledRef.current) {
+      setStatus({
+        state: 'done',
+        beatsGenerated: 0,
+        websGenerated: 0,
+        variantsGenerated: 0,
+        failures,
+        cancelled: true,
+      });
+      runningRef.current = false;
+      return;
+    }
 
     // Phase 0: anchor beat scenes — последовательно в топо-порядке, потому
     // что каждой сцене нужны beatText-ы предков как контекст.
@@ -173,9 +252,11 @@ export function useBulkStoryGeneration() {
       publishWebs();
       try {
         const fromBeatText = useNarrativeStore.getState().anchorBeats[item.fromId]?.beatText;
+        const plannedLIs = plannedLIsByAnchor.get(item.fromId) ?? [];
         const basePayload = {
           ...buildNarrationWebRequestPayload(brief, outline, item.fromId, item.toId),
           ...(fromBeatText ? { fromAnchorBeatText: fromBeatText } : {}),
+          ...(plannedLIs.length > 0 ? { plannedEncounterLIs: plannedLIs } : {}),
         };
         const availableLIIds = basePayload.availableLIs.map(li => li.liId);
 
@@ -193,7 +274,7 @@ export function useBulkStoryGeneration() {
           const { data, error } = await generateNarrationWeb({ body: payload });
           if (error || !data) throw new Error('не удалось запустить генерацию narration web');
           const web = await pollNarrationWeb(data.batchId);
-          const issues = validateNarrationWeb(web, availableLIIds);
+          const issues = validateNarrationWeb(web, availableLIIds, plannedLIs);
           const errors = issues
             .filter(i => i.severity === 'error')
             .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
@@ -243,30 +324,35 @@ export function useBulkStoryGeneration() {
     }
 
     // Phase 2: dialogue variants
+    // Источник задач — план битов (какие встречи запланированы); fallback
+    // при его отсутствии — скан паутин по encounter-триггерам. Варианты
+    // хранятся per (anchor, LI), дедупим по тому же ключу.
     const allWebs = useNarrativeStore.getState().narrationWebs;
-    // Варианты хранятся per (anchor, LI), а паутин у якоря может быть
-    // несколько — дедупим задачи по тому же ключу, иначе платим дважды.
     const taskByKey = new Map<string, { anchorId: string; liId: string; anchor: typeof outline.anchors[0] }>();
 
+    const enqueueTask = (anchorId: string, liId: string) => {
+      const key = `${anchorId}:${liId}`;
+      if (taskByKey.has(key)) return;
+      const anchor = outline.anchors.find(a => a.id === anchorId);
+      if (!anchor) return;
+      const existingVariants = useNarrativeStore.getState().getDialogueVariants(anchorId, liId);
+      if (existingVariants && existingVariants.length === 3) return;
+      taskByKey.set(key, { anchorId, liId, anchor });
+    };
+
+    if (beatPlan) {
+      for (const enc of beatPlan.encounters) enqueueTask(enc.anchorId, enc.liId);
+    }
+    // Скан паутин добирает встречи, которых нет в плане (или весь список,
+    // если плана нет) — сгенерированный триггер без диалога хуже лишнего
+    // диалога.
     for (const edge of outline.anchorEdges) {
       const web = allWebs[`${edge.from}->${edge.to}`];
       if (!web) continue;
-      const anchor = outline.anchors.find(a => a.id === edge.from);
-      if (!anchor) continue;
-
-      const encounterLIs = new Set<string>();
       for (const scene of web.scenes) {
         for (const choice of scene.choices) {
-          if (choice.encounterTrigger) encounterLIs.add(choice.encounterTrigger);
+          if (choice.encounterTrigger) enqueueTask(edge.from, choice.encounterTrigger);
         }
-      }
-
-      for (const liId of encounterLIs) {
-        const key = `${anchor.id}:${liId}`;
-        if (taskByKey.has(key)) continue;
-        const existingVariants = useNarrativeStore.getState().getDialogueVariants(anchor.id, liId);
-        if (existingVariants && existingVariants.length === 3) continue;
-        taskByKey.set(key, { anchorId: anchor.id, liId, anchor });
       }
     }
     const encounterTasks = [...taskByKey.values()];

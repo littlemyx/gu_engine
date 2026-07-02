@@ -65,3 +65,25 @@ export function ancestorChain(outline: StoryOutlinePlan, anchorId: string): Stor
   }
   return topoOrderAnchors(outline).filter(a => ancestors.has(a.id));
 }
+
+/**
+ * Порядковый номер встречи (liId, anchorId) в плане битов: индекс по
+ * топологической позиции якоря среди всех запланированных встреч этого LI.
+ */
+export function encounterIndexFor(
+  plan: { encounters: { liId: string; anchorId: string }[] },
+  outline: StoryOutlinePlan,
+  liId: string,
+  anchorId: string,
+): { index: number; total: number; prior: { liId: string; anchorId: string }[] } {
+  const topoIndex = new Map(topoOrderAnchors(outline).map((a, i) => [a.id, i]));
+  const liEncounters = plan.encounters
+    .filter(e => e.liId === liId)
+    .sort((a, b) => (topoIndex.get(a.anchorId) ?? 0) - (topoIndex.get(b.anchorId) ?? 0));
+  const index = liEncounters.findIndex(e => e.anchorId === anchorId);
+  return {
+    index: index === -1 ? liEncounters.length : index,
+    total: liEncounters.length,
+    prior: index <= 0 ? [] : liEncounters.slice(0, index),
+  };
+}
