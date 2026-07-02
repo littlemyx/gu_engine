@@ -488,6 +488,19 @@ components:
           items:
             type: string
           description: Flags already established by prior story anchors.
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Previously generated NarrationWeb that failed validation.
+            When present alongside previousIssues, the LLM is asked to
+            produce a corrected version.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
 
     DialogueVariantRequest:
       type: object

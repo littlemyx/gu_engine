@@ -634,14 +634,32 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
     const lisJson = JSON.stringify(body.availableLIs, null, 2);
     const flagsJson = JSON.stringify(body.existingFlags ?? []);
 
-    const userMessage = [
+    const parts: string[] = [
       `## Бриф\n${briefJson}`,
       `## Якорь FROM\n${fromJson}`,
       `## Якорь TO\n${toJson}`,
       `## Доступные LI для encounter\n${lisJson}`,
       `## Уже установленные флаги\n${flagsJson}`,
-      'Сгенерируй паутину исследования между якорями. Только JSON.',
-    ].join('\n\n');
+    ];
+
+    // Retry-with-feedback: показываем предыдущую неудачную попытку и ошибки.
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
+      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(
+        `## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\nЭтот JSON был сгенерирован ранее, но не удовлетворил требованиям. Используй как референс — что-то можно сохранить, главное исправить ошибки ниже.\n\n${prevJson}`,
+      );
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННУЮ версию паутины. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Сгенерируй паутину исследования между якорями. Только JSON.');
+    }
+
+    const userMessage = parts.join('\n\n');
 
     const fromId = (body.storyAnchorFrom as { id?: string })?.id ?? '?';
     const toId = (body.storyAnchorTo as { id?: string })?.id ?? '?';

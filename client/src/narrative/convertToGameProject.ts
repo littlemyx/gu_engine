@@ -594,21 +594,26 @@ export function convertStoryToGameProject(
             edges.push({ id: `e_${choiceId}`, source: sceneId, sourceHandle: choiceId, target: routerId });
 
             // Router node
-            nodes.push({
+            const routerNode: GameSceneNode = {
               id: routerId,
               type: 'scene',
               position: { x: 0, y: 0 },
               data: { label: '', image: '', outputs: [], sceneType: 'router' },
-            });
+            };
+            nodes.push(routerNode);
             routerCount++;
 
             const varKey = `${fromAnchor?.id ?? edge.from}:${liId}`;
-            const variants = dialogueVariants[varKey] ?? [];
+            // Роутер берёт первое АКТИВНОЕ ребро, поэтому безусловный neutral
+            // обязан идти последним — иначе negative никогда не выиграет.
+            const variants = [...(dialogueVariants[varKey] ?? [])].sort(
+              (a, b) => BRACKET_WIRE_ORDER[a.bracket] - BRACKET_WIRE_ORDER[b.bracket],
+            );
 
             if (variants.length === 0) {
               // No variants generated — skip through router
               const skipId = uniqueId(`${routerId}__skip`);
-              nodes[nodes.length - 1].data.outputs.push({ id: skipId, text: '' });
+              routerNode.data.outputs.push({ id: skipId, text: '' });
               edges.push({ id: `e_${skipId}`, source: routerId, sourceHandle: skipId, target: returnTarget });
             } else {
               encountersWired++;
@@ -624,7 +629,7 @@ export function convertStoryToGameProject(
 
                 const varEntryId = varSceneIdMap.get(variant.entrySceneId) ?? variant.entrySceneId;
                 const routerOutId = uniqueId(`${routerId}__${variant.bracket}`);
-                nodes[nodes.length - 1].data.outputs.push({ id: routerOutId, text: '' });
+                routerNode.data.outputs.push({ id: routerOutId, text: '' });
 
                 const condEdge: GameSceneEdge = {
                   id: `e_${routerOutId}`,
@@ -699,6 +704,16 @@ export function convertStoryToGameProject(
                   });
                 }
               }
+
+              // Страховка: если neutral-вариант не сгенерился, у роутера нет
+              // безусловного ребра и при «среднем» affection он упрётся в
+              // ROUTER_DEAD_END. Добавляем безусловный проход последним.
+              const hasUnconditional = variants.some(v => bracketCondition(liId, v.bracket).length === 0);
+              if (!hasUnconditional) {
+                const fallbackId = uniqueId(`${routerId}__fallback`);
+                routerNode.data.outputs.push({ id: fallbackId, text: '' });
+                edges.push({ id: `e_${fallbackId}`, source: routerId, sourceHandle: fallbackId, target: returnTarget });
+              }
             }
           } else {
             // Regular choice — wire to next scene or to anchor
@@ -758,6 +773,15 @@ export function convertStoryToGameProject(
     },
   };
 }
+
+// Порядок проводки bracket-рёбер у encounter-роутера. Движок берёт первое
+// активное ребро, поэтому условные (positive/negative) идут раньше
+// безусловного neutral-fallback-а.
+const BRACKET_WIRE_ORDER: Record<DialogueVariantBracket, number> = {
+  positive: 0,
+  negative: 1,
+  neutral: 2,
+};
 
 function bracketCondition(liId: string, bracket: DialogueVariantBracket): GameStateCondition[] {
   const path = `relationship[${liId}].affection`;

@@ -73,6 +73,13 @@ export interface NarrationWebRequest {
   storyAnchorTo: unknown;
   availableLIs: { liId: string; liName: string; roleInWorld: string }[];
   existingFlags?: string[];
+  /**
+   * Previously generated web that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
 }
 
 export interface DialogueVariantRequest {

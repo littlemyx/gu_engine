@@ -795,9 +795,9 @@ export function parseNarrationWeb(raw: string): NarrationWeb {
 
 export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
-  const sceneIds = new Set(web.scenes.map(s => s.id));
+  const sceneById = new Map(web.scenes.map(s => [s.id, s]));
 
-  if (!sceneIds.has(web.entrySceneId)) {
+  if (!sceneById.has(web.entrySceneId)) {
     issues.push({
       severity: 'error',
       scope: 'entry',
@@ -807,6 +807,11 @@ export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]
 
   let hasExitPath = false;
   let hasNonEncounterExit = false;
+
+  // Сцена «умеет выходить» сама: choices=[] (авто-выход) или choice с
+  // nextSceneId=null. Encounter-выход тоже выход (диалог вернёт к якорю).
+  const canExitDirectly = (scene: NarrationWebScene): boolean =>
+    scene.choices.length === 0 || scene.choices.some(c => c.nextSceneId === null);
 
   for (const scene of web.scenes) {
     if (scene.choices.length === 0) {
@@ -821,7 +826,7 @@ export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]
         hasNonEncounterExit = true;
       } else if (choice.nextSceneId === null && choice.encounterTrigger) {
         hasExitPath = true;
-      } else if (choice.nextSceneId !== null && !sceneIds.has(choice.nextSceneId)) {
+      } else if (choice.nextSceneId !== null && !sceneById.has(choice.nextSceneId)) {
         issues.push({
           severity: 'error',
           scope: `${scene.id}/choice/${choice.id}`,
@@ -836,6 +841,16 @@ export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]
           message: `encounterTrigger "${choice.encounterTrigger}" не найден в availableLIs`,
         });
       }
+    }
+
+    // Сцена, где ВСЕ выборы — encounter-триггеры: после гейтинга повторных
+    // встреч у неё не останется активных выходов и движок отрисует «Конец».
+    if (scene.choices.every(c => Boolean(c.encounterTrigger))) {
+      issues.push({
+        severity: 'warning',
+        scope: `${scene.id}/choices`,
+        message: 'все выборы сцены — encounter-триггеры; нужен хотя бы один обычный выход',
+      });
     }
   }
 
@@ -852,6 +867,90 @@ export function validateNarrationWeb(web: NarrationWeb, availableLIIds: string[]
       severity: 'warning',
       scope: 'exit',
       message: 'нет пути к выходу без encounter-а (игрок не может пройти мимо)',
+    });
+  }
+
+  // ── Графовые проверки ────────────────────────────────────────────────
+  const forward = (id: string): string[] =>
+    (sceneById.get(id)?.choices ?? [])
+      .map(c => c.nextSceneId)
+      .filter((n): n is string => n !== null && sceneById.has(n));
+
+  // Достижимость от entry.
+  const reachable = new Set<string>();
+  if (sceneById.has(web.entrySceneId)) {
+    const stack = [web.entrySceneId];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      if (reachable.has(cur)) continue;
+      reachable.add(cur);
+      stack.push(...forward(cur));
+    }
+    for (const scene of web.scenes) {
+      if (!reachable.has(scene.id)) {
+        issues.push({
+          severity: 'error',
+          scope: `reachability/${scene.id}`,
+          message: 'сцена недостижима от entrySceneId',
+        });
+      }
+    }
+  }
+
+  // Выходимость: из каждой достижимой сцены должен достигаться выход,
+  // иначе игрок запирается в подграфе без конца (softlock).
+  for (const startId of reachable) {
+    const seen = new Set<string>();
+    const stack = [startId];
+    let exitFound = false;
+    while (stack.length && !exitFound) {
+      const cur = stack.pop()!;
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      const scene = sceneById.get(cur)!;
+      if (canExitDirectly(scene)) {
+        exitFound = true;
+        break;
+      }
+      stack.push(...forward(cur));
+    }
+    if (!exitFound) {
+      issues.push({
+        severity: 'error',
+        scope: `exit/${startId}`,
+        message: 'из этой сцены недостижим ни один выход из паутины (softlock)',
+      });
+    }
+  }
+
+  // Циклы: допустимы («вернуться назад»), но помечаем предупреждением.
+  const WHITE = 0,
+    GRAY = 1,
+    BLACK = 2;
+  const color = new Map<string, number>();
+  const cycleEdges: string[] = [];
+  const dfs = (id: string): void => {
+    color.set(id, GRAY);
+    for (const next of forward(id)) {
+      const c = color.get(next) ?? WHITE;
+      if (c === GRAY) {
+        cycleEdges.push(`${id} -> ${next}`);
+      } else if (c === WHITE) {
+        dfs(next);
+      }
+    }
+    color.set(id, BLACK);
+  };
+  for (const scene of web.scenes) {
+    if ((color.get(scene.id) ?? WHITE) === WHITE) dfs(scene.id);
+  }
+  if (cycleEdges.length > 0) {
+    issues.push({
+      severity: 'warning',
+      scope: 'cycle',
+      message: `в паутине есть циклы: ${cycleEdges.slice(0, 3).join('; ')}${
+        cycleEdges.length > 3 ? ` (+${cycleEdges.length - 3})` : ''
+      }`,
     });
   }
 

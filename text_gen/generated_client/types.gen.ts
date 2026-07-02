@@ -240,6 +240,19 @@ export type NarrationWebRequest = {
      * Flags already established by prior story anchors.
      */
     existingFlags?: Array<string>;
+    /**
+     * Previously generated NarrationWeb that failed validation.
+     * When present alongside previousIssues, the LLM is asked to
+     * produce a corrected version.
+     *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
 };
 
 export type DialogueVariantRequest = {

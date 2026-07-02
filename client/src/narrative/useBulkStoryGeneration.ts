@@ -77,14 +77,43 @@ export function useBulkStoryGeneration() {
       webInFlight++;
       publishWebs();
       try {
-        const payload = buildNarrationWebRequestPayload(brief, outline, item.fromId, item.toId);
-        const { data, error } = await generateNarrationWeb({ body: payload });
-        if (error || !data) throw new Error('не удалось запустить генерацию narration web');
-        const web = await pollNarrationWeb(data.batchId);
-        const availableLIIds = payload.availableLIs.map(li => li.liId);
-        validateNarrationWeb(web, availableLIIds);
-        useNarrativeStore.getState().setNarrationWeb(item.fromId, item.toId, web);
+        const basePayload = buildNarrationWebRequestPayload(brief, outline, item.fromId, item.toId);
+        const availableLIIds = basePayload.availableLIs.map(li => li.liId);
+
+        // Генерация с одним retry-with-feedback при ошибках валидации.
+        let best: { web: NarrationWeb; errorCount: number; errors: string[] } | null = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const payload =
+            attempt === 0 || !best
+              ? basePayload
+              : {
+                  ...basePayload,
+                  previousAttempt: best.web,
+                  previousIssues: best.errors,
+                };
+          const { data, error } = await generateNarrationWeb({ body: payload });
+          if (error || !data) throw new Error('не удалось запустить генерацию narration web');
+          const web = await pollNarrationWeb(data.batchId);
+          const issues = validateNarrationWeb(web, availableLIIds);
+          const errors = issues
+            .filter(i => i.severity === 'error')
+            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+          if (!best || errors.length < best.errorCount) {
+            best = { web, errorCount: errors.length, errors };
+          }
+          if (errors.length === 0) break;
+        }
+
+        // Сохраняем лучшую попытку в любом случае (частично валидная паутина
+        // лучше дыры в графе), но фейл с ошибками показываем в UI.
+        useNarrativeStore.getState().setNarrationWeb(item.fromId, item.toId, best!.web);
         webCompleted++;
+        if (best!.errorCount > 0) {
+          failures.push({
+            key: `web:${item.fromId}->${item.toId}`,
+            error: `сохранено с ${best!.errorCount} ошибками валидации: ${best!.errors.slice(0, 2).join('; ')}`,
+          });
+        }
       } catch (e) {
         failures.push({ key: `web:${item.fromId}->${item.toId}`, error: e instanceof Error ? e.message : String(e) });
       } finally {
@@ -109,7 +138,9 @@ export function useBulkStoryGeneration() {
 
     // Phase 2: dialogue variants
     const allWebs = useNarrativeStore.getState().narrationWebs;
-    const encounterTasks: { anchorId: string; liId: string; anchor: typeof outline.anchors[0] }[] = [];
+    // Варианты хранятся per (anchor, LI), а паутин у якоря может быть
+    // несколько — дедупим задачи по тому же ключу, иначе платим дважды.
+    const taskByKey = new Map<string, { anchorId: string; liId: string; anchor: typeof outline.anchors[0] }>();
 
     for (const edge of outline.anchorEdges) {
       const web = allWebs[`${edge.from}->${edge.to}`];
@@ -125,11 +156,14 @@ export function useBulkStoryGeneration() {
       }
 
       for (const liId of encounterLIs) {
+        const key = `${anchor.id}:${liId}`;
+        if (taskByKey.has(key)) continue;
         const existingVariants = useNarrativeStore.getState().getDialogueVariants(anchor.id, liId);
         if (existingVariants && existingVariants.length === 3) continue;
-        encounterTasks.push({ anchorId: anchor.id, liId, anchor });
+        taskByKey.set(key, { anchorId: anchor.id, liId, anchor });
       }
     }
+    const encounterTasks = [...taskByKey.values()];
 
     let varCompleted = 0;
     let varInFlight = 0;
