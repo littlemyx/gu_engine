@@ -43,7 +43,7 @@ function pickAnchorSprite(anchor: AnchorPlan, characters: Record<string, Charact
 
 // ── game/-схема, локально воспроизведена ──────────────────────────────────
 
-export type GameSceneType = 'narration' | 'dialogue' | 'branch' | 'router';
+export type GameSceneType = 'narration' | 'dialogue' | 'branch' | 'router' | 'anchor';
 
 export type GameOutputEffects = {
   stateDeltas?: Record<string, number>;
@@ -402,7 +402,7 @@ export function convertToGameProject(
     const outs = anchorOutputs.get(node.id);
     if (outs) {
       node.data.outputs = outs;
-      node.data.sceneType = outs.length <= 1 ? 'narration' : 'branch';
+      node.data.sceneType = 'router';
     }
   }
 
@@ -614,7 +614,15 @@ export function convertStoryToGameProject(
               encountersWired++;
               for (const variant of variants) {
                 const condition = bracketCondition(liId, variant.bracket);
-                const varEntryId = uniqueId(variant.entrySceneId);
+
+                const varSceneIdMap = new Map<string, string>();
+                for (const vs of variant.scenes) {
+                  const vsId = allIds.has(vs.id) ? uniqueId(vs.id) : vs.id;
+                  allIds.add(vsId);
+                  varSceneIdMap.set(vs.id, vsId);
+                }
+
+                const varEntryId = varSceneIdMap.get(variant.entrySceneId) ?? variant.entrySceneId;
                 const routerOutId = uniqueId(`${routerId}__${variant.bracket}`);
                 nodes[nodes.length - 1].data.outputs.push({ id: routerOutId, text: '' });
 
@@ -626,14 +634,6 @@ export function convertStoryToGameProject(
                 };
                 if (condition.length > 0) condEdge.condition = condition;
                 edges.push(condEdge);
-
-                // Variant scenes (DraftScene[])
-                const varSceneIdMap = new Map<string, string>();
-                for (const vs of variant.scenes) {
-                  const vsId = allIds.has(vs.id) ? uniqueId(vs.id) : vs.id;
-                  allIds.add(vsId);
-                  varSceneIdMap.set(vs.id, vsId);
-                }
 
                 for (const vs of variant.scenes) {
                   const vsId = varSceneIdMap.get(vs.id)!;
@@ -727,7 +727,7 @@ export function convertStoryToGameProject(
     const outs = anchorOutputs.get(node.id);
     if (outs) {
       node.data.outputs = outs;
-      node.data.sceneType = outs.length <= 1 ? 'narration' : 'branch';
+      node.data.sceneType = 'router';
     }
   }
 

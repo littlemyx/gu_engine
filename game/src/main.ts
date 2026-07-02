@@ -51,6 +51,7 @@ function showStartScreen(): void {
       currentProject = {
         title: projectFile.title ?? "Новелла",
         scenes: { nodes: [], edges: [] },
+        projectFile: file.name,
         settings: { ...DEFAULT_SETTINGS, ...projectFile.settings },
       };
       showProjectScreen();
@@ -123,6 +124,7 @@ function showProjectScreen(): void {
     try {
       const text = await file.text();
       p.scenes = JSON.parse(text) as SceneGraph;
+      p.scenesFile = file.name;
       showProjectScreen();
     } catch (e) {
       alert(`Ошибка: ${(e as Error).message}`);
@@ -175,6 +177,7 @@ function launchGame(project: ResolvedProject): void {
   const engine = new GameEngine(project.scenes, project.settings, (node, isEnd) =>
     renderer.renderScene(node, isEnd),
   );
+  engine.setProjectMeta(project.title, project.projectFile, project.scenesFile);
   renderer.bind(engine);
 
   renderer.onBack(() => {

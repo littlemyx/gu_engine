@@ -1,4 +1,4 @@
-export type SceneType = 'narration' | 'dialogue' | 'branch' | 'router';
+export type SceneType = 'narration' | 'dialogue' | 'branch' | 'router' | 'anchor';
 
 export type OutputEffects = {
   stateDeltas?: Record<string, number>;
@@ -79,6 +79,8 @@ export type ProjectFile = {
 export type ResolvedProject = {
   title: string;
   scenes: SceneGraph;
+  projectFile?: string;
+  scenesFile?: string;
   settings: ProjectSettings;
 };
 

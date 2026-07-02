@@ -59,7 +59,7 @@ export class GameRenderer {
           <span class="scene-continue-hint">…</span>
         </div>`;
     } else {
-      const btnClass = sceneType === "branch" ? "branch-btn" : "choice-btn";
+      const btnClass = sceneType === "branch" || sceneType === "anchor" ? "branch-btn" : "choice-btn";
       interactionHtml = activeOutputs
         .map(
           (output, i) =>
@@ -79,7 +79,7 @@ export class GameRenderer {
           ${spriteHtml}
         </div>
         <div class="scene-body">
-          <div class="scene-label">${escapeHtml(node.data.label)}</div>
+          <div class="scene-label">${sceneType === "anchor" ? "" : escapeHtml(node.data.label)}</div>
           <div class="scene-choices">
             ${interactionHtml}
           </div>

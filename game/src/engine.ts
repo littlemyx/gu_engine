@@ -9,6 +9,12 @@ import {
   StateSchema,
 } from "./types";
 
+// Подробная трассировка каждого рендера включается query-флагом ?gudebug;
+// дампы реальных ошибок графа (NODE_NOT_FOUND, ROUTER_DEAD_END) пишутся всегда.
+const DEBUG_TRACE =
+  typeof location !== "undefined" &&
+  new URLSearchParams(location.search).has("gudebug");
+
 export class GameEngine {
   private graph: SceneGraph;
   private settings: ProjectSettings;
@@ -20,6 +26,17 @@ export class GameEngine {
 
   private state: Record<string, number> = {};
   private flags: Set<string> = new Set();
+  private history: Array<{ id: string; sceneType: string; label: string }> = [];
+
+  private projectTitle = '';
+  private projectFile = '';
+  private scenesFile = '';
+
+  setProjectMeta(title: string, projectFile?: string, scenesFile?: string): void {
+    this.projectTitle = title;
+    this.projectFile = projectFile ?? '';
+    this.scenesFile = scenesFile ?? '';
+  }
 
   constructor(
     graph: SceneGraph,
@@ -98,7 +115,15 @@ export class GameEngine {
 
     const edges = this.getActiveEdges(this.currentNode.id);
     const edge = edges.find((e) => e.sourceHandle === outputId);
-    if (!edge) return;
+    if (!edge) {
+      console.warn('[engine] choose: no edge found', {
+        outputId,
+        currentNode: this.currentNode.id,
+        allOutputs: this.currentNode.data.outputs.map(o => o.id),
+        allEdges: edges.map(e => ({ handle: e.sourceHandle, target: e.target })),
+      });
+      return;
+    }
 
     this.goTo(edge.target);
   }
@@ -157,21 +182,71 @@ export class GameEngine {
 
   private goTo(nodeId: string): void {
     const node = this.nodeMap.get(nodeId);
-    if (!node) return;
+    if (!node) {
+      console.warn('[engine] node not found', nodeId);
+      this.dumpTrace('NODE_NOT_FOUND: ' + nodeId);
+      return;
+    }
 
     const sceneType = node.data.sceneType ?? "dialogue";
+    this.history.push({
+      id: node.id,
+      sceneType,
+      label: node.data.label.slice(0, 60),
+    });
 
     if (sceneType === "router") {
       const edges = this.getActiveEdges(node.id);
       if (edges.length > 0) {
         this.goTo(edges[0].target);
+        return;
       }
+      this.dumpTrace('ROUTER_DEAD_END');
+      this.currentNode = node;
+      this.onSceneChange(node, true);
       return;
     }
 
     this.currentNode = node;
     const activeEdges = this.getActiveEdges(node.id);
+    if (DEBUG_TRACE) {
+      this.dumpTrace(activeEdges.length === 0 ? 'END' : 'RENDER');
+    } else {
+      this.history = [];
+    }
     this.onSceneChange(node, activeEdges.length === 0);
+  }
+
+  private dumpTrace(event: string): void {
+    const current = this.currentNode;
+    const typeCounts: Record<string, number> = {};
+    for (const n of this.graph.nodes) {
+      const t = n.data.sceneType ?? 'NO_TYPE';
+      typeCounts[t] = (typeCounts[t] ?? 0) + 1;
+    }
+    console.log(`%c[engine] ${event}`, 'color: #f90; font-weight: bold', {
+      project: this.projectTitle,
+      projectFile: this.projectFile,
+      scenesFile: this.scenesFile,
+      graph: {
+        totalNodes: this.graph.nodes.length,
+        totalEdges: this.graph.edges.length,
+        bySceneType: typeCounts,
+      },
+      path: this.history.map(h => `${h.id} (${h.sceneType})`),
+      stoppedAt: current ? {
+        id: current.id,
+        sceneType: current.data.sceneType ?? 'dialogue',
+        label: current.data.label.slice(0, 80),
+        outputs: current.data.outputs.map(o => o.id),
+        edges: (this.edgesBySource.get(current.id) ?? []).map(e => ({
+          handle: e.sourceHandle,
+          target: e.target,
+          condition: e.condition,
+        })),
+      } : null,
+    });
+    this.history = [];
   }
 
   private findStartNode(): SceneNode | null {

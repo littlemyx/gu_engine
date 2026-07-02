@@ -193,3 +193,6 @@ result-game/
 .claude/
 .cursor/
 .playwright-mcp/
+
+# Локальные тестовые выгрузки сцен движка
+game/scenes_*.json
