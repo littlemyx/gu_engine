@@ -184,6 +184,34 @@ export interface DialogueVariantRequest {
   previousIssues?: string[];
 }
 
+/**
+ * Запрос на генерацию эпилога (одна концовка за вызов).
+ * kind=good генерится per-LI; normal/bad — общие.
+ */
+export interface EndingRequest {
+  brief: unknown;
+  /** title, logline, acts, resolution-якорь. */
+  outline: unknown;
+  kind: 'good' | 'normal' | 'bad';
+  /** Карточка LI — только для kind=good. */
+  liCard?: unknown | null;
+  /** Тон концовки из archetype.endingProfile[kind].tone. */
+  endingTone?: string;
+  /** Арка отношений LI из beat-плана. */
+  liArcSummary?: string;
+  /** Goal последней запланированной встречи этого LI. */
+  finalEncounterGoal?: string;
+  /** Beat-сцена resolution-якоря — эпилог продолжает её. */
+  resolutionBeatText?: string;
+  /**
+   * Previously generated ending that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ItemState {

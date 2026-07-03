@@ -376,6 +376,42 @@ export type AnchorBeatRequest = {
     previousIssues?: Array<string>;
 };
 
+export type EndingRequest = {
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Title, logline, acts and the resolution anchor.
+     */
+    outline: {
+        [key: string]: unknown;
+    };
+    kind: 'good' | 'normal' | 'bad';
+    /**
+     * LI card, only for kind=good.
+     */
+    liCard?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Tone from archetype.endingProfile[kind].tone.
+     */
+    endingTone?: string;
+    liArcSummary?: string;
+    finalEncounterGoal?: string;
+    resolutionBeatText?: string;
+    /**
+     * Previously generated ending that failed validation.
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
 export type DialogueVariantRequest = {
     /**
      * Brief context.
@@ -570,6 +606,22 @@ export type GenerateAnchorBeatResponses = {
 };
 
 export type GenerateAnchorBeatResponse = GenerateAnchorBeatResponses[keyof GenerateAnchorBeatResponses];
+
+export type GenerateEndingData = {
+    body: EndingRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/ending';
+};
+
+export type GenerateEndingResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateEndingResponse = GenerateEndingResponses[keyof GenerateEndingResponses];
 
 export type GenerateDialogueVariantData = {
     body: DialogueVariantRequest;

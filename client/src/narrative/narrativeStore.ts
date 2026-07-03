@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import type {
   AnchorBeat,
   BeatPlan,
+  EndingVariant,
   GeneratedSegment,
   OutlinePlan,
   StoryOutlinePlan,
@@ -74,6 +75,8 @@ type NarrativeState = {
   anchorBeats: Record<string, AnchorBeat>;
   /** План битов отношений (какая встреча какой бит арки реализует). */
   beatPlan: BeatPlan | null;
+  /** Эпилоги. Ключ: good:<liId> | normal | bad (см. endingKey). */
+  endings: Record<string, EndingVariant>;
 
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
@@ -92,6 +95,8 @@ type NarrativeState = {
   setAnchorBeat: (anchorId: string, beat: AnchorBeat) => void;
   clearAnchorBeats: () => void;
   setBeatPlan: (plan: BeatPlan | null) => void;
+  setEnding: (key: string, ending: EndingVariant) => void;
+  clearEndings: () => void;
 
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
   getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
@@ -110,6 +115,7 @@ type PersistedNarrativeState = Pick<
   | 'dialogueVariants'
   | 'anchorBeats'
   | 'beatPlan'
+  | 'endings'
 >;
 
 export const useNarrativeStore = create<NarrativeState>()(
@@ -124,6 +130,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       dialogueVariants: {},
       anchorBeats: {},
       beatPlan: null,
+      endings: {},
 
       setOutline: outline => {
         // При установке нового outline сбрасываем outline-зависимые кэши:
@@ -164,7 +171,14 @@ export const useNarrativeStore = create<NarrativeState>()(
       clearCharacters: () => set({ characters: {} }),
 
       setStoryOutline: storyOutline => {
-        set({ storyOutline, narrationWebs: {}, dialogueVariants: {}, anchorBeats: {}, beatPlan: null });
+        set({
+          storyOutline,
+          narrationWebs: {},
+          dialogueVariants: {},
+          anchorBeats: {},
+          beatPlan: null,
+          endings: {},
+        });
       },
 
       setNarrationWeb: (fromId, toId, web) => {
@@ -187,6 +201,12 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       setBeatPlan: beatPlan => set({ beatPlan }),
 
+      setEnding: (key, ending) => {
+        set(s => ({ endings: { ...s.endings, [key]: ending } }));
+      },
+
+      clearEndings: () => set({ endings: {} }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
       getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
@@ -197,7 +217,7 @@ export const useNarrativeStore = create<NarrativeState>()(
     }),
     {
       name: 'gu-narrative-state',
-      version: 4,
+      version: 5,
       // Персистим только данные, не действия.
       partialize: state => ({
         outline: state.outline,
@@ -209,6 +229,7 @@ export const useNarrativeStore = create<NarrativeState>()(
         dialogueVariants: state.dialogueVariants,
         anchorBeats: state.anchorBeats,
         beatPlan: state.beatPlan,
+        endings: state.endings,
       }),
       // Без migrate zustand выбрасывает состояние при несовпадении версии —
       // дорогие кэши генерации должны переживать апгрейд схемы.
@@ -226,6 +247,7 @@ export const useNarrativeStore = create<NarrativeState>()(
           dialogueVariants: prev.dialogueVariants ?? {},
           anchorBeats: prev.anchorBeats ?? {},
           beatPlan: prev.beatPlan ?? null,
+          endings: prev.endings ?? {},
         };
       },
     },

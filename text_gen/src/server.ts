@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processDialogueVariant } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processDialogueVariant, processEnding } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
@@ -12,6 +12,7 @@ import type {
   AnchorBeatRequest,
   BeatPlanRequest,
   DialogueVariantRequest,
+  EndingRequest,
   ItemState,
   BatchState,
 } from './types.js';
@@ -255,6 +256,30 @@ app.post('/generate/dialogueVariant', (req, res) => {
   logger.log(`[POST /generate/dialogueVariant] batch=${batchId} li=${liId} bracket=${body.bracket}`);
 
   processDialogueVariant(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/ending', (req, res) => {
+  const body = req.body as EndingRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'ending';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/ending] batch=${batchId} kind=${body.kind}`);
+
+  processEnding(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

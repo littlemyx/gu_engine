@@ -23,6 +23,7 @@ export type { SegmentValidationContext } from './validateSegment';
 export { topoOrderAnchors, ancestorChain, directPredecessors, outgoingOf, encounterIndexFor } from './anchorOrder';
 export { validateBeatPlan } from './validateBeatPlan';
 export { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
+export { buildEndingRequestPayload } from './buildEndingRequest';
 export { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 export { useNarrativeStore } from './narrativeStore';
 export type { ImageGenState, CharacterGenState } from './narrativeStore';

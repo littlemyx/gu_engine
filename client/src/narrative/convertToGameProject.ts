@@ -2,6 +2,7 @@ import type {
   AnchorBeat,
   AnchorPlan,
   Brief,
+  EndingVariant,
   DraftDialogueLine,
   GeneratedSegment,
   OutlinePlan,
@@ -471,6 +472,7 @@ export type StoryConversionStats = {
   narrationScenes: number;
   routerNodes: number;
   dialogueScenes: number;
+  endingScenes: number;
   totalEdges: number;
   encountersWired: number;
 };
@@ -487,6 +489,7 @@ export function convertStoryToGameProject(
   narrationWebs: Record<string, NarrationWeb>,
   dialogueVariants: Record<string, DialogueVariant[]>,
   anchorBeats: Record<string, AnchorBeat> = {},
+  endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
 ): StoryConversionResult {
@@ -804,6 +807,122 @@ export function convertStoryToGameProject(
     }
   }
 
+  // ── 3.5 Endings: resolution → ending_router → эпилоги по state ────────
+  // Порядок рёбер: good per-LI (условные), bad (конъюнкция по всем LI),
+  // normal — безусловный fallback последним. Пороги относительны стартовому
+  // affection архетипа: статичный порог раздавал бы good «бесплатно»
+  // архетипам с высоким initialState (mutual_pining стартует с ~0.6).
+  let endingSceneCount = 0;
+  const resolutionAnchor = outline.anchors.find(a => a.type === 'resolution');
+  if (resolutionAnchor && Object.keys(endings).length > 0) {
+    const resolutionNode = nodes.find(n => n.id === resolutionAnchor.id);
+    if (resolutionNode) {
+      const routerId = uniqueId('ending_router');
+      const autoId = uniqueId(`${resolutionAnchor.id}__to_endings`);
+      resolutionNode.data.outputs = [{ id: autoId, text: '' }];
+      resolutionNode.data.sceneType = 'narration';
+      edges.push({ id: `e_${autoId}`, source: resolutionAnchor.id, sourceHandle: autoId, target: routerId });
+
+      const endingRouter: GameSceneNode = {
+        id: routerId,
+        type: 'scene',
+        position: { x: 0, y: 0 },
+        data: { label: '', image: '', outputs: [], sceneType: 'router' },
+      };
+      nodes.push(endingRouter);
+      routerCount++;
+
+      const affectionMid = (liId: string): number => {
+        const li = brief.loveInterests.find(l => l.id === liId);
+        const init = li ? ARCHETYPES[li.archetype]?.initialState?.affection : undefined;
+        return init ? (init[0] + init[1]) / 2 : 0;
+      };
+      const clampCond = (v: number) => Math.max(-1, Math.min(1, v));
+
+      // Линейная цепочка narration-сцен эпилога; возвращает id входа.
+      const wireEndingChain = (variant: EndingVariant, keySuffix: string): string => {
+        const sceneIds = variant.scenes.map((sc, i) => uniqueId(sc.id || `ending_${keySuffix}_${i + 1}`));
+        variant.scenes.forEach((sc, i) => {
+          const isLast = i === variant.scenes.length - 1;
+          const outputs: GameSceneOutput[] = [];
+          if (!isLast) {
+            const chainAutoId = uniqueId(`${sceneIds[i]}__auto`);
+            outputs.push({ id: chainAutoId, text: '' });
+            edges.push({
+              id: `e_${chainAutoId}`,
+              source: sceneIds[i],
+              sourceHandle: chainAutoId,
+              target: sceneIds[i + 1],
+            });
+          }
+          nodes.push({
+            id: sceneIds[i],
+            type: 'scene',
+            position: { x: 0, y: 0 },
+            data: {
+              label: escapeNL(sc.narration),
+              image: imageUrlFor(images[resolutionAnchor.id]),
+              outputs,
+              sceneType: 'narration',
+            },
+          });
+          endingSceneCount++;
+        });
+        return sceneIds[0];
+      };
+
+      const wireRouterEdge = (target: string, suffix: string, condition?: GameStateCondition[]) => {
+        const outId = uniqueId(`${routerId}__${suffix}`);
+        endingRouter.data.outputs.push({ id: outId, text: '' });
+        const e: GameSceneEdge = { id: `e_${outId}`, source: routerId, sourceHandle: outId, target };
+        if (condition && condition.length > 0) e.condition = condition;
+        edges.push(e);
+      };
+
+      let hasUnconditionalEnding = false;
+      let lastEntry = '';
+
+      // good per-LI — в порядке каста брифа (документированный tie-break:
+      // при нескольких «тёплых» LI выигрывает первый в брифе).
+      for (const li of brief.loveInterests) {
+        const variant = endings[`good:${li.id}`];
+        if (!variant) continue;
+        const entry = wireEndingChain(variant, `good_${li.id}`);
+        lastEntry = entry;
+        wireRouterEdge(entry, `good_${li.id}`, [
+          { path: `relationship[${li.id}].affection`, gte: clampCond(affectionMid(li.id) + 0.25) },
+        ]);
+      }
+
+      // bad — конъюнкция «все LI холодны» (массив условий — AND).
+      if (endings.bad) {
+        const entry = wireEndingChain(endings.bad, 'bad');
+        lastEntry = entry;
+        wireRouterEdge(
+          entry,
+          'bad',
+          brief.loveInterests.map(li => ({
+            path: `relationship[${li.id}].affection`,
+            lte: clampCond(affectionMid(li.id) - 0.15),
+          })),
+        );
+      }
+
+      // normal — безусловный fallback последним.
+      if (endings.normal) {
+        const entry = wireEndingChain(endings.normal, 'normal');
+        lastEntry = entry;
+        wireRouterEdge(entry, 'normal');
+        hasUnconditionalEnding = true;
+      }
+
+      // Страховка от ROUTER_DEAD_END, если normal не входит в endingsProfile.
+      if (!hasUnconditionalEnding && lastEntry) {
+        wireRouterEdge(lastEntry, 'fallback');
+      }
+    }
+  }
+
   // ── 4. Project metadata ───────────────────────────────────────────────
   const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
   const stateSchema = buildStoryStateSchema(brief, outline);
@@ -829,6 +948,7 @@ export function convertStoryToGameProject(
       narrationScenes: narrationSceneCount,
       routerNodes: routerCount,
       dialogueScenes: dialogueSceneCount,
+      endingScenes: endingSceneCount,
       totalEdges: edges.length,
       encountersWired,
     },

@@ -12,6 +12,7 @@ import type {
   AnchorBeatRequest,
   BeatPlanRequest,
   DialogueVariantRequest,
+  EndingRequest,
 } from './types.js';
 
 const SYSTEM_PROMPT = `Ты — опытный сценарист интерактивных визуальных новелл. Твоя задача — создать детальный костяк истории, который станет основой для разработки визуальной новеллы.
@@ -931,6 +932,108 @@ export async function processAnchorBeat(batch: BatchState, body: AnchorBeatReque
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[anchorBeat] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// ENDING GENERATION
+// ============================================================================
+
+const ENDING_SYSTEM_PROMPT = `Ты — сценарист эпилогов для романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, протагонист.
+  2. outline — заголовок, logline, акты и resolution-якорь истории.
+  3. kind — тип концовки: good (с конкретным LI), normal (общая), bad (общая).
+  4. liCard + endingTone + liArcSummary + finalEncounterGoal — только для good.
+  5. resolutionBeatText — сцена развязки, которую игрок только что видел.
+
+Твоя задача — написать эпилог: 1-3 НАРРАТИВНЫЕ сцены (без выборов).
+
+Жёсткие правила:
+  1. scenes — массив из 1-3 сцен: { "id": "...", "narration": "..." }.
+     narration — 3-6 предложений от 2-го лица. Без choices, без диалоговых реплик.
+  2. Эпилог идёт ПОСЛЕ resolutionBeatText: продолжай, не повторяй и не
+     пересказывай её.
+  3. kind=good: развязка отношений с этим LI в тоне endingTone. Опирайся на
+     liArcSummary (какая была арка) и finalEncounterGoal (последняя встреча).
+     LI называй по имени из liCard.
+  4. kind=normal: недосказанность/открытый финал без выделенного LI. Итог
+     личного пути протагониста, зрелость, дорога дальше.
+  5. kind=bad: последствия отчуждения — одиночество или упущенные связи.
+     Без нравоучений, без наказания игрока текстом.
+  6. Тон мира — из брифа (mood, themes). id сцен — snake_case.
+  7. Все тексты — по-русски.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "kind": "good",
+  "liId": "kira",
+  "scenes": [
+    { "id": "ending_good_kira_1", "narration": "Ты стоишь на крыше..." }
+  ]
+}
+Для normal/bad поле liId = null.`;
+
+export async function processEnding(batch: BatchState, body: EndingRequest): Promise<void> {
+  const itemId = 'ending';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Outline (контекст истории)\n${JSON.stringify(body.outline, null, 2)}`,
+      `## Тип концовки: ${body.kind}`,
+    ];
+    if (body.liCard) parts.push(`## Карточка LI\n${JSON.stringify(body.liCard, null, 2)}`);
+    if (body.endingTone) parts.push(`## Тон концовки\n${body.endingTone}`);
+    if (body.liArcSummary) parts.push(`## Арка отношений\n${body.liArcSummary}`);
+    if (body.finalEncounterGoal) parts.push(`## Последняя встреча\n${body.finalEncounterGoal}`);
+    if (body.resolutionBeatText) {
+      parts.push(
+        `## Сцена развязки, которую игрок только что видел\n${body.resolutionBeatText}\n\nЭпилог начинается СРАЗУ ПОСЛЕ неё.`,
+      );
+    }
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ эпилог. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Напиши эпилог. Только JSON.');
+    }
+
+    const liId = (body.liCard as { id?: string })?.id ?? '-';
+    logger.log(`[ending] batch=${batch.batchId} — generating kind=${body.kind} li=${liId}...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: ENDING_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
+      throw new Error('Invalid response: missing scenes');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[ending] batch=${batch.batchId} — completed (kind=${body.kind}, ${parsed.scenes.length} scenes)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[ending] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 

@@ -434,6 +434,7 @@ const PHASE_LABEL: Record<string, string> = {
   anchor_beats: 'Anchor Beats',
   narration_webs: 'Narration Webs',
   dialogue_variants: 'Dialogue Variants',
+  endings: 'Endings',
 };
 
 const BulkStoryBar: React.FC<{
@@ -817,6 +818,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const narrationWebs = useNarrativeStore(s => s.narrationWebs);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
+  const endings = useNarrativeStore(s => s.endings);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const webCount = Object.keys(narrationWebs).length;
@@ -834,6 +836,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
       narrationWebs,
       dialogueVariants,
       anchorBeats,
+      endings,
       images,
       characters,
     );
@@ -848,7 +851,8 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
           {beatCount}/{outline.anchors.length} beat-сцен · {webCount}/{edgeCount} narration webs · {variantCount}{' '}
-          dialogue variants · {imageCount}/{outline.anchors.length} фонов · {characterCount}/{liCount} спрайтов
+          dialogue variants · {Object.keys(endings).length} концовок · {imageCount}/{outline.anchors.length} фонов ·{' '}
+          {characterCount}/{liCount} спрайтов
         </span>
       </div>
       <button type="button" className={styles.primaryBtn} onClick={onExport}>

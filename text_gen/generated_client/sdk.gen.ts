@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -107,6 +107,18 @@ export const generateBeatPlan = <ThrowOnError extends boolean = false>(options: 
  */
 export const generateAnchorBeat = <ThrowOnError extends boolean = false>(options: Options<GenerateAnchorBeatData, ThrowOnError>) => (options.client ?? client).post<GenerateAnchorBeatResponses, unknown, ThrowOnError>({
     url: '/generate/anchorBeat',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate an epilogue variant (good per-LI, or shared normal/bad)
+ */
+export const generateEnding = <ThrowOnError extends boolean = false>(options: Options<GenerateEndingData, ThrowOnError>) => (options.client ?? client).post<GenerateEndingResponses, unknown, ThrowOnError>({
+    url: '/generate/ending',
     ...options,
     headers: {
         'Content-Type': 'application/json',

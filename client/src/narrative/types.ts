@@ -1249,3 +1249,87 @@ export function validateDialogueVariant(variant: DialogueVariant): SegmentIssue[
 
   return issues;
 }
+
+// ============================================================================
+// ENDING VARIANTS (epilogues routed by final state)
+// ============================================================================
+
+export type EndingScene = { id: string; narration: string };
+
+export type EndingVariant = {
+  kind: EndingKind;
+  /** id LI для kind=good, null для normal/bad. */
+  liId: string | null;
+  scenes: EndingScene[];
+};
+
+/** Ключ концовки в сторе: good:<liId> | normal | bad. */
+export function endingKey(kind: EndingKind, liId?: string | null): string {
+  return kind === 'good' ? `good:${liId}` : kind;
+}
+
+export function parseEndingVariant(raw: string): EndingVariant {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`ending JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('ending must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  const validKinds: EndingKind[] = ['good', 'normal', 'bad'];
+  const kind = String(obj.kind ?? '') as EndingKind;
+  if (!validKinds.includes(kind)) {
+    throw new Error(`invalid ending kind "${obj.kind}"`);
+  }
+  if (!Array.isArray(obj.scenes) || obj.scenes.length === 0) {
+    throw new Error('ending missing scenes');
+  }
+
+  const scenes: EndingScene[] = (obj.scenes as unknown[]).map((sc, i) => {
+    const scene = sc as Record<string, unknown>;
+    if (!scene.narration) throw new Error(`scenes[${i}] missing narration`);
+    return {
+      id: String(scene.id ?? `ending_${kind}_${i + 1}`),
+      narration: String(scene.narration),
+    };
+  });
+
+  return {
+    kind,
+    liId: obj.liId ? String(obj.liId) : null,
+    scenes,
+  };
+}
+
+export function validateEndingVariant(variant: EndingVariant, expectedKind: EndingKind): SegmentIssue[] {
+  const issues: SegmentIssue[] = [];
+  if (variant.kind !== expectedKind) {
+    issues.push({
+      severity: 'error',
+      scope: 'kind',
+      message: `kind "${variant.kind}" не совпадает с запрошенным "${expectedKind}"`,
+    });
+  }
+  if (variant.scenes.length < 1 || variant.scenes.length > 3) {
+    issues.push({
+      severity: 'error',
+      scope: 'scenes',
+      message: `сцен ${variant.scenes.length}, допускается 1-3`,
+    });
+  }
+  for (const sc of variant.scenes) {
+    if (sc.narration.trim().length < 60) {
+      issues.push({
+        severity: 'error',
+        scope: `scenes/${sc.id}`,
+        message: 'narration слишком короткий для сцены эпилога (нужно 3-6 предложений)',
+      });
+    }
+  }
+  return issues;
+}

@@ -152,6 +152,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/ending:
+    post:
+      operationId: generateEnding
+      summary: Generate an epilogue variant (good per-LI, or shared normal/bad)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EndingRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /generate/dialogueVariant:
     post:
       operationId: generateDialogueVariant
@@ -681,6 +699,48 @@ components:
             Previously generated AnchorBeat that failed validation.
             When present alongside previousIssues, the LLM is asked to
             produce a corrected version.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
+
+    EndingRequest:
+      type: object
+      required:
+        - brief
+        - outline
+        - kind
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+        outline:
+          type: object
+          additionalProperties: true
+          description: Title, logline, acts and the resolution anchor.
+        kind:
+          type: string
+          enum: [good, normal, bad]
+        liCard:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: LI card, only for kind=good.
+        endingTone:
+          type: string
+          description: Tone from archetype.endingProfile[kind].tone.
+        liArcSummary:
+          type: string
+        finalEncounterGoal:
+          type: string
+        resolutionBeatText:
+          type: string
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Previously generated ending that failed validation.
         previousIssues:
           type: array
           items:

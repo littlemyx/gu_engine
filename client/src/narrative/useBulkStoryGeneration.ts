@@ -4,6 +4,7 @@ import {
   generateDialogueVariant,
   generateAnchorBeat,
   generateBeatPlan,
+  generateEnding,
   getBatchStatus,
   type BatchStatus,
 } from '@root/text_gen/generated_client';
@@ -11,6 +12,8 @@ import type {
   AnchorBeat,
   BeatPlan,
   Brief,
+  EndingKind,
+  EndingVariant,
   StoryOutlinePlan,
   NarrationWeb,
   DialogueVariant,
@@ -24,12 +27,16 @@ import {
   validateAnchorBeat,
   parseBeatPlan,
   validateDialogueVariant,
+  parseEndingVariant,
+  validateEndingVariant,
+  endingKey,
 } from './types';
 import { validateBeatPlan } from './validateBeatPlan';
 import { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
 import { buildNarrationWebRequestPayload } from './buildNarrationWebRequest';
 import { buildDialogueVariantRequestPayload, buildEncounterContext } from './buildDialogueVariantRequest';
 import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
+import { buildEndingRequestPayload } from './buildEndingRequest';
 import { topoOrderAnchors, outgoingOf } from './anchorOrder';
 import { useNarrativeStore } from './narrativeStore';
 
@@ -40,7 +47,7 @@ const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 export type BulkStoryFailure = { key: string; error: string };
 
-export type BulkStoryPhase = 'beat_plan' | 'anchor_beats' | 'narration_webs' | 'dialogue_variants';
+export type BulkStoryPhase = 'beat_plan' | 'anchor_beats' | 'narration_webs' | 'dialogue_variants' | 'endings';
 
 export type BulkStoryGenStatus =
   | { state: 'idle' }
@@ -58,6 +65,7 @@ export type BulkStoryGenStatus =
       beatsGenerated: number;
       websGenerated: number;
       variantsGenerated: number;
+      endingsGenerated: number;
       failures: BulkStoryFailure[];
       cancelled: boolean;
     };
@@ -142,6 +150,7 @@ export function useBulkStoryGeneration() {
         beatsGenerated: 0,
         websGenerated: 0,
         variantsGenerated: 0,
+        endingsGenerated: 0,
         failures,
         cancelled: true,
       });
@@ -220,7 +229,15 @@ export function useBulkStoryGeneration() {
     }
 
     if (cancelledRef.current) {
-      setStatus({ state: 'done', beatsGenerated, websGenerated: 0, variantsGenerated: 0, failures, cancelled: true });
+      setStatus({
+        state: 'done',
+        beatsGenerated,
+        websGenerated: 0,
+        variantsGenerated: 0,
+        endingsGenerated: 0,
+        failures,
+        cancelled: true,
+      });
       runningRef.current = false;
       return;
     }
@@ -317,6 +334,7 @@ export function useBulkStoryGeneration() {
         beatsGenerated,
         websGenerated: webCompleted,
         variantsGenerated: 0,
+        endingsGenerated: 0,
         failures,
         cancelled: true,
       });
@@ -458,11 +476,105 @@ export function useBulkStoryGeneration() {
 
     await Promise.all(Array.from({ length: CONCURRENCY }, () => varWorker()));
 
+    // Phase 3: endings — good per-LI + общие normal/bad (по endingsProfile).
+    let endingsGenerated = 0;
+    if (!cancelledRef.current) {
+      const endingTasks: { kind: EndingKind; li: typeof brief.loveInterests[0] | null }[] = [];
+      if (brief.endingsProfile.includes('good')) {
+        for (const li of brief.loveInterests) endingTasks.push({ kind: 'good', li });
+      }
+      if (brief.endingsProfile.includes('normal')) endingTasks.push({ kind: 'normal', li: null });
+      if (brief.endingsProfile.includes('bad')) endingTasks.push({ kind: 'bad', li: null });
+
+      const pendingTasks = endingTasks.filter(t => !useNarrativeStore.getState().endings[endingKey(t.kind, t.li?.id)]);
+      let endInFlight = 0;
+      const endTotal = pendingTasks.length;
+      const publishEndings = () => {
+        setStatus({
+          state: 'running',
+          phase: 'endings',
+          total: endTotal,
+          completed: endingsGenerated,
+          inFlight: endInFlight,
+          failures: failures.slice(),
+          cancelled: cancelledRef.current,
+        });
+      };
+      publishEndings();
+
+      const processEndingTask = async (task: typeof endingTasks[0]) => {
+        endInFlight++;
+        publishEndings();
+        const key = endingKey(task.kind, task.li?.id);
+        try {
+          const storeNow = useNarrativeStore.getState();
+          const basePayload = buildEndingRequestPayload(
+            brief,
+            outline,
+            task.kind,
+            task.li,
+            storeNow.beatPlan,
+            storeNow.anchorBeats,
+          );
+          let best: { ending: EndingVariant; errorCount: number; errors: string[] } | null = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            type EndingPayload = typeof basePayload & {
+              previousAttempt?: EndingVariant;
+              previousIssues?: string[];
+            };
+            const payload: EndingPayload =
+              attempt === 0 || !best
+                ? basePayload
+                : { ...basePayload, previousAttempt: best.ending, previousIssues: best.errors };
+            const { data, error } = await generateEnding({ body: payload });
+            if (error || !data) throw new Error(`не удалось запустить генерацию концовки ${key}`);
+            const ending = await pollBatchResult(data.batchId, parseEndingVariant);
+            const issues = validateEndingVariant(ending, task.kind);
+            const errors = issues
+              .filter(i => i.severity === 'error')
+              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+            if (!best || errors.length < best.errorCount) {
+              best = { ending, errorCount: errors.length, errors };
+            }
+            if (errors.length === 0) break;
+          }
+          // liId генератора может отсутствовать/врать — фиксируем свой.
+          const normalized: EndingVariant = {
+            ...best!.ending,
+            kind: task.kind,
+            liId: task.kind === 'good' ? task.li?.id ?? null : null,
+          };
+          useNarrativeStore.getState().setEnding(key, normalized);
+          endingsGenerated++;
+          if (best!.errorCount > 0) {
+            failures.push({
+              key: `ending:${key}`,
+              error: `сохранено с ошибками валидации: ${best!.errors.slice(0, 2).join('; ')}`,
+            });
+          }
+        } catch (e) {
+          failures.push({ key: `ending:${key}`, error: e instanceof Error ? e.message : String(e) });
+        } finally {
+          endInFlight--;
+          publishEndings();
+        }
+      };
+
+      const endQueue = [...pendingTasks];
+      const endWorker = async () => {
+        while (endQueue.length > 0 && !cancelledRef.current) {
+          await processEndingTask(endQueue.shift()!);
+        }
+      };
+      await Promise.all(Array.from({ length: CONCURRENCY }, () => endWorker()));
+    }
+
     setStatus({
       state: 'done',
       beatsGenerated,
       websGenerated: webCompleted,
       variantsGenerated: varCompleted,
+      endingsGenerated,
       failures,
       cancelled: cancelledRef.current,
     });
