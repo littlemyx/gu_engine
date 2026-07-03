@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import sharp from "sharp";
+import { Potrace } from "potrace";
 import type {
   GenerateItem,
   BatchState,
@@ -191,76 +192,96 @@ function rgbToHsv(r: number, g: number, b: number): [number, number, number] {
 }
 
 /**
- * Check if a pixel is in the green chromakey range.
+ * Candidate chromakey colors. The pipeline picks the one that clashes least
+ * with the character's own palette (the "antagonist" color) — a green-clad
+ * character gets keyed on magenta, etc. Red/orange are excluded because they
+ * collide with skin tones. Order matters: earlier entries win ties.
  */
-function isGreenish(r: number, g: number, b: number): boolean {
-  const [h, s, v] = rgbToHsv(r, g, b);
-  const HUE_CENTER = 120;
-  const HUE_RANGE = 50;
-  const SAT_MIN = 0.08;
-  const VAL_MIN = 0.2;
+const CHROMAKEY_COLORS = [
+  { name: "green", hex: "#00FF00", hue: 120 },
+  { name: "magenta", hex: "#FF00FF", hue: 300 },
+  { name: "cyan", hex: "#00FFFF", hue: 180 },
+  { name: "blue", hex: "#0000FF", hue: 240 }
+] as const;
+type ChromaKey = (typeof CHROMAKEY_COLORS)[number];
 
-  const hueDist = Math.abs(h - HUE_CENTER);
-  const isGreenHue = hueDist <= HUE_RANGE || hueDist >= 360 - HUE_RANGE;
-  return isGreenHue && s >= SAT_MIN && v >= VAL_MIN;
+// Tight thresholds on purpose: the rendered chromakey is near-pure
+// (saturation ~1), while muted clothing (olive/khaki/sage for green) sits
+// around saturation 0.2-0.35 — a loose threshold lets the flood-fill eat
+// garments and punch holes in the character.
+const CHROMA_HUE_RANGE = 40;
+const CHROMA_SAT_MIN = 0.45;
+const CHROMA_VAL_MIN = 0.25;
+
+// If more than this fraction of the figure's pixels fall in the current key's
+// chroma range, the key would eat the character — switch to the antagonist.
+const CHROMA_DANGER_THRESHOLD = 0.02;
+
+function hueDistance(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
 }
 
 /**
- * Remove chromakey green background using flood-fill from image edges.
- * Only pixels connected to the border that are in the green range get removed.
- * This preserves green elements inside the character (clothing, eyes, etc.).
- * Border pixels of the detected region get partial transparency for anti-aliasing.
+ * Check if a pixel is in the chromakey range for the given key hue.
  */
-async function removeChromakeyGreen(inputPath: string): Promise<void> {
-  const image = sharp(inputPath);
-  const { width, height } = await image.metadata();
-  if (!width || !height) throw new Error("Cannot read image dimensions");
+function isChroma(r: number, g: number, b: number, keyHue: number): boolean {
+  const [h, s, v] = rgbToHsv(r, g, b);
+  return (
+    hueDistance(h, keyHue) <= CHROMA_HUE_RANGE &&
+    s >= CHROMA_SAT_MIN &&
+    v >= CHROMA_VAL_MIN
+  );
+}
 
-  const { data } = await image
-    .raw()
-    .ensureAlpha()
-    .toBuffer({ resolveWithObject: true });
+/**
+ * Build the background mask for a chromakey hue: flood-fill from image
+ * borders (so key-colored elements inside the character survive), then remove
+ * enclosed pockets of pure key color (gaps between limbs etc.).
+ * Returns a per-pixel mask: 1 = background, 0 = character.
+ */
+function computeChromaMask(
+  data: Buffer | Uint8Array,
+  width: number,
+  height: number,
+  keyHue: number
+): Uint8Array {
   const totalPixels = width * height;
-
-  // 1. Flood-fill from all border pixels to find connected green background
-  const isBackground = new Uint8Array(totalPixels); // 0 = not bg, 1 = bg
+  const isBackground = new Uint8Array(totalPixels);
   const queue: number[] = [];
 
-  // Seed with all border pixels that are green
+  const isKeyPixel = (idx: number) => {
+    const off = idx * 4;
+    return isChroma(data[off], data[off + 1], data[off + 2], keyHue);
+  };
+
+  // Seed with all border pixels that match the key
   for (let x = 0; x < width; x++) {
-    // Top row
     const topIdx = x;
-    const topOff = topIdx * 4;
-    if (isGreenish(data[topOff], data[topOff + 1], data[topOff + 2])) {
+    if (isKeyPixel(topIdx)) {
       isBackground[topIdx] = 1;
       queue.push(topIdx);
     }
-    // Bottom row
     const botIdx = (height - 1) * width + x;
-    const botOff = botIdx * 4;
-    if (isGreenish(data[botOff], data[botOff + 1], data[botOff + 2])) {
+    if (isKeyPixel(botIdx)) {
       isBackground[botIdx] = 1;
       queue.push(botIdx);
     }
   }
   for (let y = 1; y < height - 1; y++) {
-    // Left column
     const leftIdx = y * width;
-    const leftOff = leftIdx * 4;
-    if (isGreenish(data[leftOff], data[leftOff + 1], data[leftOff + 2])) {
+    if (isKeyPixel(leftIdx)) {
       isBackground[leftIdx] = 1;
       queue.push(leftIdx);
     }
-    // Right column
     const rightIdx = y * width + (width - 1);
-    const rightOff = rightIdx * 4;
-    if (isGreenish(data[rightOff], data[rightOff + 1], data[rightOff + 2])) {
+    if (isKeyPixel(rightIdx)) {
       isBackground[rightIdx] = 1;
       queue.push(rightIdx);
     }
   }
 
-  // BFS flood-fill
+  // BFS flood-fill from the borders
   let head = 0;
   while (head < queue.length) {
     const idx = queue[head++];
@@ -268,38 +289,40 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
     const y = (idx - x) / width;
 
     const neighbors = [
-      y > 0 ? idx - width : -1, // up
-      y < height - 1 ? idx + width : -1, // down
-      x > 0 ? idx - 1 : -1, // left
-      x < width - 1 ? idx + 1 : -1 // right
+      y > 0 ? idx - width : -1,
+      y < height - 1 ? idx + width : -1,
+      x > 0 ? idx - 1 : -1,
+      x < width - 1 ? idx + 1 : -1
     ];
 
     for (const nIdx of neighbors) {
       if (nIdx < 0 || isBackground[nIdx]) continue;
-      const nOff = nIdx * 4;
-      if (isGreenish(data[nOff], data[nOff + 1], data[nOff + 2])) {
+      if (isKeyPixel(nIdx)) {
         isBackground[nIdx] = 1;
         queue.push(nIdx);
       }
     }
   }
 
-  // 2. Find enclosed green areas: seed with strict-green pixels, then flood-fill
-  // outward with the loose threshold to capture anti-aliased edges.
+  // Enclosed key-colored pockets: seed with strict key pixels, then expand
+  // with the normal threshold to capture anti-aliased pocket edges. The model
+  // often renders pockets slightly shaded (armpit gaps ~s0.6/v0.5), so the
+  // seeds must tolerate that. Clothing in key-like tones is protected one
+  // level up: pickChromaKey sends such characters to the antagonist key, so
+  // by the time we key an image its figure has no key-hue content.
   const STRICT_HUE_RANGE = 20;
-  const STRICT_SAT_MIN = 0.6;
+  const STRICT_SAT_MIN = 0.55;
   const STRICT_VAL_MIN = 0.4;
   const enclosedQueue: number[] = [];
   for (let i = 0; i < totalPixels; i++) {
     if (isBackground[i]) continue;
     const off = i * 4;
     const [h, s, v] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
-    const hueDist = Math.abs(h - 120);
-    const isStrictGreen =
-      (hueDist <= STRICT_HUE_RANGE || hueDist >= 360 - STRICT_HUE_RANGE) &&
+    const isStrictKey =
+      hueDistance(h, keyHue) <= STRICT_HUE_RANGE &&
       s >= STRICT_SAT_MIN &&
       v >= STRICT_VAL_MIN;
-    if (isStrictGreen) {
+    if (isStrictKey) {
       isBackground[i] = 1;
       enclosedQueue.push(i);
     }
@@ -320,57 +343,289 @@ async function removeChromakeyGreen(inputPath: string): Promise<void> {
 
     for (const nIdx of neighbors) {
       if (nIdx < 0 || isBackground[nIdx]) continue;
-      const nOff = nIdx * 4;
-      if (isGreenish(data[nOff], data[nOff + 1], data[nOff + 2])) {
+      if (isKeyPixel(nIdx)) {
         isBackground[nIdx] = 1;
         enclosedQueue.push(nIdx);
       }
     }
   }
 
-  // 3. Find border pixels (background pixels adjacent to non-background)
-  const isBorder = new Uint8Array(totalPixels);
+  return isBackground;
+}
+
+// A pixel "clashes" with a key when its hue is near the key hue and it has
+// any noticeable color — much looser than the keying thresholds on purpose:
+// an olive/khaki figure (s ~0.3, hue ~60-75 — yellow-green, outside the
+// keying hue window) is not eaten by a tight green key, but it IS too close
+// in tone for reliable pocket removal and despill, so such a figure must be
+// sent to the antagonist key. Hence the wide hue range here.
+const CLASH_HUE_RANGE = 60;
+const CLASH_SAT_MIN = 0.2;
+const CLASH_VAL_MIN = 0.15;
+
+/**
+ * Pick the chromakey color that clashes least with the figure's palette.
+ * danger[k] = fraction of foreground pixels whose tone is close to
+ * candidate k's hue.
+ */
+function pickChromaKey(
+  data: Buffer | Uint8Array,
+  isForeground: (idx: number) => boolean,
+  totalPixels: number
+): { key: ChromaKey; dangers: number[] } {
+  const counts = new Array(CHROMAKEY_COLORS.length).fill(0);
+  let foreground = 0;
   for (let i = 0; i < totalPixels; i++) {
-    if (!isBackground[i]) continue;
-    const x = i % width;
-    const y = (i - x) / width;
-    const neighbors = [
-      y > 0 ? i - width : -1,
-      y < height - 1 ? i + width : -1,
-      x > 0 ? i - 1 : -1,
-      x < width - 1 ? i + 1 : -1
-    ];
-    for (const nIdx of neighbors) {
-      if (nIdx >= 0 && !isBackground[nIdx]) {
-        isBorder[i] = 1;
-        break;
+    if (!isForeground(i)) continue;
+    foreground++;
+    const off = i * 4;
+    const [h, s, v] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
+    if (s < CLASH_SAT_MIN || v < CLASH_VAL_MIN) continue;
+    for (let k = 0; k < CHROMAKEY_COLORS.length; k++) {
+      if (hueDistance(h, CHROMAKEY_COLORS[k].hue) <= CLASH_HUE_RANGE) {
+        counts[k]++;
+      }
+    }
+  }
+  const dangers = counts.map(c => (foreground > 0 ? c / foreground : 0));
+  let best = 0;
+  for (let k = 1; k < dangers.length; k++) {
+    if (dangers[k] < dangers[best] - 1e-9) best = k;
+  }
+  return { key: CHROMAKEY_COLORS[best], dangers };
+}
+
+/**
+ * Analyze a freshly generated raw frame: how much of the figure would the
+ * current key eat, and which candidate key is the safest antagonist.
+ */
+async function chooseChromaKeyForRaw(
+  localPath: string,
+  currentKey: ChromaKey
+): Promise<{ key: ChromaKey; currentDanger: number }> {
+  const { data, info } = await sharp(localPath)
+    .raw()
+    .ensureAlpha()
+    .toBuffer({ resolveWithObject: true });
+  const totalPixels = info.width * info.height;
+  const isBg = computeChromaMask(data, info.width, info.height, currentKey.hue);
+  const { key, dangers } = pickChromaKey(data, i => !isBg[i], totalPixels);
+  const currentIdx = CHROMAKEY_COLORS.findIndex(c => c.name === currentKey.name);
+  return { key, currentDanger: dangers[currentIdx] };
+}
+
+/**
+ * Pick the safest chromakey for a new generation based on an existing keyed
+ * sprite (transparent PNG) of the same character. Falls back to green.
+ */
+async function chooseChromaKeyForSprite(imageBuffer: Buffer): Promise<ChromaKey> {
+  try {
+    const { data, info } = await sharp(imageBuffer)
+      .raw()
+      .ensureAlpha()
+      .toBuffer({ resolveWithObject: true });
+    const totalPixels = info.width * info.height;
+    const { key } = pickChromaKey(
+      data,
+      i => data[i * 4 + 3] > 200,
+      totalPixels
+    );
+    return key;
+  } catch {
+    return CHROMAKEY_COLORS[0];
+  }
+}
+
+/**
+ * Trace a binary mask (single-channel PNG, white = figure) into smooth Bezier
+ * contours using the Potrace algorithm (Selinger 2003 — the same engine
+ * Inkscape uses). Returns the SVG path `d` string.
+ */
+async function traceMaskToSvgPath(maskPng: Buffer): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const tracer = new Potrace();
+    tracer.setParameters({
+      threshold: 128,
+      blackOnWhite: false, // trace the white (figure) regions
+      turdSize: 8, // drop speck-sized islands and holes
+      // Keep the trace close to the mask (±1px): larger tolerances cut
+      // corners in narrow gaps, and the cover stroke then has no margin left
+      // to overlap the raster seam between the rim and the art
+      alphaMax: 1.0,
+      optCurve: true,
+      optTolerance: 0.3
+    });
+    tracer.loadImage(maskPng, (err: Error | null) => {
+      if (err) return reject(err);
+      const match = tracer.getPathTag().match(/d="([^"]+)"/);
+      if (!match) return reject(new Error("Potrace produced no path"));
+      resolve(match[1]);
+    });
+  });
+}
+
+/**
+ * Remove the chromakey background using flood-fill from image edges.
+ * Only pixels connected to the border that are in the key range get removed.
+ * This preserves key-colored elements inside the character (clothing, eyes).
+ * The resulting mask is feathered for anti-aliasing, the key-colored fringe
+ * is despilled, and a white sticker outline is synthesized around a smoothed
+ * silhouette contour.
+ */
+async function removeChromakey(
+  inputPath: string,
+  key: ChromaKey
+): Promise<void> {
+  const image = sharp(inputPath);
+  const { width, height } = await image.metadata();
+  if (!width || !height) throw new Error("Cannot read image dimensions");
+
+  const { data } = await image
+    .raw()
+    .ensureAlpha()
+    .toBuffer({ resolveWithObject: true });
+  const totalPixels = width * height;
+
+  // 1. Background mask: border flood-fill + enclosed key-colored pockets
+  const isBackground = computeChromaMask(data, width, height, key.hue);
+
+  // 2. Binary figure mask, fed to Potrace as-is. No blur+threshold
+  // pre-smoothing: it shrinks narrow gaps (between legs, fingers) by pixels,
+  // pushing the traced contour away from the real edge. Smoothing pixel
+  // jitter into clean curves is exactly what Potrace's polygon-fitting stage
+  // is for.
+  const binaryMask = Buffer.alloc(totalPixels);
+  for (let i = 0; i < totalPixels; i++) {
+    binaryMask[i] = isBackground[i] ? 0 : 255;
+  }
+
+  // A narrow band around the contour, used to decide where to despill
+  const { data: edgeBand, info: bandInfo } = await sharp(binaryMask, {
+    raw: { width, height, channels: 1 }
+  })
+    .blur(1.2)
+    .toColourspace("b-w")
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  if (bandInfo.channels !== 1) {
+    throw new Error(`Edge band mask has ${bandInfo.channels} channels, expected 1`);
+  }
+
+  // 3. Trace the smoothed mask into Bezier contours (Potrace) once. Both the
+  // character cutout alpha AND the sticker outline are rendered from this
+  // single vector path, so the inner and outer edges of the white line are
+  // equally smooth sub-pixel curves — a raster mask here would leave a pixel
+  // staircase on the character side of the line.
+  const maskPng = await sharp(binaryMask, {
+    raw: { width, height, channels: 1 }
+  })
+    .png()
+    .toBuffer();
+  const pathD = await traceMaskToSvgPath(maskPng);
+
+  const renderPath = async (pathAttrs: string): Promise<Buffer> => {
+    const svg = `<svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg"><path d="${pathD}" fill-rule="evenodd" ${pathAttrs}/></svg>`;
+    const { data: px, info } = await sharp(Buffer.from(svg))
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    if (info.width !== width || info.height !== height) {
+      throw new Error(
+        `Path rendered at ${info.width}x${info.height}, expected ${width}x${height}`
+      );
+    }
+    return px;
+  };
+
+  const cutoutMask = await renderPath(`fill="#fff"`);
+  // The cover stroke (drawn over the character at the end) is also used here
+  // to resolve keying-vs-vector disagreements near the contour
+  // Thin: it only needs to hide the ±1-2px raster seam between cutout and
+  // art; wider covers visibly eat the art's own dark edge lineart
+  const coverMask = await renderPath(
+    `fill="none" stroke="#fff" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"`
+  );
+
+  // 4. Apply the vector cutout alpha; despill the key tint inside the edge
+  // band by pulling those pixels toward neutral gray (strongest at key hue)
+  for (let i = 0; i < totalPixels; i++) {
+    const off = i * 4;
+    data[off + 3] = cutoutMask[off + 3];
+    if (data[off + 3] === 0) continue;
+    // Keyed-out background pixels that the vector contour still covers (the
+    // curve rounds edges and shrinks small holes, swallowing a rim of
+    // ex-background): under the cover stroke they turn white (the stroke
+    // hides them with a smooth vector edge); deeper than the stroke the
+    // keying verdict wins — transparent — so no raster-edged white teeth and
+    // no raw chromakey ever show
+    if (isBackground[i]) {
+      if (coverMask[off + 3] > 0) {
+        data[off] = 255;
+        data[off + 1] = 255;
+        data[off + 2] = 255;
+      } else {
+        data[off + 3] = 0;
+      }
+      continue;
+    }
+    const band = edgeBand[i];
+    if (band > 0 && band < 255) {
+      const [h, s] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
+      const hd = hueDistance(h, key.hue);
+      if (hd <= CHROMA_HUE_RANGE && s > 0.1) {
+        const t = 1 - hd / CHROMA_HUE_RANGE;
+        const gray =
+          0.299 * data[off] + 0.587 * data[off + 1] + 0.114 * data[off + 2];
+        data[off] = Math.round(data[off] + (gray - data[off]) * t);
+        data[off + 1] = Math.round(data[off + 1] + (gray - data[off + 1]) * t);
+        data[off + 2] = Math.round(data[off + 2] + (gray - data[off + 2]) * t);
       }
     }
   }
 
-  // 4. Apply transparency: fully transparent for interior, soft alpha for borders
-  const HUE_CENTER = 120;
-  const HUE_RANGE = 50;
-  const SAT_MIN = 0.08;
+  // 5. The sticker base: same path with a centered round-join stroke = the
+  // figure dilated by OUTLINE_WIDTH outward. Holes in the silhouette (gaps
+  // between limbs) get outlined too, like a real die-cut sticker.
+  const OUTLINE_WIDTH = Math.max(4, Math.round(Math.min(width, height) / 200));
+  const ringMask = await renderPath(
+    `fill="#fff" stroke="#fff" stroke-width="${OUTLINE_WIDTH * 2}" stroke-linejoin="round" stroke-linecap="round"`
+  );
 
+  // Composite the character over the white sticker base
   for (let i = 0; i < totalPixels; i++) {
-    if (!isBackground[i]) continue;
-
+    const ringAlpha = ringMask[i * 4 + 3] / 255;
+    if (ringAlpha <= 0) continue;
     const off = i * 4;
+    const charAlpha = data[off + 3] / 255;
+    if (charAlpha >= 1) continue;
+    const outAlpha = charAlpha + ringAlpha * (1 - charAlpha);
+    const white = 255 * ringAlpha * (1 - charAlpha);
+    data[off] = Math.round((data[off] * charAlpha + white) / outAlpha);
+    data[off + 1] = Math.round((data[off + 1] * charAlpha + white) / outAlpha);
+    data[off + 2] = Math.round((data[off + 2] * charAlpha + white) / outAlpha);
+    data[off + 3] = Math.round(outAlpha * 255);
+  }
 
-    if (!isBorder[i]) {
-      // Interior background pixel — fully transparent
-      data[off + 3] = 0;
-      continue;
-    }
-
-    // Border pixel — soft alpha for anti-aliasing
-    const [h, s] = rgbToHsv(data[off], data[off + 1], data[off + 2]);
-    const hueDist = Math.abs(h - HUE_CENTER);
-    const hueAlpha = Math.max(0, hueDist / HUE_RANGE);
-    const satAlpha = Math.max(0, 1 - (s - SAT_MIN) / (1 - SAT_MIN));
-    const alpha = Math.min(hueAlpha, satAlpha);
-    data[off + 3] = Math.round(alpha * 255);
+  // 6. The thin cover stroke drawn OVER the character. It hides the
+  // raster-edged seam where the cutout meets the art — whitened
+  // ex-background rim pixels and anti-aliased key fringe — so the inner edge
+  // of the line is the same smooth vector curve as the outer one.
+  for (let i = 0; i < totalPixels; i++) {
+    const coverAlpha = coverMask[i * 4 + 3] / 255;
+    if (coverAlpha <= 0) continue;
+    const off = i * 4;
+    const baseAlpha = data[off + 3] / 255;
+    const outAlpha = coverAlpha + baseAlpha * (1 - coverAlpha);
+    data[off] = Math.round(
+      (255 * coverAlpha + data[off] * baseAlpha * (1 - coverAlpha)) / outAlpha
+    );
+    data[off + 1] = Math.round(
+      (255 * coverAlpha + data[off + 1] * baseAlpha * (1 - coverAlpha)) / outAlpha
+    );
+    data[off + 2] = Math.round(
+      (255 * coverAlpha + data[off + 2] * baseAlpha * (1 - coverAlpha)) / outAlpha
+    );
+    data[off + 3] = Math.round(outAlpha * 255);
   }
 
   await sharp(data, { raw: { width, height, channels: 4 } })
@@ -384,6 +639,7 @@ function buildCharacterPosePrompt(
   masterPrompt: string,
   characterDescription: string,
   pose: string,
+  chromaKey: ChromaKey,
   storyMasterPrompt?: string
 ): string {
   const parts = [
@@ -394,7 +650,7 @@ function buildCharacterPosePrompt(
   }
   parts.push(
     characterDescription,
-    `Generate exactly ONE character — one body, one head, one pair of arms, one pair of legs — in a "${pose}" pose/emotion as a full-body shot, centered in the frame. STRICTLY FORBIDDEN: multiple characters, duplicates, copies, turnaround sheets, character sheets, multiple views, side-by-side variations, or any layout containing more than one figure. The image contains exactly one figure. The character must be rendered on a solid bright chromakey green (#00FF00) background. The entire background must be uniform pure green with no gradients, no shadows, no environment, no ground. The character should have a thin clean white outline (2-3 pixels) separating it from the green background. Crisp sharp edges, no blur or feathering at the borders. Maintain consistent character design, proportions, and art style.`
+    `Generate exactly ONE character — one body, one head, one pair of arms, one pair of legs — in a "${pose}" pose/emotion as a full-body shot, centered in the frame. STRICTLY FORBIDDEN: multiple characters, duplicates, copies, turnaround sheets, character sheets, multiple views, side-by-side variations, or any layout containing more than one figure. The image contains exactly one figure. The character must be rendered on a solid bright chromakey ${chromaKey.name} (${chromaKey.hex}) background. The entire background must be uniform pure ${chromaKey.name} with no gradients, no shadows, no environment, no ground. Do NOT draw any outline, border, stroke, or halo around the character — even if a reference image shows a white outline, do not reproduce it; the outline is added later in post-processing. Render the character directly against the ${chromaKey.name} background with clean edges. Maintain consistent character design, proportions, and art style.`
   );
   return parts.join("\n\n");
 }
@@ -420,22 +676,49 @@ export async function processCharacterBatch(
   const idleId = "idle";
   batch.items[idleId].status = "processing";
 
+  let chromaKey: ChromaKey = CHROMAKEY_COLORS[0];
   let idleLocalPath: string;
   try {
-    const idleItem: GenerateItem = {
+    const makeIdleItem = (key: ChromaKey): GenerateItem => ({
       id: idleId,
       description: buildCharacterPosePrompt(
         masterPrompt,
         characterDescription,
         "idle — neutral standing pose, relaxed, facing the viewer",
+        key,
         storyMasterPrompt
       )
-    };
-    idleLocalPath = await generateImage(idleItem, undefined, undefined, "2:3");
-    logger.log(
-      `[processCharacterBatch] batch=${batch.batchId} — removing chromakey from idle pose`
+    });
+    idleLocalPath = await generateImage(
+      makeIdleItem(chromaKey),
+      undefined,
+      undefined,
+      "2:3"
     );
-    await removeChromakeyGreen(idleLocalPath);
+
+    // If the character's palette clashes with the key color, the keying would
+    // eat the figure — switch to the antagonist key and regenerate once
+    const { key: bestKey, currentDanger } = await chooseChromaKeyForRaw(
+      idleLocalPath,
+      chromaKey
+    );
+    if (currentDanger > CHROMA_DANGER_THRESHOLD && bestKey.name !== chromaKey.name) {
+      logger.log(
+        `[processCharacterBatch] batch=${batch.batchId} — character palette clashes with ${chromaKey.name} chromakey (${(currentDanger * 100).toFixed(1)}% of figure), regenerating idle on ${bestKey.name}`
+      );
+      chromaKey = bestKey;
+      idleLocalPath = await generateImage(
+        makeIdleItem(chromaKey),
+        undefined,
+        undefined,
+        "2:3"
+      );
+    }
+
+    logger.log(
+      `[processCharacterBatch] batch=${batch.batchId} — removing ${chromaKey.name} chromakey from idle pose`
+    );
+    await removeChromakey(idleLocalPath, chromaKey);
     const idleServerName = await uploadToImageServer(idleLocalPath, "idle.png");
     batch.items[idleId].status = "completed";
     batch.items[idleId].filePath = idleServerName;
@@ -475,15 +758,16 @@ export async function processCharacterBatch(
           masterPrompt,
           characterDescription,
           pose,
+          chromaKey,
           storyMasterPrompt
         ),
         referenceImages: [idleDataUri]
       };
       const localPath = await generateImage(poseItem, undefined, undefined, "2:3");
       logger.log(
-        `[processCharacterBatch] batch=${batch.batchId} pose=${pose} — removing chromakey`
+        `[processCharacterBatch] batch=${batch.batchId} pose=${pose} — removing ${chromaKey.name} chromakey`
       );
-      await removeChromakeyGreen(localPath);
+      await removeChromakey(localPath, chromaKey);
       const serverName = await uploadToImageServer(localPath, `${pose}.png`);
       batch.items[pose].status = "completed";
       batch.items[pose].filePath = serverName;
@@ -521,21 +805,30 @@ export async function processRegeneratePose(
     const refImage = await fetchImageAsBase64(referenceImageUrl);
     const refDataUri = `data:${refImage.mimeType};base64,${refImage.data}`;
 
+    // Pick the chromakey that clashes least with the character's palette
+    const chromaKey = await chooseChromaKeyForSprite(
+      Buffer.from(refImage.data, "base64")
+    );
+    logger.log(
+      `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — using ${chromaKey.name} chromakey`
+    );
+
     const poseItem: GenerateItem = {
       id: poseId,
       description: buildCharacterPosePrompt(
         masterPrompt,
         characterDescription,
         pose,
+        chromaKey,
         storyMasterPrompt
       ),
       referenceImages: [refDataUri]
     };
     const localPath = await generateImage(poseItem, undefined, undefined, "2:3");
     logger.log(
-      `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — removing chromakey`
+      `[processRegeneratePose] batch=${batch.batchId} pose=${poseId} — removing ${chromaKey.name} chromakey`
     );
-    await removeChromakeyGreen(localPath);
+    await removeChromakey(localPath, chromaKey);
     const serverName = await uploadToImageServer(localPath, `${poseId}.png`);
     batch.items[poseId].status = "completed";
     batch.items[poseId].filePath = serverName;
