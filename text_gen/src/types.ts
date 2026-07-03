@@ -29,6 +29,19 @@ export interface SceneTextRequest {
 export interface OutlineRequest {
   brief: unknown;
   archetypeProfiles: Record<string, unknown>;
+  /** Целевые бюджеты: число якорей, распределение по актам, доля сюжетных. */
+  targets?: {
+    anchorCount: number;
+    anchorsPerAct: number[];
+    plotOnlyAnchorCount: number;
+  };
+  /**
+   * Previously generated outline that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
 }
 
 /**

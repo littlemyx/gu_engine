@@ -126,6 +126,17 @@ const Playground = () => {
           })()}
       </PlaygroundErrorBoundary>
 
+      {outlineGen.status.state === 'done' && outlineGen.status.warnings.length > 0 && (
+        <div className={styles.panel}>
+          <div className={styles.errorBox}>
+            {outlineGen.status.warnings.map(w => (
+              <div key={w.scope}>
+                ⚠ {w.scope}: {w.message}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {outlineGen.status.state === 'error' && (
         <div className={styles.outlineResult}>
           <div className={styles.errorBox}>Ошибка генерации: {outlineGen.status.message}</div>
@@ -286,10 +297,17 @@ const OutlineBar: React.FC<{
       case 'generating':
         return [
           styles.statusDotGen,
-          status.batchId ? `генерируется... (batch ${status.batchId.slice(0, 8)})` : 'отправка запроса...',
+          status.batchId
+            ? `генерируется... (попытка ${status.attempt}, batch ${status.batchId.slice(0, 8)})`
+            : 'отправка запроса...',
         ];
       case 'done':
-        return [styles.statusDotDone, `готово · ${status.outline.anchors.length} якорей`];
+        return [
+          styles.statusDotDone,
+          `готово · ${status.outline.anchors.length} якорей${
+            status.warnings.length > 0 ? ` · ⚠ ${status.warnings.length} предупреждений` : ''
+          }`,
+        ];
       case 'error':
         return [styles.statusDotError, 'ошибка'];
     }

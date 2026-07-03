@@ -388,7 +388,25 @@ components:
             Map of archetypeId -> ArchetypeProfile, only the archetypes
             referenced by the brief's loveInterests. Embedded into the prompt
             so the LLM knows which beats are required per route.
-
+        targets:
+          type: object
+          additionalProperties: true
+          description: |
+            Computed budgets: anchorCount, anchorsPerAct, plotOnlyAnchorCount
+            (derived from targetDurationMinutes / commonRouteShare).
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Previously generated outline that failed validation. When present
+            alongside previousIssues, the LLM is asked to produce a corrected
+            version.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
     SegmentRequest:
       type: object
       required:
