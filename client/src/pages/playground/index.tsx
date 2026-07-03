@@ -826,7 +826,11 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const webCount = Object.keys(narrationWebs).length;
   const beatCount = Object.keys(anchorBeats).length;
   const variantCount = Object.keys(dialogueVariants).length;
-  const imageCount = Object.values(images).filter(i => i.status === 'done').length;
+  // При наличии модели мира фоны ключуются по loc:<id> — считаем только их.
+  const imageCount = Object.entries(images).filter(
+    ([k, i]) => i.status === 'done' && (worldModel ? k.startsWith('loc:') : !k.startsWith('loc:')),
+  ).length;
+  const imageTotal = worldModel ? worldModel.locations.length : outline.anchors.length;
   const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
   const edgeCount = outline.anchorEdges.length;
   const liCount = brief.loveInterests.length;
@@ -854,7 +858,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
           {beatCount}/{outline.anchors.length} beat-сцен · {webCount}/{edgeCount} narration webs · {variantCount}{' '}
-          dialogue variants · {Object.keys(endings).length} концовок · {imageCount}/{outline.anchors.length} фонов ·{' '}
+          dialogue variants · {Object.keys(endings).length} концовок · {imageCount}/{imageTotal} фонов ·{' '}
           {characterCount}/{liCount} спрайтов
         </span>
       </div>
