@@ -82,6 +82,8 @@ export function useBulkStoryGeneration() {
 
     const store = useNarrativeStore.getState();
     const failures: BulkStoryFailure[] = [];
+    // Имена и id каста — валидатор labels переходов запрещает упоминать LI.
+    const liNames = brief.loveInterests.flatMap(li => [li.name, li.id]).filter(Boolean);
 
     // Phase −1: beat plan — один вызов, планирует биты отношений по встречам.
     // При окончательном фейле пайплайн продолжает БЕЗ плана (деградация).
@@ -162,7 +164,17 @@ export function useBulkStoryGeneration() {
     // что каждой сцене нужны beatText-ы предков как контекст.
     const beatAnchors = topoOrderAnchors(outline);
     let beatsGenerated = 0;
-    const beatTotal = beatAnchors.filter(a => !store.anchorBeats[a.id]).length;
+    // Кэшированный бит пропускается, только если он валиден по ТЕКУЩИМ
+    // правилам — иначе регенерация с кэшем как previousAttempt (self-heal).
+    const beatCacheErrors = (anchorId: string): string[] => {
+      const cached = useNarrativeStore.getState().anchorBeats[anchorId];
+      if (!cached) return [];
+      const issues = validateAnchorBeat(cached, anchorId, outgoingOf(outline, anchorId), liNames);
+      return issues.filter(i => i.severity === 'error').map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+    };
+    const beatNeedsWork = (anchorId: string): boolean =>
+      !store.anchorBeats[anchorId] || beatCacheErrors(anchorId).length > 0;
+    const beatTotal = beatAnchors.filter(a => beatNeedsWork(a.id)).length;
 
     const publishBeats = (inFlight: number) => {
       setStatus({
@@ -180,11 +192,18 @@ export function useBulkStoryGeneration() {
 
     for (const anchor of beatAnchors) {
       if (cancelledRef.current) break;
-      if (useNarrativeStore.getState().anchorBeats[anchor.id]) continue;
+      if (!beatNeedsWork(anchor.id)) continue;
       publishBeats(1);
       try {
         const outgoingIds = outgoingOf(outline, anchor.id);
         let best: { beat: AnchorBeat; errorCount: number; errors: string[] } | null = null;
+        const cachedBeat = useNarrativeStore.getState().anchorBeats[anchor.id];
+        if (cachedBeat) {
+          const cachedErrors = beatCacheErrors(anchor.id);
+          if (cachedErrors.length > 0) {
+            best = { beat: cachedBeat, errorCount: cachedErrors.length, errors: cachedErrors };
+          }
+        }
         let lastAttemptError: unknown = null;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
@@ -204,7 +223,7 @@ export function useBulkStoryGeneration() {
             const { data, error } = await generateAnchorBeat({ body: payload });
             if (error || !data) throw new Error('не удалось запустить генерацию beat-сцены');
             const beat = await pollBatchResult(data.batchId, parseAnchorBeat);
-            const issues = validateAnchorBeat(beat, anchor.id, outgoingIds);
+            const issues = validateAnchorBeat(beat, anchor.id, outgoingIds, liNames);
             const errors = issues
               .filter(i => i.severity === 'error')
               .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
@@ -388,13 +407,26 @@ export function useBulkStoryGeneration() {
     const allWebs = useNarrativeStore.getState().narrationWebs;
     const taskByKey = new Map<string, { anchorId: string; liId: string; anchor: typeof outline.anchors[0] }>();
 
+    const variantErrors = (v: DialogueVariant): string[] =>
+      validateDialogueVariant(v)
+        .filter(i => i.severity === 'error')
+        .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+
     const enqueueTask = (anchorId: string, liId: string) => {
       const key = `${anchorId}:${liId}`;
       if (taskByKey.has(key)) return;
       const anchor = outline.anchors.find(a => a.id === anchorId);
       if (!anchor) return;
       const existingVariants = useNarrativeStore.getState().getDialogueVariants(anchorId, liId);
-      if (existingVariants && existingVariants.length === 3) return;
+      // Пропускаем только полный И валидный по текущим правилам набор —
+      // невалидные брекеты перегенерируются точечно (self-heal).
+      if (
+        existingVariants &&
+        existingVariants.length === 3 &&
+        existingVariants.every(v => variantErrors(v).length === 0)
+      ) {
+        return;
+      }
       taskByKey.set(key, { anchorId, liId, anchor });
     };
 
@@ -446,9 +478,17 @@ export function useBulkStoryGeneration() {
       // с fallback на авторский summary для старых кэшей.
       const recentEvents = storeNow.anchorBeats[task.anchorId]?.beatText ?? task.anchor.summary;
 
+      const cachedVariants = useNarrativeStore.getState().getDialogueVariants(task.anchorId, task.liId) ?? [];
       const variants: DialogueVariant[] = [];
       for (const bracket of BRACKETS) {
         if (cancelledRef.current) break;
+        // Валидный кэшированный брекет не трогаем — деньги уходят только
+        // на невалидные и отсутствующие.
+        const cachedForBracket = cachedVariants.find(v => v.bracket === bracket);
+        if (cachedForBracket && variantErrors(cachedForBracket).length === 0) {
+          variants.push(cachedForBracket);
+          continue;
+        }
         varInFlight++;
         publishVars();
         try {
@@ -461,7 +501,14 @@ export function useBulkStoryGeneration() {
             encounterContext,
           );
           // Retry при ошибках валидации; падение попытки изолировано.
+          // Невалидный кэш сидирует best — его ошибки уходят фидбеком.
           let best: { variant: DialogueVariant; errorCount: number; errors: string[] } | null = null;
+          if (cachedForBracket) {
+            const cachedErrs = variantErrors(cachedForBracket);
+            if (cachedErrs.length > 0) {
+              best = { variant: cachedForBracket, errorCount: cachedErrs.length, errors: cachedErrs };
+            }
+          }
           let lastAttemptError: unknown = null;
           for (let attempt = 0; attempt < 2; attempt++) {
             try {

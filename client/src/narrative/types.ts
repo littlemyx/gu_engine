@@ -1079,7 +1079,15 @@ export function parseAnchorBeat(raw: string): AnchorBeat {
   };
 }
 
-export function validateAnchorBeat(beat: AnchorBeat, anchorId: string, outgoingAnchorIds: string[]): SegmentIssue[] {
+/** Глаголы общения в начале label перехода — признак «встречи», а не навигации. */
+const TALK_VERB_RE = /^(по|за)?говорить|^спросить|^обратиться|^познакомиться/i;
+
+export function validateAnchorBeat(
+  beat: AnchorBeat,
+  anchorId: string,
+  outgoingAnchorIds: string[],
+  liNames: string[] = [],
+): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
 
   if (beat.anchorId !== anchorId) {
@@ -1129,6 +1137,24 @@ export function validateAnchorBeat(beat: AnchorBeat, anchorId: string, outgoingA
         severity: 'error',
         scope: `transitions/${t.toAnchorId}/label`,
         message: `label "${t.label}" пуст, длиннее 60 символов или начинается со стрелки — нужна диегетическая фраза с глагола`,
+      });
+    }
+    // Переход — это навигация между этапами, а не запуск встречи: label с
+    // именем персонажа или глаголом общения обещает диалог, которого не будет.
+    const lower = label.toLowerCase();
+    const mentionedLI = liNames.find(n => n && lower.includes(n.toLowerCase()));
+    if (mentionedLI) {
+      issues.push({
+        severity: 'error',
+        scope: `transitions/${t.toAnchorId}/label`,
+        message: `label "${t.label}" упоминает персонажа "${mentionedLI}" — подпись перехода должна описывать перемещение, встречи происходят внутри этапа`,
+      });
+    }
+    if (TALK_VERB_RE.test(label)) {
+      issues.push({
+        severity: 'error',
+        scope: `transitions/${t.toAnchorId}/label`,
+        message: `label "${t.label}" начинается с глагола общения — переход не запускает разговор, нужен глагол перемещения`,
       });
     }
     const key = label.toLowerCase();
@@ -1242,6 +1268,15 @@ export function validateDialogueVariant(variant: DialogueVariant): SegmentIssue[
           severity: 'error',
           scope: `${scene.id}/choice/${choice.id}`,
           message: `nextSceneId "${choice.nextSceneId}" не найден среди сцен диалога`,
+        });
+      }
+      // Вопрос, завершающий диалог, оставляет игрока без ответа — выходные
+      // реплики обязаны быть завершающими (прощание, закрытие темы).
+      if (choice.nextSceneId === null && choice.text.trim().endsWith('?')) {
+        issues.push({
+          severity: 'error',
+          scope: `${scene.id}/choice/${choice.id}`,
+          message: `реплика-вопрос "${choice.text}" не может быть выходом из диалога — вопрос должен вести к сцене с ответом`,
         });
       }
     }
