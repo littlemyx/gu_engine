@@ -148,6 +148,27 @@ export interface DialogueVariantRequest {
   };
   bracket: 'positive' | 'neutral' | 'negative';
   stateRanges: Record<string, [number, number]>;
+  /**
+   * Контекст встречи из beat-плана: номер встречи, целевой бит арки и
+   * краткая история предыдущих встреч. Отсутствует при генерации без плана.
+   */
+  encounterContext?: {
+    encounterIndex: number;
+    totalPlannedEncounters: number;
+    beatType?: string | null;
+    beatPurpose?: string;
+    goal?: string;
+    liArcSummary?: string;
+    priorEncounters: { anchorId: string; location: string; timeMarker: string; goal: string }[];
+    anchorBeatText?: string;
+  };
+  /**
+   * Previously generated variant that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
 }
 
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';

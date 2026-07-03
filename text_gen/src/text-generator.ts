@@ -933,6 +933,19 @@ Brackets:
   8. Тон и стиль речи персонажа должны соответствовать liCard.speechPattern и bracket-у.
   9. characterEmotions — ОБЯЗАТЕЛЬНОЕ поле. Маппинг id персонажа → эмоция.
   10. Все тексты — по-русски.
+  11. Если задан encounterContext:
+      - Это встреча №(encounterIndex+1) из totalPlannedEncounters с этим персонажем.
+        Первая встреча (index 0) при preExistingRelationship = null — знакомство:
+        никаких «как обычно», «снова» и отсылок к прошлым разговорам.
+        Последняя — пик арки отношений.
+      - goal встречи ОБЯЗАН быть достигнут к концу диалога независимо от
+        bracket-а; bracket меняет тон и «цену» достижения, а не сам факт.
+      - Если заданы beatType/beatPurpose — диалог реализует именно этот бит арки.
+      - anchorBeatText — сцена, которую игрок видел минуту назад: продолжай
+        оттуда, не повторяй и не противоречь.
+      - priorEncounters: считай, что предыдущие встречи произошли, но НЕ
+        пересказывай их сюжетно — опирайся на них степенью близости и тоном,
+        без жёстких отсылок к деталям (игрок мог какую-то встречу пропустить).
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
@@ -985,15 +998,36 @@ export async function processDialogueVariant(batch: BatchState, body: DialogueVa
     const ctxJson = JSON.stringify(body.storyContext, null, 2);
     const rangesJson = JSON.stringify(body.stateRanges, null, 2);
 
-    const userMessage = [
+    const parts: string[] = [
       `## Бриф\n${briefJson}`,
       `## Карточка LI\n${liJson}`,
       `## Профиль архетипа\n${archJson}`,
       `## Контекст встречи\n${ctxJson}`,
       `## Bracket: ${body.bracket}`,
       `## Текущие диапазоны state\n${rangesJson}`,
-      `Сгенерируй диалог для bracket "${body.bracket}". Только JSON.`,
-    ].join('\n\n');
+    ];
+
+    if (body.encounterContext) {
+      parts.push(`## Контекст арки (encounterContext)\n${JSON.stringify(body.encounterContext, null, 2)}`);
+    }
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
+      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${prevJson}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push(
+        `Сгенерируй ИСПРАВЛЕННУЮ версию диалога для bracket "${body.bracket}". Те же правила, тот же формат JSON. Только JSON.`,
+      );
+    } else {
+      parts.push(`Сгенерируй диалог для bracket "${body.bracket}". Только JSON.`);
+    }
+
+    const userMessage = parts.join('\n\n');
 
     const liId = (body.liCard as { id?: string })?.id ?? '?';
     logger.log(`[dialogueVariant] batch=${batch.batchId} — generating li=${liId} bracket=${body.bracket}...`);

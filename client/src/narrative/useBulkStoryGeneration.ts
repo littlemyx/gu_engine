@@ -23,11 +23,12 @@ import {
   parseAnchorBeat,
   validateAnchorBeat,
   parseBeatPlan,
+  validateDialogueVariant,
 } from './types';
 import { validateBeatPlan } from './validateBeatPlan';
 import { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
 import { buildNarrationWebRequestPayload } from './buildNarrationWebRequest';
-import { buildDialogueVariantRequestPayload } from './buildDialogueVariantRequest';
+import { buildDialogueVariantRequestPayload, buildEncounterContext } from './buildDialogueVariantRequest';
 import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 import { topoOrderAnchors, outgoingOf } from './anchorOrder';
 import { useNarrativeStore } from './narrativeStore';
@@ -382,18 +383,57 @@ export function useBulkStoryGeneration() {
         return;
       }
 
+      const storeNow = useNarrativeStore.getState();
+      const encounterContext = buildEncounterContext(storeNow.beatPlan, outline, storeNow.anchorBeats, li, task.anchor);
+      // recentEvents: сцена-событие якоря, которую игрок только что видел,
+      // с fallback на авторский summary для старых кэшей.
+      const recentEvents = storeNow.anchorBeats[task.anchorId]?.beatText ?? task.anchor.summary;
+
       const variants: DialogueVariant[] = [];
       for (const bracket of BRACKETS) {
         if (cancelledRef.current) break;
         varInFlight++;
         publishVars();
         try {
-          const payload = buildDialogueVariantRequestPayload(brief, li, task.anchor, bracket, task.anchor.summary);
-          const { data, error } = await generateDialogueVariant({ body: payload });
-          if (error || !data) throw new Error(`не удалось запустить генерацию для bracket=${bracket}`);
-          const variant = await pollDialogueVariant(data.batchId);
-          variants.push(variant);
+          const basePayload = buildDialogueVariantRequestPayload(
+            brief,
+            li,
+            task.anchor,
+            bracket,
+            recentEvents,
+            encounterContext,
+          );
+          // Одна retry-попытка при ошибках валидации (нет выхода из диалога).
+          let best: { variant: DialogueVariant; errorCount: number; errors: string[] } | null = null;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            type DialoguePayload = typeof basePayload & {
+              previousAttempt?: DialogueVariant;
+              previousIssues?: string[];
+            };
+            const payload: DialoguePayload =
+              attempt === 0 || !best
+                ? basePayload
+                : { ...basePayload, previousAttempt: best.variant, previousIssues: best.errors };
+            const { data, error } = await generateDialogueVariant({ body: payload });
+            if (error || !data) throw new Error(`не удалось запустить генерацию для bracket=${bracket}`);
+            const variant = await pollDialogueVariant(data.batchId);
+            const issues = validateDialogueVariant(variant);
+            const errors = issues
+              .filter(i => i.severity === 'error')
+              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+            if (!best || errors.length < best.errorCount) {
+              best = { variant, errorCount: errors.length, errors };
+            }
+            if (errors.length === 0) break;
+          }
+          variants.push(best!.variant);
           varCompleted++;
+          if (best!.errorCount > 0) {
+            failures.push({
+              key: `var:${task.anchorId}:${task.liId}:${bracket}`,
+              error: `сохранено с ошибками валидации: ${best!.errors.slice(0, 2).join('; ')}`,
+            });
+          }
         } catch (e) {
           failures.push({
             key: `var:${task.anchorId}:${task.liId}:${bracket}`,

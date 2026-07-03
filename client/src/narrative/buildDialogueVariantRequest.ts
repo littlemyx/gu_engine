@@ -1,13 +1,17 @@
 import type {
+  AnchorBeat,
+  BeatPlan,
   Brief,
   LoveInterestCard,
   ArchetypeProfile,
   StoryAnchor,
+  StoryOutlinePlan,
   DialogueVariantBracket,
   Range,
   StateVarPath,
 } from './types';
 import { ARCHETYPES } from './archetypes';
+import { encounterIndexFor } from './anchorOrder';
 
 function computeBracketRanges(
   bracket: DialogueVariantBracket,
@@ -46,12 +50,67 @@ function computeBracketRanges(
   return ranges;
 }
 
+export type DialogueEncounterContext = {
+  encounterIndex: number;
+  totalPlannedEncounters: number;
+  beatType?: string | null;
+  beatPurpose?: string;
+  goal?: string;
+  liArcSummary?: string;
+  priorEncounters: { anchorId: string; location: string; timeMarker: string; goal: string }[];
+  anchorBeatText?: string;
+};
+
+/**
+ * Контекст арки для диалога: номер встречи по плану, целевой бит,
+ * goals предыдущих встреч. Возвращает undefined, если плана нет или
+ * встреча (anchor, li) в нём не значится.
+ */
+export function buildEncounterContext(
+  plan: BeatPlan | null,
+  outline: StoryOutlinePlan,
+  anchorBeats: Record<string, AnchorBeat>,
+  li: LoveInterestCard,
+  anchor: StoryAnchor,
+): DialogueEncounterContext | undefined {
+  if (!plan) return undefined;
+  const planned = plan.encounters.find(e => e.liId === li.id && e.anchorId === anchor.id);
+  const { index, total, prior } = encounterIndexFor(plan, outline, li.id, anchor.id);
+  if (total === 0) return undefined;
+
+  const anchorById = new Map(outline.anchors.map(a => [a.id, a]));
+  const beatPurpose = planned?.beatType
+    ? ARCHETYPES[li.archetype].requiredBeats.find(b => b.type === planned.beatType)?.purpose
+    : undefined;
+
+  return {
+    encounterIndex: index,
+    totalPlannedEncounters: total,
+    beatType: planned?.beatType ?? null,
+    beatPurpose,
+    goal: planned?.goal,
+    liArcSummary: plan.liArcs.find(a => a.liId === li.id)?.arcSummary,
+    priorEncounters: prior.map(p => {
+      const a = anchorById.get(p.anchorId);
+      const plannedPrior = plan.encounters.find(e => e.liId === li.id && e.anchorId === p.anchorId);
+      return {
+        anchorId: p.anchorId,
+        location: a?.location ?? '',
+        timeMarker: a?.timeMarker ?? '',
+        goal: plannedPrior?.goal ?? '',
+      };
+    }),
+    anchorBeatText: anchorBeats[anchor.id]?.beatText,
+  };
+}
+
 export function buildDialogueVariantRequestPayload(
   brief: Brief,
   li: LoveInterestCard,
   anchor: StoryAnchor,
   bracket: DialogueVariantBracket,
   recentEvents: string,
+  encounterContext?: DialogueEncounterContext,
 ): {
   brief: Brief;
   liCard: LoveInterestCard;
@@ -59,6 +118,7 @@ export function buildDialogueVariantRequestPayload(
   storyContext: { location: string; timeMarker: string; recentEvents: string };
   bracket: DialogueVariantBracket;
   stateRanges: Record<StateVarPath, Range>;
+  encounterContext?: DialogueEncounterContext;
 } {
   const archetypeProfile = ARCHETYPES[li.archetype];
 
@@ -73,5 +133,6 @@ export function buildDialogueVariantRequestPayload(
     },
     bracket,
     stateRanges: computeBracketRanges(bracket, archetypeProfile),
+    ...(encounterContext ? { encounterContext } : {}),
   };
 }

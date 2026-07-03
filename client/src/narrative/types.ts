@@ -851,9 +851,10 @@ export function validateNarrationWeb(
     // встреч у неё не останется активных выходов и движок отрисует «Конец».
     if (scene.choices.every(c => Boolean(c.encounterTrigger))) {
       issues.push({
-        severity: 'warning',
+        severity: 'error',
         scope: `${scene.id}/choices`,
-        message: 'все выборы сцены — encounter-триггеры; нужен хотя бы один обычный выход',
+        message:
+          'все выборы сцены — encounter-триггеры; после состоявшихся встреч у сцены не останется активных выходов (ложный «Конец»). Нужен хотя бы один обычный выход',
       });
     }
   }
@@ -868,9 +869,10 @@ export function validateNarrationWeb(
 
   if (!hasNonEncounterExit) {
     issues.push({
-      severity: 'warning',
+      severity: 'error',
       scope: 'exit',
-      message: 'нет пути к выходу без encounter-а (игрок не может пройти мимо)',
+      message:
+        'нет выхода без encounter-а — обязателен хотя бы один обычный путь к следующему якорю (возврат из диалога идёт в сцену-источник)',
     });
   }
 
@@ -1205,4 +1207,45 @@ export function parseBeatPlan(raw: string): BeatPlan {
   });
 
   return { encounters, liArcs };
+}
+
+/**
+ * Диалог обязан иметь выход: хотя бы один choice с nextSceneId === null.
+ * Это условие критично для met-гейтинга повторных встреч — эффект
+ * «встреча состоялась» вешается на выходные выборы диалога.
+ */
+export function validateDialogueVariant(variant: DialogueVariant): SegmentIssue[] {
+  const issues: SegmentIssue[] = [];
+
+  const sceneIds = new Set(variant.scenes.map(s => s.id));
+  if (!sceneIds.has(variant.entrySceneId)) {
+    issues.push({
+      severity: 'error',
+      scope: 'entry',
+      message: `entrySceneId "${variant.entrySceneId}" не найден среди сцен`,
+    });
+  }
+
+  const hasExitChoice = variant.scenes.some(s => s.choices.length === 0 || s.choices.some(c => c.nextSceneId === null));
+  if (!hasExitChoice) {
+    issues.push({
+      severity: 'error',
+      scope: 'exit',
+      message: 'нет выхода из диалога — хотя бы один choice должен иметь nextSceneId: null',
+    });
+  }
+
+  for (const scene of variant.scenes) {
+    for (const choice of scene.choices) {
+      if (choice.nextSceneId !== null && !sceneIds.has(choice.nextSceneId)) {
+        issues.push({
+          severity: 'error',
+          scope: `${scene.id}/choice/${choice.id}`,
+          message: `nextSceneId "${choice.nextSceneId}" не найден среди сцен диалога`,
+        });
+      }
+    }
+  }
+
+  return issues;
 }

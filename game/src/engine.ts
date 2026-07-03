@@ -132,6 +132,14 @@ export class GameEngine {
     if (!this.currentNode) return;
     const edges = this.getActiveEdges(this.currentNode.id);
     if (edges.length > 0) {
+      // Авто-выход тоже может нести эффекты (например, met-переменные
+      // «встреча состоялась» на терминальной narration-сцене диалога).
+      const output = this.currentNode.data.outputs.find(
+        (o) => o.id === edges[0].sourceHandle,
+      );
+      if (output?.effects) {
+        this.applyEffects(output.effects);
+      }
       this.goTo(edges[0].target);
     }
   }

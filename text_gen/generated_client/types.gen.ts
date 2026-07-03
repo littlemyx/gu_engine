@@ -395,6 +395,27 @@ export type DialogueVariantRequest = {
             number
         ];
     };
+    /**
+     * Arc context from the beat plan: encounter index/total, target
+     * beat, per-encounter goal, prior encounter goals, anchor beat text.
+     *
+     */
+    encounterContext?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Previously generated DialogueVariant that failed validation.
+     * When present alongside previousIssues, the LLM is asked to
+     * produce a corrected version.
+     *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
 };
 
 export type ErrorResponse = {

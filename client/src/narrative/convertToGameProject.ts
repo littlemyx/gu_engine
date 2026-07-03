@@ -499,6 +499,9 @@ export function convertStoryToGameProject(
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
   const allIds = new Set<string>();
+  // Псевдо-переменные «встреча состоялась»: met[<liId>].<anchorId>.
+  // Выставляются выходами диалога, гейтят повторный вход в encounter.
+  const metVars = new Set<string>();
   let routerCount = 0;
   let encountersWired = 0;
   let narrationSceneCount = 0;
@@ -569,6 +572,14 @@ export function convertStoryToGameProject(
     const segImage = imageUrlFor(images[edge.from]);
     const fromAnchor = outline.anchors.find(a => a.id === edge.from);
 
+    // Есть ли у паутины «обычный» выход к следующему якорю (не через
+    // encounter)? Нужен для семантики возврата из диалога: без такого
+    // выхода возврат в сцену-источник осиротил бы следующий якорь
+    // (легаси-паутины из кэша генерились до этого правила).
+    const webHasNonEncounterExit = web.scenes.some(
+      sc => sc.choices.length === 0 || sc.choices.some(c => c.nextSceneId === null && !c.encounterTrigger),
+    );
+
     for (const scene of web.scenes) {
       const sceneId = webSceneIdMap.get(scene.id)!;
       const isNarration = scene.choices.length === 0;
@@ -591,11 +602,37 @@ export function convertStoryToGameProject(
             // Wire encounter: choice → router → variants → return
             const liId = choice.encounterTrigger;
             const routerId = uniqueId(`router_${sceneId}_${liId}`);
+            const anchorIdForMet = fromAnchor?.id ?? edge.from;
+            const metKey = `met[${liId}].${anchorIdForMet}`;
+            // У сцены есть обычный (не-encounter) выбор? Если нет, гейтить
+            // её encounter-рёбра нельзя: после состоявшихся встреч у сцены
+            // не осталось бы активных выходов и движок отрисовал бы ложный
+            // «Конец» (актуально для легаси-паутин из кэша).
+            const sceneHasNormalChoice = scene.choices.some(c => !c.encounterTrigger);
+            const gateRepeat = sceneHasNormalChoice;
+            // После диалога возвращаемся в сцену-источник (её оставшиеся
+            // выборы) — остаток паутины не теряется. Fallback к следующему
+            // якорю: явный nextSceneId отсутствует И паутина не имеет
+            // обычного выхода (иначе следующий якорь осиротеет).
+            const returnToSource = gateRepeat && webHasNonEncounterExit;
             const returnTarget = choice.nextSceneId
               ? webSceneIdMap.get(choice.nextSceneId) ?? choice.nextSceneId
+              : returnToSource
+              ? sceneId
               : edge.to;
 
-            edges.push({ id: `e_${choiceId}`, source: sceneId, sourceHandle: choiceId, target: routerId });
+            // ВАЖНО: met выставляют ВЫХОДЫ диалога, а не сам этот выбор —
+            // choose() применяет эффекты до выбора ребра, и выбор с met:1
+            // деактивировал бы собственное ребро.
+            const encEdge: GameSceneEdge = {
+              id: `e_${choiceId}`,
+              source: sceneId,
+              sourceHandle: choiceId,
+              target: routerId,
+            };
+            if (gateRepeat) encEdge.condition = [{ path: metKey, lte: 0 }];
+            edges.push(encEdge);
+            metVars.add(metKey);
 
             // Router node
             const routerNode: GameSceneNode = {
@@ -615,10 +652,12 @@ export function convertStoryToGameProject(
             );
 
             if (variants.length === 0) {
-              // No variants generated — skip through router
+              // Вариантов нет — роутер проходной. Возврат в сцену-источник
+              // дал бы вечную «пустую» кнопку (роутер эффектов не применяет),
+              // поэтому уводим к следующему якорю, как раньше.
               const skipId = uniqueId(`${routerId}__skip`);
               routerNode.data.outputs.push({ id: skipId, text: '' });
-              edges.push({ id: `e_${skipId}`, source: routerId, sourceHandle: skipId, target: returnTarget });
+              edges.push({ id: `e_${skipId}`, source: routerId, sourceHandle: skipId, target: edge.to });
             } else {
               encountersWired++;
               for (const variant of variants) {
@@ -663,14 +702,19 @@ export function convertStoryToGameProject(
                       : vs.choices.map(c => {
                           const cId = uniqueId(c.id);
                           const out: GameSceneOutput = { id: cId, text: c.text };
+                          // Выход из диалога помечает встречу состоявшейся.
+                          const isExit = c.nextSceneId === null;
+                          const deltas: Record<string, number> = {
+                            ...c.effects.stateDeltas,
+                            ...(isExit ? { [metKey]: 1 } : {}),
+                          };
                           const hasEff =
-                            Object.keys(c.effects.stateDeltas).length > 0 ||
+                            Object.keys(deltas).length > 0 ||
                             c.effects.flagSet.length > 0 ||
                             c.effects.flagClear.length > 0;
                           if (hasEff) {
                             out.effects = {
-                              stateDeltas:
-                                Object.keys(c.effects.stateDeltas).length > 0 ? c.effects.stateDeltas : undefined,
+                              stateDeltas: Object.keys(deltas).length > 0 ? deltas : undefined,
                               flagSet: c.effects.flagSet.length > 0 ? c.effects.flagSet : undefined,
                               flagClear: c.effects.flagClear.length > 0 ? c.effects.flagClear : undefined,
                             };
@@ -680,9 +724,16 @@ export function convertStoryToGameProject(
 
                   if (vs.choices.length === 0) {
                     const autoId = uniqueId(`${vsId}__auto`);
-                    vsOutputs.push({ id: autoId, text: '' });
                     const nextVs = variant.scenes[variant.scenes.indexOf(vs) + 1];
                     const target = nextVs ? varSceneIdMap.get(nextVs.id) ?? nextVs.id : returnTarget;
+                    // Терминальная narration-сцена — тоже выход из диалога:
+                    // движок применяет эффекты авто-выхода в advance().
+                    const isExit = !nextVs;
+                    vsOutputs.push(
+                      isExit
+                        ? { id: autoId, text: '', effects: { stateDeltas: { [metKey]: 1 } } }
+                        : { id: autoId, text: '' },
+                    );
                     edges.push({ id: `e_${autoId}`, source: vsId, sourceHandle: autoId, target });
                   } else {
                     for (const c of vs.choices) {
@@ -756,6 +807,9 @@ export function convertStoryToGameProject(
   // ── 4. Project metadata ───────────────────────────────────────────────
   const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
   const stateSchema = buildStoryStateSchema(brief, outline);
+  for (const key of metVars) {
+    stateSchema.vars[key] = { range: [0, 1], default: 0 };
+  }
   const project: GameProjectFile = {
     title,
     scenes: './scenes.json',
