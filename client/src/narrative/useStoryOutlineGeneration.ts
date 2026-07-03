@@ -81,7 +81,32 @@ export function useStoryOutlineGeneration() {
           setStatus({ state: 'generating', batchId: data.batchId, attempt: attempt + 1 });
 
           const raw = await pollOutlineRaw(data.batchId);
-          const outline = parseStoryOutline(raw);
+
+          let outline: StoryOutlinePlan;
+          try {
+            outline = parseStoryOutline(raw);
+          } catch (parseErr) {
+            // Структурная ошибка ответа — тоже повод для retry-with-feedback:
+            // показываем модели её JSON и сообщение парсера.
+            const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+            let rawObj: StoryOutlinePlan | undefined;
+            try {
+              rawObj = JSON.parse(raw) as StoryOutlinePlan;
+            } catch {
+              rawObj = undefined;
+            }
+            if (rawObj && (!best || best.errors.length > 0)) {
+              best = {
+                outline: rawObj,
+                raw,
+                batchId: data.batchId,
+                errors: [`[error] parse: ${msg}`],
+                warnings: [],
+              };
+            }
+            continue;
+          }
+
           const issues = validateStoryOutline(outline, brief);
           const errors = issues
             .filter(i => i.severity === 'error')
