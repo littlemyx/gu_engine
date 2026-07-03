@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { generateBackground, getBatchStatus, type BatchStatus } from '@root/image_gen/generated_client';
-import type { Brief } from './types';
+import type { Brief, WorldModel } from './types';
 import { useNarrativeStore } from './narrativeStore';
 
 /**
@@ -57,6 +57,12 @@ function buildMasterPrompt(brief: Brief): string {
 type AnchorLike = { id: string; summary: string };
 type OutlineLike = { title?: string; logline?: string; anchors: AnchorLike[] };
 
+/** Ключ фона локации в store.images (легаси-ключи — голые anchorId). */
+export const locationImageKey = (locationId: string): string => `loc:${locationId}`;
+
+/** Единица очереди генерации: локация мира или (легаси) якорь. */
+type ImageTarget = { key: string; description: string };
+
 function buildSceneDescription(anchor: AnchorLike, brief: Brief): string {
   const place = brief.world.setting.place;
   const era = brief.world.setting.era;
@@ -66,6 +72,24 @@ function buildSceneDescription(anchor: AnchorLike, brief: Brief): string {
   // достаточно деталей про место. Контекст брифа добавляем как «обвязку».
   const ctx = [place, era, specifics].filter(Boolean).join(', ');
   return [summary, ctx ? `Setting: ${ctx}` : ''].filter(Boolean).join('\n').slice(0, 1200); // отрезаем чтобы не превысить размер промпта
+}
+
+function buildLocationDescription(
+  loc: { name: string; description: string; pointsOfInterest: string[] },
+  brief: Brief,
+): string {
+  const ctx = [brief.world.setting.place, brief.world.setting.era, brief.world.setting.specifics]
+    .filter(Boolean)
+    .join(', ');
+  return [
+    `${loc.name}. ${loc.description}`,
+    loc.pointsOfInterest.length ? `Key details: ${loc.pointsOfInterest.join(', ')}` : '',
+    ctx ? `Setting: ${ctx}` : '',
+    'Empty background scene, no people.',
+  ]
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 1200);
 }
 
 function buildStoryContext(brief: Brief, outline: OutlineLike): string {
@@ -91,9 +115,20 @@ export function useBulkImageGeneration() {
     cancelledRef.current = false;
 
     const existing = useNarrativeStore.getState().images;
-    const queue: AnchorLike[] = outline.anchors.filter(
-      a => !existing[a.id] || existing[a.id].status === 'failed' || existing[a.id].status === 'pending',
-    );
+    const worldModel: WorldModel | null = useNarrativeStore.getState().worldModel;
+
+    // При наличии модели мира фоны генерятся ПО ЛОКАЦИЯМ (ключ loc:<id>):
+    // одна библиотека выглядит одинаково у всех якорей, генераций меньше.
+    // Без мира — легаси-режим по якорям.
+    const needsWork = (key: string) =>
+      !existing[key] || existing[key].status === 'failed' || existing[key].status === 'pending';
+    const queue: ImageTarget[] = worldModel
+      ? worldModel.locations
+          .map(loc => ({ key: locationImageKey(loc.id), description: buildLocationDescription(loc, brief) }))
+          .filter(t => needsWork(t.key))
+      : outline.anchors
+          .map(a => ({ key: a.id, description: buildSceneDescription(a, brief) }))
+          .filter(t => needsWork(t.key));
 
     const total = queue.length;
     let completed = 0;
@@ -123,32 +158,31 @@ export function useBulkImageGeneration() {
 
     const setStore = useNarrativeStore.getState().setImage;
 
-    const processOne = async (anchor: AnchorLike): Promise<void> => {
+    const processOne = async (target: ImageTarget): Promise<void> => {
       inFlight++;
-      setStore(anchor.id, { status: 'pending' });
+      setStore(target.key, { status: 'pending' });
       publish();
       try {
-        const sceneDescription = buildSceneDescription(anchor, brief);
         const { data, error } = await generateBackground({
           body: {
             masterPrompt,
             storyMasterPrompt: storyContext || undefined,
-            sceneDescription,
+            sceneDescription: target.description,
           },
         });
         if (error || !data) {
           throw new Error('не удалось запустить генерацию');
         }
         const batchId = data.batchId;
-        setStore(anchor.id, { status: 'generating', batchId });
+        setStore(target.key, { status: 'generating', batchId });
 
         const filename = await pollUntilDone(batchId);
-        setStore(anchor.id, { status: 'done', filename });
+        setStore(target.key, { status: 'done', filename });
         completed++;
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
-        failures.push({ anchorId: anchor.id, error });
-        setStore(anchor.id, { status: 'failed', error });
+        failures.push({ anchorId: target.key, error });
+        setStore(target.key, { status: 'failed', error });
       } finally {
         inFlight--;
         publish();

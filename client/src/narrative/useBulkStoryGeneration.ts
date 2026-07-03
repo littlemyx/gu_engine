@@ -4,6 +4,7 @@ import {
   generateDialogueVariant,
   generateAnchorBeat,
   generateBeatPlan,
+  generateWorldModel,
   generateEnding,
   getBatchStatus,
   type BatchStatus,
@@ -12,6 +13,7 @@ import type {
   AnchorBeat,
   BeatPlan,
   Brief,
+  WorldModel,
   EndingKind,
   EndingVariant,
   StoryOutlinePlan,
@@ -30,6 +32,8 @@ import {
   parseEndingVariant,
   validateEndingVariant,
   endingKey,
+  parseWorldModel,
+  validateWorldModel,
 } from './types';
 import { validateBeatPlan } from './validateBeatPlan';
 import { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
@@ -38,6 +42,7 @@ import { buildDialogueVariantRequestPayload, buildEncounterContext } from './bui
 import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 import { buildEndingRequestPayload } from './buildEndingRequest';
 import { topoOrderAnchors, outgoingOf } from './anchorOrder';
+import { locationRoute } from './worldRoutes';
 import { useNarrativeStore } from './narrativeStore';
 
 const CONCURRENCY = 3;
@@ -47,7 +52,13 @@ const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 export type BulkStoryFailure = { key: string; error: string };
 
-export type BulkStoryPhase = 'beat_plan' | 'anchor_beats' | 'narration_webs' | 'dialogue_variants' | 'endings';
+export type BulkStoryPhase =
+  | 'world_model'
+  | 'beat_plan'
+  | 'anchor_beats'
+  | 'narration_webs'
+  | 'dialogue_variants'
+  | 'endings';
 
 export type BulkStoryGenStatus =
   | { state: 'idle' }
@@ -84,6 +95,76 @@ export function useBulkStoryGeneration() {
     const failures: BulkStoryFailure[] = [];
     // Имена и id каста — валидатор labels переходов запрещает упоминать LI.
     const liNames = brief.loveInterests.flatMap(li => [li.name, li.id]).filter(Boolean);
+
+    // Phase −2: world model — реестр локаций со связностью. Один вызов;
+    // при окончательном фейле пайплайн продолжает БЕЗ мира (деградация:
+    // пространственные проверки паутин выключены, всё работает как раньше).
+    {
+      const cachedWorld = store.worldModel;
+      const cachedWorldErrors = cachedWorld
+        ? validateWorldModel(cachedWorld, outline)
+            .filter(i => i.severity === 'error')
+            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`)
+        : [];
+      if (!cachedWorld || cachedWorldErrors.length > 0) {
+        setStatus({
+          state: 'running',
+          phase: 'world_model',
+          total: 1,
+          completed: 0,
+          inFlight: 1,
+          failures: failures.slice(),
+          cancelled: cancelledRef.current,
+        });
+        try {
+          const basePayload = { brief, outline };
+          let best: { world: WorldModel; errorCount: number; errors: string[] } | null =
+            cachedWorld && cachedWorldErrors.length > 0
+              ? { world: cachedWorld, errorCount: cachedWorldErrors.length, errors: cachedWorldErrors }
+              : null;
+          let lastAttemptError: unknown = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              type WorldPayload = typeof basePayload & {
+                previousAttempt?: WorldModel;
+                previousIssues?: string[];
+              };
+              const payload: WorldPayload = !best
+                ? basePayload
+                : { ...basePayload, previousAttempt: best.world, previousIssues: best.errors };
+              const { data, error } = await generateWorldModel({ body: payload });
+              if (error || !data) throw new Error('не удалось запустить построение мира');
+              const world = await pollBatchResult(data.batchId, parseWorldModel);
+              const issues = validateWorldModel(world, outline);
+              const errors = issues
+                .filter(i => i.severity === 'error')
+                .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+              if (!best || errors.length < best.errorCount) {
+                best = { world, errorCount: errors.length, errors };
+              }
+              if (errors.length === 0) break;
+            } catch (attemptErr) {
+              lastAttemptError = attemptErr;
+            }
+          }
+          if (best && best.errorCount === 0) {
+            useNarrativeStore.getState().setWorldModel(best.world);
+          } else if (!best && lastAttemptError) {
+            throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
+          } else {
+            failures.push({
+              key: 'worldModel',
+              error: `модель мира не прошла валидацию (${
+                best?.errorCount ?? '?'
+              } ошибок) — генерация продолжится без неё`,
+            });
+          }
+        } catch (e) {
+          failures.push({ key: 'worldModel', error: e instanceof Error ? e.message : String(e) });
+        }
+      }
+    }
+    const worldModel = useNarrativeStore.getState().worldModel;
 
     // Phase −1: beat plan — один вызов, планирует биты отношений по встречам.
     // При окончательном фейле пайплайн продолжает БЕЗ плана (деградация).
@@ -212,6 +293,7 @@ export function useBulkStoryGeneration() {
               outline,
               anchor,
               useNarrativeStore.getState().anchorBeats,
+              worldModel,
             );
             type AnchorBeatPayload = typeof basePayload & {
               previousAttempt?: AnchorBeat;
@@ -273,11 +355,22 @@ export function useBulkStoryGeneration() {
     // паутина не проходит текущую валидацию — иначе провальная попытка
     // «замерзает» в кэше и ошибки никогда не исправляются. Сохранённая
     // попытка уходит в первый же запрос как previousAttempt.
+    const webRouteContext = (fromId: string, toId: string) => {
+      if (!worldModel) return undefined;
+      const route = locationRoute(worldModel, fromId, toId);
+      if (!route) return undefined;
+      return { routeLocationIds: route.map(r => r.locationId) };
+    };
     const webValidationErrors = (fromId: string, toId: string): string[] => {
       const cached = useNarrativeStore.getState().narrationWebs[`${fromId}->${toId}`];
       if (!cached) return [];
       const anchor = outline.anchors.find(a => a.id === fromId);
-      const issues = validateNarrationWeb(cached, anchor?.availableLIs ?? [], plannedLIsByAnchor.get(fromId) ?? []);
+      const issues = validateNarrationWeb(
+        cached,
+        anchor?.availableLIs ?? [],
+        plannedLIsByAnchor.get(fromId) ?? [],
+        webRouteContext(fromId, toId),
+      );
       return issues.filter(i => i.severity === 'error').map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
     };
     const webQueue = outline.anchorEdges
@@ -316,8 +409,28 @@ export function useBulkStoryGeneration() {
           ...buildNarrationWebRequestPayload(brief, outline, item.fromId, item.toId),
           ...(fromBeatText ? { fromAnchorBeatText: fromBeatText } : {}),
           ...(plannedLIs.length > 0 ? { plannedEncounterLIs: plannedLIs } : {}),
+          ...(() => {
+            const routeSteps = worldModel ? locationRoute(worldModel, item.fromId, item.toId) : null;
+            if (!routeSteps || !worldModel) return {};
+            const locById = new Map(worldModel.locations.map(l => [l.id, l]));
+            const fromLoc = locById.get(routeSteps[0].locationId);
+            const toLoc = locById.get(routeSteps[routeSteps.length - 1].locationId);
+            if (!fromLoc || !toLoc) return {};
+            const asEntity = (l: typeof fromLoc) => ({
+              id: l.id,
+              name: l.name,
+              description: l.description,
+              pointsOfInterest: l.pointsOfInterest,
+            });
+            return {
+              fromLocation: asEntity(fromLoc),
+              toLocation: asEntity(toLoc),
+              route: routeSteps.map(r => ({ locationId: r.locationId, name: r.name, via: r.via })),
+            };
+          })(),
         };
         const availableLIIds = basePayload.availableLIs.map(li => li.liId);
+        const routeCtx = webRouteContext(item.fromId, item.toId);
 
         // Retry-with-feedback. Кэшированная невалидная паутина (перегенерация
         // после прошлого запуска) сидирует best — первый же запрос идёт с её
@@ -344,7 +457,7 @@ export function useBulkStoryGeneration() {
             const { data, error } = await generateNarrationWeb({ body: payload });
             if (error || !data) throw new Error('не удалось запустить генерацию narration web');
             const web = await pollNarrationWeb(data.batchId);
-            const issues = validateNarrationWeb(web, availableLIIds, plannedLIs);
+            const issues = validateNarrationWeb(web, availableLIIds, plannedLIs, routeCtx);
             const errors = issues
               .filter(i => i.severity === 'error')
               .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
@@ -492,6 +605,14 @@ export function useBulkStoryGeneration() {
         varInFlight++;
         publishVars();
         try {
+          const dialogueLoc = (() => {
+            if (!worldModel) return undefined;
+            const locId = worldModel.anchorLocations[task.anchorId];
+            const loc = worldModel.locations.find(l => l.id === locId);
+            return loc
+              ? { name: loc.name, description: loc.description, pointsOfInterest: loc.pointsOfInterest }
+              : undefined;
+          })();
           const basePayload = buildDialogueVariantRequestPayload(
             brief,
             li,
@@ -499,6 +620,7 @@ export function useBulkStoryGeneration() {
             bracket,
             recentEvents,
             encounterContext,
+            dialogueLoc,
           );
           // Retry при ошибках валидации; падение попытки изолировано.
           // Невалидный кэш сидирует best — его ошибки уходят фидбеком.

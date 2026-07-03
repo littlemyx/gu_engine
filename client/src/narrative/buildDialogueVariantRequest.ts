@@ -111,6 +111,7 @@ export function buildDialogueVariantRequestPayload(
   bracket: DialogueVariantBracket,
   recentEvents: string,
   encounterContext?: DialogueEncounterContext,
+  locationEntity?: { name: string; description: string; pointsOfInterest: string[] },
 ): {
   brief: Brief;
   liCard: LoveInterestCard;
@@ -127,7 +128,14 @@ export function buildDialogueVariantRequestPayload(
     liCard: li,
     archetypeProfile,
     storyContext: {
-      location: anchor.location,
+      // Сущность локации из модели мира стабильнее свободного текста якоря.
+      location: locationEntity
+        ? `${locationEntity.name}. ${locationEntity.description}${
+            locationEntity.pointsOfInterest.length
+              ? ` Ключевые точки: ${locationEntity.pointsOfInterest.join(', ')}.`
+              : ''
+          }`
+        : anchor.location,
       timeMarker: anchor.timeMarker,
       recentEvents,
     },

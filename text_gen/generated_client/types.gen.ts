@@ -270,10 +270,52 @@ export type NarrationWebRequest = {
      */
     plannedEncounterLIs?: Array<string>;
     /**
+     * World-model location entity of the FROM anchor.
+     */
+    fromLocation?: {
+        [key: string]: unknown;
+    };
+    /**
+     * World-model location entity of the TO anchor.
+     */
+    toLocation?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Ordered location path from -> to; web scenes must move forward along it.
+     */
+    route?: Array<{
+        locationId: string;
+        name: string;
+        via: string;
+    }>;
+    /**
      * Previously generated NarrationWeb that failed validation.
      * When present alongside previousIssues, the LLM is asked to
      * produce a corrected version.
      *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
+export type WorldModelRequest = {
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * StoryOutlinePlan with anchors (free-text locations) and edges.
+     */
+    outline: {
+        [key: string]: unknown;
+    };
+    /**
+     * Previously generated world model that failed validation.
      */
     previousAttempt?: {
         [key: string]: unknown;
@@ -361,6 +403,16 @@ export type AnchorBeatRequest = {
         location: string;
         timeMarker: string;
     }>;
+    /**
+     * World-model location entity of this anchor.
+     */
+    location?: {
+        [key: string]: unknown;
+    };
+    /**
+     * How the player physically arrives (via of the route's last leg).
+     */
+    arrivedVia?: string;
     /**
      * Previously generated AnchorBeat that failed validation.
      * When present alongside previousIssues, the LLM is asked to
@@ -574,6 +626,22 @@ export type GenerateNarrationWebResponses = {
 };
 
 export type GenerateNarrationWebResponse = GenerateNarrationWebResponses[keyof GenerateNarrationWebResponses];
+
+export type GenerateWorldModelData = {
+    body: WorldModelRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/worldModel';
+};
+
+export type GenerateWorldModelResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateWorldModelResponse = GenerateWorldModelResponses[keyof GenerateWorldModelResponses];
 
 export type GenerateBeatPlanData = {
     body: BeatPlanRequest;

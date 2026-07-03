@@ -116,6 +116,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/worldModel:
+    post:
+      operationId: generateWorldModel
+      summary: Build the persistent world model (locations registry with adjacency) from the outline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorldModelRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /generate/beatPlan:
     post:
       operationId: generateBeatPlan
@@ -568,6 +586,30 @@ components:
           items:
             type: string
           description: LI ids whose encounters are planned at this anchor; the web must contain a trigger for each.
+        fromLocation:
+          type: object
+          additionalProperties: true
+          description: World-model location entity of the FROM anchor.
+        toLocation:
+          type: object
+          additionalProperties: true
+          description: World-model location entity of the TO anchor.
+        route:
+          type: array
+          items:
+            type: object
+            required:
+              - locationId
+              - name
+              - via
+            properties:
+              locationId:
+                type: string
+              name:
+                type: string
+              via:
+                type: string
+          description: Ordered location path from -> to; web scenes must move forward along it.
         previousAttempt:
           type: object
           additionalProperties: true
@@ -576,6 +618,30 @@ components:
             Previously generated NarrationWeb that failed validation.
             When present alongside previousIssues, the LLM is asked to
             produce a corrected version.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
+
+    WorldModelRequest:
+      type: object
+      required:
+        - brief
+        - outline
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+        outline:
+          type: object
+          additionalProperties: true
+          description: StoryOutlinePlan with anchors (free-text locations) and edges.
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Previously generated world model that failed validation.
         previousIssues:
           type: array
           items:
@@ -691,6 +757,13 @@ components:
               timeMarker:
                 type: string
           description: Outgoing anchor targets requiring diegetic transition labels.
+        location:
+          type: object
+          additionalProperties: true
+          description: World-model location entity of this anchor.
+        arrivedVia:
+          type: string
+          description: How the player physically arrives (via of the route's last leg).
         previousAttempt:
           type: object
           additionalProperties: true

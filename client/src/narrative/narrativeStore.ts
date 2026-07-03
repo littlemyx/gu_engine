@@ -4,6 +4,7 @@ import type {
   AnchorBeat,
   BeatPlan,
   EndingVariant,
+  WorldModel,
   GeneratedSegment,
   OutlinePlan,
   StoryOutlinePlan,
@@ -77,6 +78,8 @@ type NarrativeState = {
   beatPlan: BeatPlan | null;
   /** Эпилоги. Ключ: good:<liId> | normal | bad (см. endingKey). */
   endings: Record<string, EndingVariant>;
+  /** Модель мира: реестр локаций со связностью + маппинг якорей. */
+  worldModel: WorldModel | null;
 
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
@@ -97,6 +100,7 @@ type NarrativeState = {
   setBeatPlan: (plan: BeatPlan | null) => void;
   setEnding: (key: string, ending: EndingVariant) => void;
   clearEndings: () => void;
+  setWorldModel: (world: WorldModel | null) => void;
 
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
   getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
@@ -116,6 +120,7 @@ type PersistedNarrativeState = Pick<
   | 'anchorBeats'
   | 'beatPlan'
   | 'endings'
+  | 'worldModel'
 >;
 
 export const useNarrativeStore = create<NarrativeState>()(
@@ -131,6 +136,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       anchorBeats: {},
       beatPlan: null,
       endings: {},
+      worldModel: null,
 
       setOutline: outline => {
         // При установке нового outline сбрасываем outline-зависимые кэши:
@@ -178,6 +184,7 @@ export const useNarrativeStore = create<NarrativeState>()(
           anchorBeats: {},
           beatPlan: null,
           endings: {},
+          worldModel: null,
         });
       },
 
@@ -207,6 +214,8 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       clearEndings: () => set({ endings: {} }),
 
+      setWorldModel: worldModel => set({ worldModel }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
       getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
@@ -217,7 +226,7 @@ export const useNarrativeStore = create<NarrativeState>()(
     }),
     {
       name: 'gu-narrative-state',
-      version: 5,
+      version: 6,
       // Персистим только данные, не действия.
       partialize: state => ({
         outline: state.outline,
@@ -230,6 +239,7 @@ export const useNarrativeStore = create<NarrativeState>()(
         anchorBeats: state.anchorBeats,
         beatPlan: state.beatPlan,
         endings: state.endings,
+        worldModel: state.worldModel,
       }),
       // Без migrate zustand выбрасывает состояние при несовпадении версии —
       // дорогие кэши генерации должны переживать апгрейд схемы.
@@ -248,6 +258,7 @@ export const useNarrativeStore = create<NarrativeState>()(
           anchorBeats: prev.anchorBeats ?? {},
           beatPlan: prev.beatPlan ?? null,
           endings: prev.endings ?? {},
+          worldModel: prev.worldModel ?? null,
         };
       },
     },

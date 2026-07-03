@@ -726,6 +726,8 @@ export type NarrationWebChoice = {
 export type NarrationWebScene = {
   id: string;
   location: string;
+  /** id локации из WorldModel (пространственный контракт; легаси — без него). */
+  locationId?: string;
   narration: string;
   choices: NarrationWebChoice[];
 };
@@ -780,6 +782,7 @@ export function parseNarrationWeb(raw: string): NarrationWeb {
     return {
       id: String(scene.id),
       location: String(scene.location ?? ''),
+      locationId: scene.locationId ? String(scene.locationId) : undefined,
       narration: String(scene.narration ?? ''),
       choices,
     };
@@ -793,10 +796,16 @@ export function parseNarrationWeb(raw: string): NarrationWeb {
   };
 }
 
+export type WebRouteContext = {
+  /** Последовательность локаций пути from→to (id в порядке движения). */
+  routeLocationIds: string[];
+};
+
 export function validateNarrationWeb(
   web: NarrationWeb,
   availableLIIds: string[],
   plannedEncounterLIs?: string[],
+  route?: WebRouteContext,
 ): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
   const sceneById = new Map(web.scenes.map(s => [s.id, s]));
@@ -890,6 +899,67 @@ export function validateNarrationWeb(
           severity: 'error',
           scope: `planned/${liId}`,
           message: `запланированная встреча с "${liId}" отсутствует — нужен choice с encounterTrigger: "${liId}"`,
+        });
+      }
+    }
+  }
+
+  // ── Пространственный контракт (только при наличии модели мира) ───────
+  if (route && route.routeLocationIds.length > 0) {
+    const routeIndex = new Map(route.routeLocationIds.map((id, i) => [id, i]));
+    const fromLocId = route.routeLocationIds[0];
+    const toLocId = route.routeLocationIds[route.routeLocationIds.length - 1];
+
+    for (const scene of web.scenes) {
+      if (!scene.locationId || !routeIndex.has(scene.locationId)) {
+        issues.push({
+          severity: 'error',
+          scope: `route/${scene.id}`,
+          message: `сцена без валидного locationId — допустимы только локации маршрута: ${route.routeLocationIds.join(
+            ', ',
+          )}`,
+        });
+        continue;
+      }
+      for (const choice of scene.choices) {
+        // Движение по маршруту только вперёд.
+        if (choice.nextSceneId !== null) {
+          const next = web.scenes.find(sc => sc.id === choice.nextSceneId);
+          if (next?.locationId && routeIndex.has(next.locationId)) {
+            if (routeIndex.get(next.locationId)! < routeIndex.get(scene.locationId)!) {
+              issues.push({
+                severity: 'error',
+                scope: `route/${scene.id}/choice/${choice.id}`,
+                message: `движение назад по маршруту: ${scene.locationId} → ${next.locationId}`,
+              });
+            }
+          }
+        }
+        // Встречи — только в стартовой локации (там доступны LI якоря).
+        if (choice.encounterTrigger && scene.locationId !== fromLocId) {
+          issues.push({
+            severity: 'error',
+            scope: `route/${scene.id}/choice/${choice.id}`,
+            message: `encounter в "${scene.locationId}" — встречи допустимы только в стартовой локации "${fromLocId}"`,
+          });
+        }
+        // Обычный выход — только по прибытии в конечную локацию.
+        if (choice.nextSceneId === null && !choice.encounterTrigger && scene.locationId !== toLocId) {
+          issues.push({
+            severity: 'error',
+            scope: `route/${scene.id}/choice/${choice.id}`,
+            message: `выход к следующему якорю из "${scene.locationId}" — прибытие возможно только из "${toLocId}"`,
+          });
+        }
+      }
+    }
+    // Auto-exit сцены (choices=[]) тоже обязаны быть в конечной локации.
+    for (const scene of web.scenes) {
+      if (scene.choices.length === 0 && scene.locationId && scene.locationId !== toLocId) {
+        issues.push({
+          severity: 'error',
+          scope: `route/${scene.id}`,
+          message: `сцена с авто-выходом в "${scene.locationId}" — авто-выход телепортирует к якорю, допустим только из "${toLocId}"`,
         });
       }
     }
@@ -1366,5 +1436,174 @@ export function validateEndingVariant(variant: EndingVariant, expectedKind: Endi
       });
     }
   }
+  return issues;
+}
+
+// ============================================================================
+// WORLD MODEL (persistent locations registry with adjacency)
+// ============================================================================
+
+export type WorldLocation = {
+  /** snake_case id: 'library', 'campus_alley'. */
+  id: string;
+  /** Человекочитаемое имя: «университетская библиотека». */
+  name: string;
+  /** Стабильное описание — общий контекст для всех генераторов. */
+  description: string;
+  /** 2-4 ключевые точки: «стол у окна», «стеллажи у входа». */
+  pointsOfInterest: string[];
+  /** Соседние локации и как до них добраться. */
+  adjacent: { locationId: string; via: string }[];
+};
+
+export type WorldModel = {
+  locations: WorldLocation[];
+  /** anchorId -> locationId: где происходит каждый якорь outline. */
+  anchorLocations: Record<string, string>;
+};
+
+export function parseWorldModel(raw: string): WorldModel {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`world model JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('world model must be an object');
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  if (!Array.isArray(obj.locations) || !obj.anchorLocations || typeof obj.anchorLocations !== 'object') {
+    throw new Error('world model missing locations or anchorLocations');
+  }
+
+  const locations: WorldLocation[] = (obj.locations as unknown[]).map((l, i) => {
+    const loc = l as Record<string, unknown>;
+    if (!loc.id || !loc.name) throw new Error(`locations[${i}] missing id or name`);
+    return {
+      id: String(loc.id),
+      name: String(loc.name),
+      description: String(loc.description ?? ''),
+      pointsOfInterest: Array.isArray(loc.pointsOfInterest) ? (loc.pointsOfInterest as string[]).map(String) : [],
+      adjacent: Array.isArray(loc.adjacent)
+        ? (loc.adjacent as unknown[]).map(a => {
+            const adj = a as Record<string, unknown>;
+            return { locationId: String(adj.locationId ?? ''), via: String(adj.via ?? '') };
+          })
+        : [],
+    };
+  });
+
+  const anchorLocations: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj.anchorLocations as Record<string, unknown>)) {
+    anchorLocations[k] = String(v);
+  }
+
+  return { locations, anchorLocations };
+}
+
+export function validateWorldModel(world: WorldModel, outline: StoryOutlinePlan): SegmentIssue[] {
+  const issues: SegmentIssue[] = [];
+  const locIds = new Set(world.locations.map(l => l.id));
+
+  // Уникальность id.
+  if (locIds.size !== world.locations.length) {
+    const seen = new Set<string>();
+    for (const l of world.locations) {
+      if (seen.has(l.id)) {
+        issues.push({ severity: 'error', scope: 'ids', message: `дублирующийся id локации "${l.id}"` });
+      }
+      seen.add(l.id);
+    }
+  }
+
+  // Adjacency ссылается на существующие локации.
+  for (const l of world.locations) {
+    for (const a of l.adjacent) {
+      if (!locIds.has(a.locationId)) {
+        issues.push({
+          severity: 'error',
+          scope: `adjacent/${l.id}`,
+          message: `adjacent ссылается на несуществующую локацию "${a.locationId}"`,
+        });
+      }
+    }
+  }
+
+  // Все якоря замаплены на существующие локации.
+  for (const anchor of outline.anchors) {
+    const locId = world.anchorLocations[anchor.id];
+    if (!locId) {
+      issues.push({
+        severity: 'error',
+        scope: `anchors/${anchor.id}`,
+        message: `якорь "${anchor.id}" не замаплен на локацию`,
+      });
+    } else if (!locIds.has(locId)) {
+      issues.push({
+        severity: 'error',
+        scope: `anchors/${anchor.id}`,
+        message: `якорь "${anchor.id}" замаплен на несуществующую локацию "${locId}"`,
+      });
+    }
+  }
+
+  // Для каждого outline-ребра существует путь в графе локаций (BFS,
+  // adjacency трактуем как неориентированную).
+  const neighbors = new Map<string, Set<string>>();
+  for (const l of world.locations) {
+    if (!neighbors.has(l.id)) neighbors.set(l.id, new Set());
+    for (const a of l.adjacent) {
+      if (!locIds.has(a.locationId)) continue;
+      neighbors.get(l.id)!.add(a.locationId);
+      if (!neighbors.has(a.locationId)) neighbors.set(a.locationId, new Set());
+      neighbors.get(a.locationId)!.add(l.id);
+    }
+  }
+  const reachableFrom = (start: string): Set<string> => {
+    const seen = new Set<string>([start]);
+    const stack = [start];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      for (const n of neighbors.get(cur) ?? []) {
+        if (!seen.has(n)) {
+          seen.add(n);
+          stack.push(n);
+        }
+      }
+    }
+    return seen;
+  };
+
+  for (const edge of outline.anchorEdges) {
+    const fromLoc = world.anchorLocations[edge.from];
+    const toLoc = world.anchorLocations[edge.to];
+    if (!fromLoc || !toLoc || !locIds.has(fromLoc) || !locIds.has(toLoc)) continue; // покрыто выше
+    if (fromLoc === toLoc) continue;
+    if (!reachableFrom(fromLoc).has(toLoc)) {
+      issues.push({
+        severity: 'error',
+        scope: `route/${edge.from}->${edge.to}`,
+        message: `нет пути между локациями "${fromLoc}" и "${toLoc}" — добавь adjacency`,
+      });
+    }
+  }
+
+  // Связность мира целиком (warning — изолированная локация подозрительна).
+  if (world.locations.length > 1) {
+    const seen = reachableFrom(world.locations[0].id);
+    for (const l of world.locations) {
+      if (!seen.has(l.id)) {
+        issues.push({
+          severity: 'warning',
+          scope: `connectivity/${l.id}`,
+          message: `локация "${l.id}" изолирована от остального мира`,
+        });
+      }
+    }
+  }
+
   return issues;
 }

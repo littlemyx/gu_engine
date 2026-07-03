@@ -430,6 +430,7 @@ const AnchorRow: React.FC<{ anchor: StoryAnchor }> = ({ anchor }) => {
 // ────────────────────────────────────────────────────────────────────────────
 
 const PHASE_LABEL: Record<string, string> = {
+  world_model: 'World Model',
   beat_plan: 'Beat Plan',
   anchor_beats: 'Anchor Beats',
   narration_webs: 'Narration Webs',
@@ -819,6 +820,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
   const endings = useNarrativeStore(s => s.endings);
+  const worldModel = useNarrativeStore(s => s.worldModel);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const webCount = Object.keys(narrationWebs).length;
@@ -839,6 +841,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
       endings,
       images,
       characters,
+      worldModel,
     );
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);

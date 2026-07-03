@@ -3,6 +3,7 @@ import type {
   AnchorPlan,
   Brief,
   EndingVariant,
+  WorldModel,
   DraftDialogueLine,
   GeneratedSegment,
   OutlinePlan,
@@ -492,7 +493,18 @@ export function convertStoryToGameProject(
   endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
+  worldModel: WorldModel | null = null,
 ): StoryConversionResult {
+  // Фон: сначала по локации мира (loc:<id>), затем легаси-ключ якоря.
+  const bgForAnchor = (anchorId: string): string => {
+    const locId = worldModel?.anchorLocations[anchorId];
+    const byLoc = locId ? imageUrlFor(images[`loc:${locId}`]) : '';
+    return byLoc || imageUrlFor(images[anchorId]);
+  };
+  const bgForLocation = (locationId: string | undefined, fallback: string): string => {
+    if (!locationId) return fallback;
+    return imageUrlFor(images[`loc:${locationId}`]) || fallback;
+  };
   const transitionLabel = (fromId: string, toId: string): string => {
     const label = anchorBeats[fromId]?.transitions.find(t => t.toAnchorId === toId)?.label?.trim();
     if (label) return label;
@@ -527,7 +539,7 @@ export function convertStoryToGameProject(
   const anchorOutputs = new Map<string, GameSceneOutput[]>();
   for (let ai = 0; ai < outline.anchors.length; ai++) {
     const anchor = outline.anchors[ai];
-    const image = imageUrlFor(images[anchor.id]);
+    const image = bgForAnchor(anchor.id);
     nodes.push({
       id: anchor.id,
       type: 'scene',
@@ -572,7 +584,7 @@ export function convertStoryToGameProject(
       target: webSceneIdMap.get(web.entrySceneId) ?? web.entrySceneId,
     });
 
-    const segImage = imageUrlFor(images[edge.from]);
+    const segImage = bgForAnchor(edge.from);
     const fromAnchor = outline.anchors.find(a => a.id === edge.from);
 
     // Есть ли у паутины «обычный» выход к следующему якорю (не через
@@ -787,7 +799,7 @@ export function convertStoryToGameProject(
         position: { x: 0, y: 0 },
         data: {
           label: escapeNL(scene.narration),
-          image: segImage,
+          image: bgForLocation(scene.locationId, segImage),
           outputs,
           sceneType: isNarration ? 'narration' : 'branch',
         },
@@ -861,7 +873,7 @@ export function convertStoryToGameProject(
             position: { x: 0, y: 0 },
             data: {
               label: escapeNL(sc.narration),
-              image: imageUrlFor(images[resolutionAnchor.id]),
+              image: bgForAnchor(resolutionAnchor.id),
               outputs,
               sceneType: 'narration',
             },

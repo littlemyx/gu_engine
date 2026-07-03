@@ -96,9 +96,36 @@ export interface NarrationWebRequest {
    * ОБЯЗАНА содержать encounter-триггер для каждого из них.
    */
   plannedEncounterLIs?: string[];
+  /** Локация from-якоря (сущность из модели мира). */
+  fromLocation?: { id: string; name: string; description: string; pointsOfInterest: string[] };
+  /** Локация to-якоря (сущность из модели мира). */
+  toLocation?: { id: string; name: string; description: string; pointsOfInterest: string[] };
+  /**
+   * Маршрут from→to по карте мира: последовательность локаций с «via»
+   * (как игрок попадает в каждую следующую). Сцены паутины обязаны идти
+   * по этому маршруту.
+   */
+  route?: { locationId: string; name: string; via: string }[];
   /**
    * Previously generated web that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос на построение модели мира: реестр локаций со связностью,
+ * извлечённый из якорей outline. Локации переиспользуются между якорями.
+ */
+export interface WorldModelRequest {
+  brief: unknown;
+  /** StoryOutlinePlan: якоря с location/timeMarker + рёбра. */
+  outline: unknown;
+  /**
+   * Previously generated world model that failed validation. Present
+   * together with previousIssues during retry-with-feedback flow.
    */
   previousAttempt?: unknown | null;
   /** Issue messages from the previous attempt (verbatim). */
@@ -141,6 +168,10 @@ export interface AnchorBeatRequest {
   predecessorBeats: { anchorId: string; summary: string; beatText?: string }[];
   /** Целевые якоря исходящих рёбер — для подписей переходов. */
   outgoingTargets: { anchorId: string; summary: string; location: string; timeMarker: string }[];
+  /** Локация якоря — сущность из модели мира. */
+  location?: { id: string; name: string; description: string; pointsOfInterest: string[] };
+  /** Как игрок физически прибывает (via последнего плеча маршрута). */
+  arrivedVia?: string;
   /**
    * Previously generated beat that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.

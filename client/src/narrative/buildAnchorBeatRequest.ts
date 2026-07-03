@@ -1,5 +1,6 @@
-import type { AnchorBeat, Brief, StoryAnchor, StoryOutlinePlan } from './types';
-import { ancestorChain, outgoingOf } from './anchorOrder';
+import type { AnchorBeat, Brief, StoryAnchor, StoryOutlinePlan, WorldModel } from './types';
+import { ancestorChain, directPredecessors, outgoingOf } from './anchorOrder';
+import { locationRoute } from './worldRoutes';
 
 /** Сколько последних сцен-предков показываем генератору beat-сцены. */
 const PREDECESSOR_CONTEXT_LIMIT = 4;
@@ -16,12 +17,15 @@ export function buildAnchorBeatRequestPayload(
   outline: StoryOutlinePlan,
   anchor: StoryAnchor,
   anchorBeats: Record<string, AnchorBeat>,
+  worldModel: WorldModel | null = null,
 ): {
   brief: Brief;
   anchor: StoryAnchor;
   actPurpose: string;
   predecessorBeats: { anchorId: string; summary: string; beatText?: string }[];
   outgoingTargets: { anchorId: string; summary: string; location: string; timeMarker: string }[];
+  location?: { id: string; name: string; description: string; pointsOfInterest: string[] };
+  arrivedVia?: string;
 } {
   const actPurpose = outline.acts.find(a => a.act === anchor.act)?.purpose ?? '';
 
@@ -44,5 +48,36 @@ export function buildAnchorBeatRequestPayload(
       timeMarker: a.timeMarker,
     }));
 
-  return { brief, anchor, actPurpose, predecessorBeats, outgoingTargets };
+  // Локация якоря из модели мира + как игрок прибывает (via последнего
+  // плеча маршрута от любого из предков).
+  let location: { id: string; name: string; description: string; pointsOfInterest: string[] } | undefined;
+  let arrivedVia: string | undefined;
+  if (worldModel) {
+    const locId = worldModel.anchorLocations[anchor.id];
+    const loc = worldModel.locations.find(l => l.id === locId);
+    if (loc) {
+      location = {
+        id: loc.id,
+        name: loc.name,
+        description: loc.description,
+        pointsOfInterest: loc.pointsOfInterest,
+      };
+    }
+    const pred = directPredecessors(outline, anchor.id)[0];
+    if (pred) {
+      const route = locationRoute(worldModel, pred, anchor.id);
+      const lastLeg = route && route.length > 1 ? route[route.length - 1] : undefined;
+      if (lastLeg?.via) arrivedVia = lastLeg.via;
+    }
+  }
+
+  return {
+    brief,
+    anchor,
+    actPurpose,
+    predecessorBeats,
+    outgoingTargets,
+    ...(location ? { location } : {}),
+    ...(arrivedVia ? { arrivedVia } : {}),
+  };
 }
