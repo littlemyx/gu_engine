@@ -13,6 +13,7 @@ import {
   useRegeneratePoses,
   CANONICAL_POSES,
   convertStoryToGameProject,
+  compileWorldGameProject,
   downloadJson,
   slugify,
   type ArchetypeProfile,
@@ -25,8 +26,7 @@ import {
   type PoseRegenEntry,
   type PoseRegenStatus,
 } from '@/narrative';
-import { OutlineGraph, type SelectedSegment } from './OutlineGraph';
-import { NarrationWebDrawer } from './NarrationWebDrawer';
+import { OutlineGraph } from './OutlineGraph';
 import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
 import { BriefEditor } from './BriefEditor';
 import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
@@ -37,7 +37,6 @@ const Playground = () => {
   const persistedOutline = useNarrativeStore(s => s.storyOutline);
   const [showRawBrief, setShowRawBrief] = useState(false);
   const [showAnchorList, setShowAnchorList] = useState(false);
-  const [selectedSegment, setSelectedSegment] = useState<SelectedSegment | null>(null);
   const issues = useMemo(() => validateBrief(brief), [brief]);
   const errorCount = issues.filter(i => i.severity === 'error').length;
   const outlineGen = useStoryOutlineGeneration();
@@ -77,7 +76,7 @@ const Playground = () => {
             const outline = activeOutline;
             return (
               <>
-                <OutlineGraph outline={outline} onEdgeClick={setSelectedSegment} selected={selectedSegment} />
+                <OutlineGraph outline={outline} />
                 <CharacterRelationshipPanel outline={outline} />
                 <BulkStoryBar
                   status={bulkGen.status}
@@ -113,14 +112,6 @@ const Playground = () => {
                   </button>
                 </div>
                 {showAnchorList && <OutlineResult outline={outline} />}
-                {selectedSegment && (
-                  <NarrationWebDrawer
-                    outline={outline}
-                    fromId={selectedSegment.fromId}
-                    toId={selectedSegment.toId}
-                    onClose={() => setSelectedSegment(null)}
-                  />
-                )}
               </>
             );
           })()}
@@ -426,14 +417,13 @@ const AnchorRow: React.FC<{ anchor: StoryAnchor }> = ({ anchor }) => {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// BULK STORY GENERATION (narration webs + dialogue variants)
+// BULK STORY GENERATION (world model + beats + dialogue variants + endings)
 // ────────────────────────────────────────────────────────────────────────────
 
 const PHASE_LABEL: Record<string, string> = {
   world_model: 'World Model',
   beat_plan: 'Beat Plan',
   anchor_beats: 'Anchor Beats',
-  narration_webs: 'Narration Webs',
   dialogue_variants: 'Dialogue Variants',
   endings: 'Endings',
 };
@@ -449,7 +439,7 @@ const BulkStoryBar: React.FC<{
       <div className={styles.bulkBar}>
         <div className={styles.bulkLeft}>
           <span className={styles.bulkTitle}>Bulk Story Generation</span>
-          <span className={styles.bulkMeta}>narration webs + dialogue variants · 3 параллельно · ~5–10 минут</span>
+          <span className={styles.bulkMeta}>мир + beat-сцены + диалоги + концовки · 3 параллельно · ~5–10 минут</span>
         </div>
         <button type="button" className={styles.primaryBtn} onClick={onStart}>
           Сгенерировать всё
@@ -487,7 +477,8 @@ const BulkStoryBar: React.FC<{
     <div className={styles.bulkBar}>
       <div className={styles.bulkLeft}>
         <span className={styles.bulkTitle}>
-          Генерация завершена · {status.websGenerated} webs · {status.variantsGenerated} variants
+          Генерация завершена · {status.beatsGenerated} beats · {status.variantsGenerated} variants ·{' '}
+          {status.endingsGenerated} endings
           {status.cancelled && ' (остановлено)'}
         </span>
         <span className={styles.bulkMeta}>
@@ -501,7 +492,7 @@ const BulkStoryBar: React.FC<{
               {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
             </>
           ) : (
-            'все narration webs и dialogue variants сгенерированы'
+            'все артефакты сгенерированы и валидны'
           )}
         </span>
       </div>
@@ -816,14 +807,12 @@ const MissingPosesBar: React.FC<{
 
 const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
-  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
   const endings = useNarrativeStore(s => s.endings);
   const worldModel = useNarrativeStore(s => s.worldModel);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
-  const webCount = Object.keys(narrationWebs).length;
   const beatCount = Object.keys(anchorBeats).length;
   const variantCount = Object.keys(dialogueVariants).length;
   // При наличии модели мира фоны ключуются по loc:<id> — считаем только их.
@@ -832,21 +821,15 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   ).length;
   const imageTotal = worldModel ? worldModel.locations.length : outline.anchors.length;
   const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
-  const edgeCount = outline.anchorEdges.length;
   const liCount = brief.loveInterests.length;
 
   const onExport = () => {
-    const result = convertStoryToGameProject(
-      brief,
-      outline,
-      narrationWebs,
-      dialogueVariants,
-      anchorBeats,
-      endings,
-      images,
-      characters,
-      worldModel,
-    );
+    // С моделью мира игра компилируется как стейт-машина по графу локаций
+    // (свободное перемещение, события/встречи гейтятся состоянием); без неё —
+    // легаси-конвертация (прямые рёбра якорь→якорь).
+    const result = worldModel
+      ? compileWorldGameProject(brief, outline, worldModel, dialogueVariants, anchorBeats, endings, images, characters)
+      : convertStoryToGameProject(brief, outline, {}, dialogueVariants, anchorBeats, endings, images, characters, null);
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
     setTimeout(() => downloadJson('scenes.json', result.scenes), 250);
@@ -857,9 +840,9 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
       <div className={styles.exportLeft}>
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
-          {beatCount}/{outline.anchors.length} beat-сцен · {webCount}/{edgeCount} narration webs · {variantCount}{' '}
-          dialogue variants · {Object.keys(endings).length} концовок · {imageCount}/{imageTotal} фонов ·{' '}
-          {characterCount}/{liCount} спрайтов
+          {beatCount}/{outline.anchors.length} beat-сцен · {variantCount} dialogue variants ·{' '}
+          {Object.keys(endings).length} концовок · {imageCount}/{imageTotal} фонов · {characterCount}/{liCount} спрайтов
+          {worldModel ? ` · ${worldModel.locations.length} локаций` : ' · без модели мира'}
         </span>
       </div>
       <button type="button" className={styles.primaryBtn} onClick={onExport}>

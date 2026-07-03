@@ -45,6 +45,7 @@ export {
   type GameSceneGraph,
   type GameProjectFile,
 } from './convertToGameProject';
+export { compileWorldGameProject, type WorldCompileResult, type WorldCompileStats } from './compileWorldGame';
 export { useStoryOutlineGeneration } from './useStoryOutlineGeneration';
 export type { StoryOutlineGenStatus } from './useStoryOutlineGeneration';
 export { useBulkStoryGeneration } from './useBulkStoryGeneration';

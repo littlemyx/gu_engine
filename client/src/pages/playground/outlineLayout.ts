@@ -1,12 +1,6 @@
 import type { Node, Edge } from '@xyflow/react';
 import dagre from '@dagrejs/dagre';
-import {
-  type StoryAnchor,
-  type ImageGenState,
-  type StoryOutlinePlan,
-  type NarrationWeb,
-  IMAGE_SERVER_BASE,
-} from '@/narrative';
+import { type StoryAnchor, type ImageGenState, type StoryOutlinePlan, IMAGE_SERVER_BASE } from '@/narrative';
 
 export type AnchorNodeData = StoryAnchor & {
   actColor: string;
@@ -39,7 +33,6 @@ const imageUrlFor = (s: ImageGenState | undefined): string | null => {
 
 export function computeAnchorLayout(
   outline: StoryOutlinePlan,
-  narrationWebs: Record<string, NarrationWeb> = {},
   images: Record<string, ImageGenState> = {},
 ): {
   nodes: Node<AnchorNodeData>[];
@@ -86,8 +79,6 @@ export function computeAnchorLayout(
 
   const edges: Edge[] = outline.anchorEdges.map((e, i) => {
     const targetAnchor = anchorById.get(e.to);
-    const segKey = `${e.from}->${e.to}`;
-    const hasWeb = !!narrationWebs[segKey];
     const color = targetAnchor ? actColor(targetAnchor.act) : '#9ca3af';
 
     return {
@@ -96,13 +87,8 @@ export function computeAnchorLayout(
       target: e.to,
       type: 'smoothstep',
       animated: false,
-      style: hasWeb
-        ? { stroke: color, strokeWidth: 2.5 }
-        : { stroke: color, strokeWidth: 1, strokeDasharray: '4 4', opacity: 0.6 },
+      style: { stroke: color, strokeWidth: 2 },
       interactionWidth: 20,
-      label: hasWeb ? '✓' : undefined,
-      labelStyle: hasWeb ? { fill: color, fontWeight: 700 } : undefined,
-      labelBgStyle: hasWeb ? { fill: '#fff', fillOpacity: 0.9 } : undefined,
     };
   });
 

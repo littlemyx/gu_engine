@@ -14,10 +14,8 @@ type Props = {
 };
 
 type EncounterPoint = {
+  /** Якорь-этап, на котором доступна встреча (компилятор мира подключает её в hub локации). */
   fromId: string;
-  toId: string;
-  sceneId: string;
-  choiceText: string;
   location: string;
 };
 
@@ -44,40 +42,16 @@ const BRACKET_COLOR: Record<string, string> = {
 
 export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
-  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const characters = useNarrativeStore(s => s.characters);
 
   const liData = useMemo((): LiRelationshipData[] => {
     return brief.loveInterests.map(li => {
-      const anchorsPresent = outline.anchors.filter(a => a.availableLIs.includes(li.id)).map(a => a.id);
-
-      // Обходим рёбра в топологическом порядке якорей, а не в порядке
-      // вставки в стор — таймлайн встреч должен совпадать с порядком сюжета.
-      const topoIndex = new Map(topoOrderAnchors(outline).map((a, i) => [a.id, i]));
-      const orderedEdges = [...outline.anchorEdges].sort(
-        (a, b) => (topoIndex.get(a.from) ?? 0) - (topoIndex.get(b.from) ?? 0),
-      );
-
-      const encounters: EncounterPoint[] = [];
-      for (const edge of orderedEdges) {
-        const web = narrationWebs[`${edge.from}->${edge.to}`];
-        if (!web) continue;
-        const fromAnchor = outline.anchors.find(a => a.id === edge.from);
-        for (const scene of web.scenes) {
-          for (const choice of scene.choices) {
-            if (choice.encounterTrigger === li.id) {
-              encounters.push({
-                fromId: edge.from,
-                toId: edge.to,
-                sceneId: scene.id,
-                choiceText: choice.text,
-                location: scene.location || fromAnchor?.location || '',
-              });
-            }
-          }
-        }
-      }
+      // Встречи детерминированы: компилятор мира подключает encounter для
+      // каждой пары (якорь, LI из availableLIs) — в топо-порядке сюжета.
+      const anchorsWithLi = topoOrderAnchors(outline).filter(a => a.availableLIs.includes(li.id));
+      const anchorsPresent = anchorsWithLi.map(a => a.id);
+      const encounters: EncounterPoint[] = anchorsWithLi.map(a => ({ fromId: a.id, location: a.location }));
 
       const variants: Record<string, DialogueVariant[]> = {};
       for (const [key, dvs] of Object.entries(dialogueVariants)) {
@@ -101,7 +75,7 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
         variants,
       };
     });
-  }, [brief.loveInterests, outline, narrationWebs, dialogueVariants, characters]);
+  }, [brief.loveInterests, outline, dialogueVariants, characters]);
 
   if (liData.length === 0) return null;
 
@@ -160,7 +134,7 @@ const LiCard: React.FC<{ li: LiRelationshipData; outline: StoryOutlinePlan }> = 
       )}
 
       {totalEncounters === 0 && Object.keys(li.variants).length === 0 && (
-        <div className={styles.emptyState}>Encounter-ов пока нет. Сгенерируй narration web-ы.</div>
+        <div className={styles.emptyState}>Встреч нет: персонаж не указан в availableLIs ни одного якоря.</div>
       )}
     </div>
   );
@@ -221,12 +195,9 @@ const EncounterRow: React.FC<{
 }> = ({ enc, variants }) => (
   <div className={styles.encounterRow}>
     <div className={styles.encounterLocation}>
-      <span className={styles.encounterEdge}>
-        {enc.fromId} → {enc.toId}
-      </span>
+      <span className={styles.encounterEdge}>{enc.fromId}</span>
       {enc.location && <span className={styles.encounterPlace}>{enc.location}</span>}
     </div>
-    <div className={styles.encounterChoice}>«{enc.choiceText}»</div>
     <div className={styles.bracketRow}>
       {(['positive', 'neutral', 'negative'] as const).map(bracket => {
         const has = variants.some(v => v.bracket === bracket);

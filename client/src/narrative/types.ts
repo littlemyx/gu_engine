@@ -796,262 +796,6 @@ export function parseNarrationWeb(raw: string): NarrationWeb {
   };
 }
 
-export type WebRouteContext = {
-  /** Последовательность локаций пути from→to (id в порядке движения). */
-  routeLocationIds: string[];
-};
-
-export function validateNarrationWeb(
-  web: NarrationWeb,
-  availableLIIds: string[],
-  plannedEncounterLIs?: string[],
-  route?: WebRouteContext,
-): SegmentIssue[] {
-  const issues: SegmentIssue[] = [];
-  const sceneById = new Map(web.scenes.map(s => [s.id, s]));
-
-  if (!sceneById.has(web.entrySceneId)) {
-    issues.push({
-      severity: 'error',
-      scope: 'entry',
-      message: `entrySceneId "${web.entrySceneId}" не найден среди сцен`,
-    });
-  }
-
-  let hasExitPath = false;
-  let hasNonEncounterExit = false;
-
-  // Сцена «умеет выходить» сама: choices=[] (авто-выход) или choice с
-  // nextSceneId=null. Encounter-выход тоже выход (диалог вернёт к якорю).
-  const canExitDirectly = (scene: NarrationWebScene): boolean =>
-    scene.choices.length === 0 || scene.choices.some(c => c.nextSceneId === null);
-
-  for (const scene of web.scenes) {
-    if (scene.choices.length === 0) {
-      hasExitPath = true;
-      hasNonEncounterExit = true;
-      continue;
-    }
-
-    for (const choice of scene.choices) {
-      if (choice.nextSceneId === null && !choice.encounterTrigger) {
-        hasExitPath = true;
-        hasNonEncounterExit = true;
-      } else if (choice.nextSceneId === null && choice.encounterTrigger) {
-        hasExitPath = true;
-      } else if (choice.nextSceneId !== null && !sceneById.has(choice.nextSceneId)) {
-        issues.push({
-          severity: 'error',
-          scope: `${scene.id}/choice/${choice.id}`,
-          message: `nextSceneId "${choice.nextSceneId}" не найден среди сцен`,
-        });
-      }
-
-      if (choice.encounterTrigger && !availableLIIds.includes(choice.encounterTrigger)) {
-        issues.push({
-          severity: 'error',
-          scope: `${scene.id}/choice/${choice.id}`,
-          message: `encounterTrigger "${choice.encounterTrigger}" не найден в availableLIs`,
-        });
-      }
-    }
-
-    // Сцена, где ВСЕ выборы — encounter-триггеры: после гейтинга повторных
-    // встреч у неё не останется активных выходов и движок отрисует «Конец».
-    if (scene.choices.every(c => Boolean(c.encounterTrigger))) {
-      issues.push({
-        severity: 'error',
-        scope: `${scene.id}/choices`,
-        message:
-          'все выборы сцены — encounter-триггеры; после состоявшихся встреч у сцены не останется активных выходов (ложный «Конец»). Нужен хотя бы один обычный выход',
-      });
-    }
-  }
-
-  if (!hasExitPath) {
-    issues.push({
-      severity: 'error',
-      scope: 'exit',
-      message: 'нет пути к выходу (ни один choice не ведёт к anchorTo)',
-    });
-  }
-
-  if (!hasNonEncounterExit) {
-    issues.push({
-      severity: 'error',
-      scope: 'exit',
-      message:
-        'нет выхода без encounter-а — обязателен хотя бы один обычный путь к следующему якорю (возврат из диалога идёт в сцену-источник)',
-    });
-  }
-
-  // Запланированные beat-планом встречи обязаны присутствовать в паутине.
-  if (plannedEncounterLIs && plannedEncounterLIs.length > 0) {
-    const present = new Set<string>();
-    for (const scene of web.scenes) {
-      for (const choice of scene.choices) {
-        if (choice.encounterTrigger) present.add(choice.encounterTrigger);
-      }
-    }
-    for (const liId of plannedEncounterLIs) {
-      if (!present.has(liId)) {
-        issues.push({
-          severity: 'error',
-          scope: `planned/${liId}`,
-          message: `запланированная встреча с "${liId}" отсутствует — нужен choice с encounterTrigger: "${liId}"`,
-        });
-      }
-    }
-  }
-
-  // ── Пространственный контракт (только при наличии модели мира) ───────
-  if (route && route.routeLocationIds.length > 0) {
-    const routeIndex = new Map(route.routeLocationIds.map((id, i) => [id, i]));
-    const fromLocId = route.routeLocationIds[0];
-    const toLocId = route.routeLocationIds[route.routeLocationIds.length - 1];
-
-    for (const scene of web.scenes) {
-      if (!scene.locationId || !routeIndex.has(scene.locationId)) {
-        issues.push({
-          severity: 'error',
-          scope: `route/${scene.id}`,
-          message: `сцена без валидного locationId — допустимы только локации маршрута: ${route.routeLocationIds.join(
-            ', ',
-          )}`,
-        });
-        continue;
-      }
-      for (const choice of scene.choices) {
-        // Движение по маршруту только вперёд.
-        if (choice.nextSceneId !== null) {
-          const next = web.scenes.find(sc => sc.id === choice.nextSceneId);
-          if (next?.locationId && routeIndex.has(next.locationId)) {
-            if (routeIndex.get(next.locationId)! < routeIndex.get(scene.locationId)!) {
-              issues.push({
-                severity: 'error',
-                scope: `route/${scene.id}/choice/${choice.id}`,
-                message: `движение назад по маршруту: ${scene.locationId} → ${next.locationId}`,
-              });
-            }
-          }
-        }
-        // Встречи — только в стартовой локации (там доступны LI якоря).
-        if (choice.encounterTrigger && scene.locationId !== fromLocId) {
-          issues.push({
-            severity: 'error',
-            scope: `route/${scene.id}/choice/${choice.id}`,
-            message: `encounter в "${scene.locationId}" — встречи допустимы только в стартовой локации "${fromLocId}"`,
-          });
-        }
-        // Обычный выход — только по прибытии в конечную локацию.
-        if (choice.nextSceneId === null && !choice.encounterTrigger && scene.locationId !== toLocId) {
-          issues.push({
-            severity: 'error',
-            scope: `route/${scene.id}/choice/${choice.id}`,
-            message: `выход к следующему якорю из "${scene.locationId}" — прибытие возможно только из "${toLocId}"`,
-          });
-        }
-      }
-    }
-    // Auto-exit сцены (choices=[]) тоже обязаны быть в конечной локации.
-    for (const scene of web.scenes) {
-      if (scene.choices.length === 0 && scene.locationId && scene.locationId !== toLocId) {
-        issues.push({
-          severity: 'error',
-          scope: `route/${scene.id}`,
-          message: `сцена с авто-выходом в "${scene.locationId}" — авто-выход телепортирует к якорю, допустим только из "${toLocId}"`,
-        });
-      }
-    }
-  }
-
-  // ── Графовые проверки ────────────────────────────────────────────────
-  const forward = (id: string): string[] =>
-    (sceneById.get(id)?.choices ?? [])
-      .map(c => c.nextSceneId)
-      .filter((n): n is string => n !== null && sceneById.has(n));
-
-  // Достижимость от entry.
-  const reachable = new Set<string>();
-  if (sceneById.has(web.entrySceneId)) {
-    const stack = [web.entrySceneId];
-    while (stack.length) {
-      const cur = stack.pop()!;
-      if (reachable.has(cur)) continue;
-      reachable.add(cur);
-      stack.push(...forward(cur));
-    }
-    for (const scene of web.scenes) {
-      if (!reachable.has(scene.id)) {
-        issues.push({
-          severity: 'error',
-          scope: `reachability/${scene.id}`,
-          message: 'сцена недостижима от entrySceneId',
-        });
-      }
-    }
-  }
-
-  // Выходимость: из каждой достижимой сцены должен достигаться выход,
-  // иначе игрок запирается в подграфе без конца (softlock).
-  for (const startId of reachable) {
-    const seen = new Set<string>();
-    const stack = [startId];
-    let exitFound = false;
-    while (stack.length && !exitFound) {
-      const cur = stack.pop()!;
-      if (seen.has(cur)) continue;
-      seen.add(cur);
-      const scene = sceneById.get(cur)!;
-      if (canExitDirectly(scene)) {
-        exitFound = true;
-        break;
-      }
-      stack.push(...forward(cur));
-    }
-    if (!exitFound) {
-      issues.push({
-        severity: 'error',
-        scope: `exit/${startId}`,
-        message: 'из этой сцены недостижим ни один выход из паутины (softlock)',
-      });
-    }
-  }
-
-  // Циклы: допустимы («вернуться назад»), но помечаем предупреждением.
-  const WHITE = 0,
-    GRAY = 1,
-    BLACK = 2;
-  const color = new Map<string, number>();
-  const cycleEdges: string[] = [];
-  const dfs = (id: string): void => {
-    color.set(id, GRAY);
-    for (const next of forward(id)) {
-      const c = color.get(next) ?? WHITE;
-      if (c === GRAY) {
-        cycleEdges.push(`${id} -> ${next}`);
-      } else if (c === WHITE) {
-        dfs(next);
-      }
-    }
-    color.set(id, BLACK);
-  };
-  for (const scene of web.scenes) {
-    if ((color.get(scene.id) ?? WHITE) === WHITE) dfs(scene.id);
-  }
-  if (cycleEdges.length > 0) {
-    issues.push({
-      severity: 'warning',
-      scope: 'cycle',
-      message: `в паутине есть циклы: ${cycleEdges.slice(0, 3).join('; ')}${
-        cycleEdges.length > 3 ? ` (+${cycleEdges.length - 3})` : ''
-      }`,
-    });
-  }
-
-  return issues;
-}
-
 // ============================================================================
 // DIALOGUE VARIANT (encounter dialogue per relationship bracket)
 // ============================================================================
@@ -1306,6 +1050,21 @@ export function parseBeatPlan(raw: string): BeatPlan {
 }
 
 /**
+ * Выбор-вопрос: литеральный («…нужна ли помощь?») или намерение спросить
+ * («Спросить, нужна ли помощь», «Уточнить…», «Поинтересоваться…»).
+ * Такой выбор обязан вести к сцене с ответом, а не завершать диалог.
+ */
+// \b тут не годится: в JS \w/\b — ASCII-семантика, для кириллицы границы
+// слова нет никогда. Эмулируем границу через (?![а-яё]).
+const QUESTION_INTENT_RE =
+  /^(спросить|расспросить|переспросить|уточнить|поинтересоваться|узнать|выяснить|задать вопрос)(?![а-яё])/i;
+
+export function isQuestionChoice(text: string): boolean {
+  const t = text.trim();
+  return t.endsWith('?') || QUESTION_INTENT_RE.test(t);
+}
+
+/**
  * Диалог обязан иметь выход: хотя бы один choice с nextSceneId === null.
  * Это условие критично для met-гейтинга повторных встреч — эффект
  * «встреча состоялась» вешается на выходные выборы диалога.
@@ -1342,7 +1101,9 @@ export function validateDialogueVariant(variant: DialogueVariant): SegmentIssue[
       }
       // Вопрос, завершающий диалог, оставляет игрока без ответа — выходные
       // реплики обязаны быть завершающими (прощание, закрытие темы).
-      if (choice.nextSceneId === null && choice.text.trim().endsWith('?')) {
+      // Ловим и литеральный вопрос («...нужна ли помощь?»), и выбор-намерение
+      // («Спросить, нужна ли помощь») — оба требуют сцены с ответом.
+      if (choice.nextSceneId === null && isQuestionChoice(choice.text)) {
         issues.push({
           severity: 'error',
           scope: `${scene.id}/choice/${choice.id}`,

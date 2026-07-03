@@ -1,6 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
 import {
-  generateNarrationWeb,
   generateDialogueVariant,
   generateAnchorBeat,
   generateBeatPlan,
@@ -17,13 +16,10 @@ import type {
   EndingKind,
   EndingVariant,
   StoryOutlinePlan,
-  NarrationWeb,
   DialogueVariant,
   DialogueVariantBracket,
 } from './types';
 import {
-  parseNarrationWeb,
-  validateNarrationWeb,
   parseDialogueVariant,
   parseAnchorBeat,
   validateAnchorBeat,
@@ -37,12 +33,10 @@ import {
 } from './types';
 import { validateBeatPlan } from './validateBeatPlan';
 import { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
-import { buildNarrationWebRequestPayload } from './buildNarrationWebRequest';
 import { buildDialogueVariantRequestPayload, buildEncounterContext } from './buildDialogueVariantRequest';
 import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 import { buildEndingRequestPayload } from './buildEndingRequest';
 import { topoOrderAnchors, outgoingOf } from './anchorOrder';
-import { locationRoute } from './worldRoutes';
 import { useNarrativeStore } from './narrativeStore';
 
 const CONCURRENCY = 3;
@@ -52,13 +46,7 @@ const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 export type BulkStoryFailure = { key: string; error: string };
 
-export type BulkStoryPhase =
-  | 'world_model'
-  | 'beat_plan'
-  | 'anchor_beats'
-  | 'narration_webs'
-  | 'dialogue_variants'
-  | 'endings';
+export type BulkStoryPhase = 'world_model' | 'beat_plan' | 'anchor_beats' | 'dialogue_variants' | 'endings';
 
 export type BulkStoryGenStatus =
   | { state: 'idle' }
@@ -74,7 +62,6 @@ export type BulkStoryGenStatus =
   | {
       state: 'done';
       beatsGenerated: number;
-      websGenerated: number;
       variantsGenerated: number;
       endingsGenerated: number;
       failures: BulkStoryFailure[];
@@ -168,7 +155,17 @@ export function useBulkStoryGeneration() {
 
     // Phase −1: beat plan — один вызов, планирует биты отношений по встречам.
     // При окончательном фейле пайплайн продолжает БЕЗ плана (деградация).
-    if (!store.beatPlan) {
+    // Кэшированный план перепроверяется против ТЕКУЩЕГО outline: протухшая
+    // пара (якорь, LI) иначе замерзает в кэше и вечно плодит задачи-фантомы.
+    const cachedPlanValid = (() => {
+      if (!store.beatPlan) return false;
+      const slots = computeEncounterSlots(outline);
+      return validateBeatPlan(store.beatPlan, outline, brief, slots).filter(i => i.severity === 'error').length === 0;
+    })();
+    if (store.beatPlan && !cachedPlanValid) {
+      useNarrativeStore.getState().setBeatPlan(null);
+    }
+    if (!cachedPlanValid) {
       setStatus({
         state: 'running',
         phase: 'beat_plan',
@@ -231,7 +228,6 @@ export function useBulkStoryGeneration() {
       setStatus({
         state: 'done',
         beatsGenerated: 0,
-        websGenerated: 0,
         variantsGenerated: 0,
         endingsGenerated: 0,
         failures,
@@ -340,7 +336,6 @@ export function useBulkStoryGeneration() {
       setStatus({
         state: 'done',
         beatsGenerated,
-        websGenerated: 0,
         variantsGenerated: 0,
         endingsGenerated: 0,
         failures,
@@ -350,174 +345,13 @@ export function useBulkStoryGeneration() {
       return;
     }
 
-    // Phase 1: narration webs
-    // В очередь попадают рёбра без паутины И рёбра, чья закэшированная
-    // паутина не проходит текущую валидацию — иначе провальная попытка
-    // «замерзает» в кэше и ошибки никогда не исправляются. Сохранённая
-    // попытка уходит в первый же запрос как previousAttempt.
-    const webRouteContext = (fromId: string, toId: string) => {
-      if (!worldModel) return undefined;
-      const route = locationRoute(worldModel, fromId, toId);
-      if (!route) return undefined;
-      return { routeLocationIds: route.map(r => r.locationId) };
-    };
-    const webValidationErrors = (fromId: string, toId: string): string[] => {
-      const cached = useNarrativeStore.getState().narrationWebs[`${fromId}->${toId}`];
-      if (!cached) return [];
-      const anchor = outline.anchors.find(a => a.id === fromId);
-      const issues = validateNarrationWeb(
-        cached,
-        anchor?.availableLIs ?? [],
-        plannedLIsByAnchor.get(fromId) ?? [],
-        webRouteContext(fromId, toId),
-      );
-      return issues.filter(i => i.severity === 'error').map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-    };
-    const webQueue = outline.anchorEdges
-      .filter(e => {
-        const cached = store.narrationWebs[`${e.from}->${e.to}`];
-        if (!cached) return true;
-        return webValidationErrors(e.from, e.to).length > 0;
-      })
-      .map(e => ({ fromId: e.from, toId: e.to }));
+    // Narration webs выпилены: игра компилируется как стейт-машина по графу
+    // локаций (compileWorldGame), маршруты и встречи детерминированы —
+    // LLM-паутины между якорями больше не генерируются и не читаются.
 
-    let webCompleted = 0;
-    let webInFlight = 0;
-    const webTotal = webQueue.length;
-
-    const publishWebs = () => {
-      setStatus({
-        state: 'running',
-        phase: 'narration_webs',
-        total: webTotal,
-        completed: webCompleted,
-        inFlight: webInFlight,
-        failures: failures.slice(),
-        cancelled: cancelledRef.current,
-      });
-    };
-
-    publishWebs();
-
-    const processWeb = async (item: { fromId: string; toId: string }) => {
-      webInFlight++;
-      publishWebs();
-      try {
-        const fromBeatText = useNarrativeStore.getState().anchorBeats[item.fromId]?.beatText;
-        const plannedLIs = plannedLIsByAnchor.get(item.fromId) ?? [];
-        const basePayload = {
-          ...buildNarrationWebRequestPayload(brief, outline, item.fromId, item.toId),
-          ...(fromBeatText ? { fromAnchorBeatText: fromBeatText } : {}),
-          ...(plannedLIs.length > 0 ? { plannedEncounterLIs: plannedLIs } : {}),
-          ...(() => {
-            const routeSteps = worldModel ? locationRoute(worldModel, item.fromId, item.toId) : null;
-            if (!routeSteps || !worldModel) return {};
-            const locById = new Map(worldModel.locations.map(l => [l.id, l]));
-            const fromLoc = locById.get(routeSteps[0].locationId);
-            const toLoc = locById.get(routeSteps[routeSteps.length - 1].locationId);
-            if (!fromLoc || !toLoc) return {};
-            const asEntity = (l: typeof fromLoc) => ({
-              id: l.id,
-              name: l.name,
-              description: l.description,
-              pointsOfInterest: l.pointsOfInterest,
-            });
-            return {
-              fromLocation: asEntity(fromLoc),
-              toLocation: asEntity(toLoc),
-              route: routeSteps.map(r => ({ locationId: r.locationId, name: r.name, via: r.via })),
-            };
-          })(),
-        };
-        const availableLIIds = basePayload.availableLIs.map(li => li.liId);
-        const routeCtx = webRouteContext(item.fromId, item.toId);
-
-        // Retry-with-feedback. Кэшированная невалидная паутина (перегенерация
-        // после прошлого запуска) сидирует best — первый же запрос идёт с её
-        // ошибками как фидбеком. Падение отдельной попытки (invalid JSON,
-        // timeout) съедает попытку, а не весь цикл.
-        let best: { web: NarrationWeb; errorCount: number; errors: string[] } | null = null;
-        const cachedWeb = useNarrativeStore.getState().narrationWebs[`${item.fromId}->${item.toId}`];
-        if (cachedWeb) {
-          const cachedErrors = webValidationErrors(item.fromId, item.toId);
-          if (cachedErrors.length > 0) {
-            best = { web: cachedWeb, errorCount: cachedErrors.length, errors: cachedErrors };
-          }
-        }
-        let lastAttemptError: unknown = null;
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            const payload = !best
-              ? basePayload
-              : {
-                  ...basePayload,
-                  previousAttempt: best.web,
-                  previousIssues: best.errors,
-                };
-            const { data, error } = await generateNarrationWeb({ body: payload });
-            if (error || !data) throw new Error('не удалось запустить генерацию narration web');
-            const web = await pollNarrationWeb(data.batchId);
-            const issues = validateNarrationWeb(web, availableLIIds, plannedLIs, routeCtx);
-            const errors = issues
-              .filter(i => i.severity === 'error')
-              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-            if (!best || errors.length < best.errorCount) {
-              best = { web, errorCount: errors.length, errors };
-            }
-            if (errors.length === 0) break;
-          } catch (attemptErr) {
-            lastAttemptError = attemptErr;
-          }
-        }
-        if (!best) {
-          throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
-        }
-
-        // Сохраняем лучшую попытку в любом случае (частично валидная паутина
-        // лучше дыры в графе), но фейл с ошибками показываем в UI.
-        useNarrativeStore.getState().setNarrationWeb(item.fromId, item.toId, best!.web);
-        webCompleted++;
-        if (best!.errorCount > 0) {
-          failures.push({
-            key: `web:${item.fromId}->${item.toId}`,
-            error: `сохранено с ${best!.errorCount} ошибками валидации: ${best!.errors.slice(0, 2).join('; ')}`,
-          });
-        }
-      } catch (e) {
-        failures.push({ key: `web:${item.fromId}->${item.toId}`, error: e instanceof Error ? e.message : String(e) });
-      } finally {
-        webInFlight--;
-        publishWebs();
-      }
-    };
-
-    const webWorker = async () => {
-      while (webQueue.length > 0 && !cancelledRef.current) {
-        await processWeb(webQueue.shift()!);
-      }
-    };
-
-    await Promise.all(Array.from({ length: CONCURRENCY }, () => webWorker()));
-
-    if (cancelledRef.current) {
-      setStatus({
-        state: 'done',
-        beatsGenerated,
-        websGenerated: webCompleted,
-        variantsGenerated: 0,
-        endingsGenerated: 0,
-        failures,
-        cancelled: true,
-      });
-      runningRef.current = false;
-      return;
-    }
-
-    // Phase 2: dialogue variants
-    // Источник задач — план битов (какие встречи запланированы); fallback
-    // при его отсутствии — скан паутин по encounter-триггерам. Варианты
-    // хранятся per (anchor, LI), дедупим по тому же ключу.
-    const allWebs = useNarrativeStore.getState().narrationWebs;
+    // Phase 1: dialogue variants
+    // Источник задач — план битов + пары (якорь, LI из availableLIs):
+    // ровно те встречи, которые компилятор мира подключает в игру.
     const taskByKey = new Map<string, { anchorId: string; liId: string; anchor: typeof outline.anchors[0] }>();
 
     const variantErrors = (v: DialogueVariant): string[] =>
@@ -546,17 +380,11 @@ export function useBulkStoryGeneration() {
     if (beatPlan) {
       for (const enc of beatPlan.encounters) enqueueTask(enc.anchorId, enc.liId);
     }
-    // Скан паутин добирает встречи, которых нет в плане (или весь список,
-    // если плана нет) — сгенерированный триггер без диалога хуже лишнего
-    // диалога.
-    for (const edge of outline.anchorEdges) {
-      const web = allWebs[`${edge.from}->${edge.to}`];
-      if (!web) continue;
-      for (const scene of web.scenes) {
-        for (const choice of scene.choices) {
-          if (choice.encounterTrigger) enqueueTask(edge.from, choice.encounterTrigger);
-        }
-      }
+    // Компилятор мира подключает встречу для каждой пары (якорь, LI из
+    // availableLIs) — диалоги нужны ровно этим парам. Никаких сканов
+    // сгенерированных артефактов: только outline как источник истины.
+    for (const anchor of outline.anchors) {
+      for (const liId of anchor.availableLIs) enqueueTask(anchor.id, liId);
     }
     const encounterTasks = [...taskByKey.values()];
 
@@ -795,7 +623,6 @@ export function useBulkStoryGeneration() {
     setStatus({
       state: 'done',
       beatsGenerated,
-      websGenerated: webCompleted,
       variantsGenerated: varCompleted,
       endingsGenerated,
       failures,
@@ -832,10 +659,6 @@ async function pollBatchResult<T>(batchId: string, parse: (raw: string) => T): P
       return parse(raw);
     }
   }
-}
-
-function pollNarrationWeb(batchId: string): Promise<NarrationWeb> {
-  return pollBatchResult(batchId, parseNarrationWeb);
 }
 
 function pollDialogueVariant(batchId: string): Promise<DialogueVariant> {

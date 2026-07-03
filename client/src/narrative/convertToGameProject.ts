@@ -17,7 +17,7 @@ import type { CharacterGenState, ImageGenState } from './narrativeStore';
 import { IMAGE_SERVER_BASE, resolveEmotionToSpriteUrl, pickCharacterEmotion } from './emotionResolver';
 import { ARCHETYPES } from './archetypes';
 
-function imageUrlFor(state: ImageGenState | undefined): string {
+export function imageUrlFor(state: ImageGenState | undefined): string {
   if (state?.status === 'done' && state.filename) {
     return `${IMAGE_SERVER_BASE}/images/${encodeURIComponent(state.filename)}`;
   }
@@ -169,7 +169,7 @@ function buildStateSchema(brief: Brief, outline: OutlinePlan): GameStateSchema {
   return { vars, flags };
 }
 
-function assignPositions(count: number): Array<'left' | 'center' | 'right'> {
+export function assignPositions(count: number): Array<'left' | 'center' | 'right'> {
   if (count <= 1) return ['center'];
   if (count === 2) return ['left', 'right'];
   return ['left', 'center', 'right'];
@@ -180,7 +180,7 @@ const ANCHOR_Y_STEP = 220;
 const DRAFT_X_STEP = 220;
 const DRAFT_Y_OFFSET = 110;
 
-function escapeNL(s: string): string {
+export function escapeNL(s: string): string {
   return s.replace(/\r\n/g, '\n').trim();
 }
 
@@ -189,7 +189,7 @@ function renderDialogue(dialogue: DraftDialogueLine[]): string {
   return dialogue.map(d => `${d.speaker}: ${d.line}`).join('\n');
 }
 
-function renderDraftSceneText(narration: string, dialogue: DraftDialogueLine[]): string {
+export function renderDraftSceneText(narration: string, dialogue: DraftDialogueLine[]): string {
   const parts = [escapeNL(narration)];
   const dlg = renderDialogue(dialogue);
   if (dlg) parts.push(dlg);
@@ -441,7 +441,7 @@ export function convertToGameProject(
 
 // ── Story-layer conversion (two-layer architecture) ──────────────────────
 
-function buildStoryStateSchema(brief: Brief, outline: StoryOutlinePlan): GameStateSchema {
+export function buildStoryStateSchema(brief: Brief, outline: StoryOutlinePlan): GameStateSchema {
   const vars: Record<string, GameStateVarSchema> = {};
   for (const li of brief.loveInterests) {
     const arch = ARCHETYPES[li.archetype];
@@ -970,13 +970,13 @@ export function convertStoryToGameProject(
 // Порядок проводки bracket-рёбер у encounter-роутера. Движок берёт первое
 // активное ребро, поэтому условные (positive/negative) идут раньше
 // безусловного neutral-fallback-а.
-const BRACKET_WIRE_ORDER: Record<DialogueVariantBracket, number> = {
+export const BRACKET_WIRE_ORDER: Record<DialogueVariantBracket, number> = {
   positive: 0,
   negative: 1,
   neutral: 2,
 };
 
-function bracketCondition(liId: string, bracket: DialogueVariantBracket): GameStateCondition[] {
+export function bracketCondition(liId: string, bracket: DialogueVariantBracket): GameStateCondition[] {
   const path = `relationship[${liId}].affection`;
   switch (bracket) {
     case 'positive':

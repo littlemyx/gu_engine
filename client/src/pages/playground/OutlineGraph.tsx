@@ -9,7 +9,6 @@ import {
   useReactFlow,
   applyNodeChanges,
   type Node,
-  type Edge,
   type NodeTypes,
   type OnNodesChange,
 } from '@xyflow/react';
@@ -24,20 +23,12 @@ const nodeTypes: NodeTypes = {
   anchor: AnchorNode,
 };
 
-export type SelectedSegment = { fromId: string; toId: string };
-
 const InnerGraph: React.FC<{
   outline: StoryOutlinePlan;
-  onEdgeClick?: (s: SelectedSegment) => void;
-  selected?: SelectedSegment | null;
-}> = ({ outline, onEdgeClick, selected }) => {
+}> = ({ outline }) => {
   const { fitView } = useReactFlow();
-  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
   const images = useNarrativeStore(s => s.images);
-  const { nodes: dagreNodes, edges } = useMemo(
-    () => computeAnchorLayout(outline, narrationWebs, images),
-    [outline, narrationWebs, images],
-  );
+  const { nodes: dagreNodes, edges } = useMemo(() => computeAnchorLayout(outline, images), [outline, images]);
 
   const [nodes, setNodes] = useState<Node[]>(dagreNodes);
   const anchorIdsKey = outline.anchors.map(a => a.id).join(',');
@@ -72,30 +63,16 @@ const InnerGraph: React.FC<{
     setTimeout(() => fitView({ padding: 0.2, duration: 300 }), 50);
   }, [fitView, dagreNodes]);
 
-  const styledEdges: Edge[] = useMemo(() => {
-    if (!selected) return edges;
-    return edges.map(e =>
-      e.source === selected.fromId && e.target === selected.toId
-        ? {
-            ...e,
-            animated: true,
-            style: { ...(e.style ?? {}), strokeWidth: 3 },
-          }
-        : e,
-    );
-  }, [edges, selected]);
-
   return (
     <ReactFlow
       nodes={nodes}
-      edges={styledEdges}
+      edges={edges}
       onNodesChange={onNodesChange}
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.2, maxZoom: 1.0 }}
       minZoom={0.2}
       maxZoom={1.5}
-      onEdgeClick={(_, edge) => onEdgeClick?.({ fromId: edge.source, toId: edge.target })}
       proOptions={{ hideAttribution: true }}
     >
       <Background gap={20} color="#e5e7eb" />
@@ -112,12 +89,7 @@ const InnerGraph: React.FC<{
 
 export const OutlineGraph: React.FC<{
   outline: StoryOutlinePlan;
-  onEdgeClick?: (s: SelectedSegment) => void;
-  selected?: SelectedSegment | null;
-}> = ({ outline, onEdgeClick, selected }) => {
-  const narrationWebs = useNarrativeStore(s => s.narrationWebs);
-  const webCount = Object.keys(narrationWebs).length;
-
+}> = ({ outline }) => {
   return (
     <div className={styles.graphContainer}>
       <div className={styles.graphHeader}>
@@ -134,12 +106,9 @@ export const OutlineGraph: React.FC<{
       </div>
       <div className={styles.graphCanvas}>
         <ReactFlowProvider>
-          <InnerGraph outline={outline} onEdgeClick={onEdgeClick} selected={selected} />
+          <InnerGraph outline={outline} />
         </ReactFlowProvider>
       </div>
-      {onEdgeClick && (
-        <div className={styles.graphHint}>Нажми на ребро между якорями, чтобы посмотреть narration web →</div>
-      )}
       <div className={styles.graphLegend}>
         {(() => {
           const seen = new Set<number>();
@@ -154,7 +123,7 @@ export const OutlineGraph: React.FC<{
             ));
         })()}
         <span className={styles.legendMeta}>
-          {outline.anchors.length} якорей · {outline.anchorEdges.length} рёбер · {webCount} narration web
+          {outline.anchors.length} якорей · {outline.anchorEdges.length} рёбер
         </span>
       </div>
     </div>
