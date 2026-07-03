@@ -185,32 +185,39 @@ export function useBulkStoryGeneration() {
       try {
         const outgoingIds = outgoingOf(outline, anchor.id);
         let best: { beat: AnchorBeat; errorCount: number; errors: string[] } | null = null;
+        let lastAttemptError: unknown = null;
         for (let attempt = 0; attempt < 3; attempt++) {
-          const basePayload = buildAnchorBeatRequestPayload(
-            brief,
-            outline,
-            anchor,
-            useNarrativeStore.getState().anchorBeats,
-          );
-          type AnchorBeatPayload = typeof basePayload & {
-            previousAttempt?: AnchorBeat;
-            previousIssues?: string[];
-          };
-          const payload: AnchorBeatPayload =
-            attempt === 0 || !best
+          try {
+            const basePayload = buildAnchorBeatRequestPayload(
+              brief,
+              outline,
+              anchor,
+              useNarrativeStore.getState().anchorBeats,
+            );
+            type AnchorBeatPayload = typeof basePayload & {
+              previousAttempt?: AnchorBeat;
+              previousIssues?: string[];
+            };
+            const payload: AnchorBeatPayload = !best
               ? basePayload
               : { ...basePayload, previousAttempt: best.beat, previousIssues: best.errors };
-          const { data, error } = await generateAnchorBeat({ body: payload });
-          if (error || !data) throw new Error('не удалось запустить генерацию beat-сцены');
-          const beat = await pollBatchResult(data.batchId, parseAnchorBeat);
-          const issues = validateAnchorBeat(beat, anchor.id, outgoingIds);
-          const errors = issues
-            .filter(i => i.severity === 'error')
-            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-          if (!best || errors.length < best.errorCount) {
-            best = { beat, errorCount: errors.length, errors };
+            const { data, error } = await generateAnchorBeat({ body: payload });
+            if (error || !data) throw new Error('не удалось запустить генерацию beat-сцены');
+            const beat = await pollBatchResult(data.batchId, parseAnchorBeat);
+            const issues = validateAnchorBeat(beat, anchor.id, outgoingIds);
+            const errors = issues
+              .filter(i => i.severity === 'error')
+              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+            if (!best || errors.length < best.errorCount) {
+              best = { beat, errorCount: errors.length, errors };
+            }
+            if (errors.length === 0) break;
+          } catch (attemptErr) {
+            lastAttemptError = attemptErr;
           }
-          if (errors.length === 0) break;
+        }
+        if (!best) {
+          throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
         }
         // Сохраняем лучшую попытку: конверсия умеет жить с частичным битом
         // (fallback на summary/`→`-подписи), а дыра в кэше хуже.
@@ -243,8 +250,23 @@ export function useBulkStoryGeneration() {
     }
 
     // Phase 1: narration webs
+    // В очередь попадают рёбра без паутины И рёбра, чья закэшированная
+    // паутина не проходит текущую валидацию — иначе провальная попытка
+    // «замерзает» в кэше и ошибки никогда не исправляются. Сохранённая
+    // попытка уходит в первый же запрос как previousAttempt.
+    const webValidationErrors = (fromId: string, toId: string): string[] => {
+      const cached = useNarrativeStore.getState().narrationWebs[`${fromId}->${toId}`];
+      if (!cached) return [];
+      const anchor = outline.anchors.find(a => a.id === fromId);
+      const issues = validateNarrationWeb(cached, anchor?.availableLIs ?? [], plannedLIsByAnchor.get(fromId) ?? []);
+      return issues.filter(i => i.severity === 'error').map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+    };
     const webQueue = outline.anchorEdges
-      .filter(e => !store.narrationWebs[`${e.from}->${e.to}`])
+      .filter(e => {
+        const cached = store.narrationWebs[`${e.from}->${e.to}`];
+        if (!cached) return true;
+        return webValidationErrors(e.from, e.to).length > 0;
+      })
       .map(e => ({ fromId: e.from, toId: e.to }));
 
     let webCompleted = 0;
@@ -278,28 +300,45 @@ export function useBulkStoryGeneration() {
         };
         const availableLIIds = basePayload.availableLIs.map(li => li.liId);
 
-        // Генерация с одним retry-with-feedback при ошибках валидации.
+        // Retry-with-feedback. Кэшированная невалидная паутина (перегенерация
+        // после прошлого запуска) сидирует best — первый же запрос идёт с её
+        // ошибками как фидбеком. Падение отдельной попытки (invalid JSON,
+        // timeout) съедает попытку, а не весь цикл.
         let best: { web: NarrationWeb; errorCount: number; errors: string[] } | null = null;
-        for (let attempt = 0; attempt < 2; attempt++) {
-          const payload =
-            attempt === 0 || !best
+        const cachedWeb = useNarrativeStore.getState().narrationWebs[`${item.fromId}->${item.toId}`];
+        if (cachedWeb) {
+          const cachedErrors = webValidationErrors(item.fromId, item.toId);
+          if (cachedErrors.length > 0) {
+            best = { web: cachedWeb, errorCount: cachedErrors.length, errors: cachedErrors };
+          }
+        }
+        let lastAttemptError: unknown = null;
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            const payload = !best
               ? basePayload
               : {
                   ...basePayload,
                   previousAttempt: best.web,
                   previousIssues: best.errors,
                 };
-          const { data, error } = await generateNarrationWeb({ body: payload });
-          if (error || !data) throw new Error('не удалось запустить генерацию narration web');
-          const web = await pollNarrationWeb(data.batchId);
-          const issues = validateNarrationWeb(web, availableLIIds, plannedLIs);
-          const errors = issues
-            .filter(i => i.severity === 'error')
-            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-          if (!best || errors.length < best.errorCount) {
-            best = { web, errorCount: errors.length, errors };
+            const { data, error } = await generateNarrationWeb({ body: payload });
+            if (error || !data) throw new Error('не удалось запустить генерацию narration web');
+            const web = await pollNarrationWeb(data.batchId);
+            const issues = validateNarrationWeb(web, availableLIIds, plannedLIs);
+            const errors = issues
+              .filter(i => i.severity === 'error')
+              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+            if (!best || errors.length < best.errorCount) {
+              best = { web, errorCount: errors.length, errors };
+            }
+            if (errors.length === 0) break;
+          } catch (attemptErr) {
+            lastAttemptError = attemptErr;
           }
-          if (errors.length === 0) break;
+        }
+        if (!best) {
+          throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
         }
 
         // Сохраняем лучшую попытку в любом случае (частично валидная паутина
@@ -421,28 +460,35 @@ export function useBulkStoryGeneration() {
             recentEvents,
             encounterContext,
           );
-          // Одна retry-попытка при ошибках валидации (нет выхода из диалога).
+          // Retry при ошибках валидации; падение попытки изолировано.
           let best: { variant: DialogueVariant; errorCount: number; errors: string[] } | null = null;
+          let lastAttemptError: unknown = null;
           for (let attempt = 0; attempt < 2; attempt++) {
-            type DialoguePayload = typeof basePayload & {
-              previousAttempt?: DialogueVariant;
-              previousIssues?: string[];
-            };
-            const payload: DialoguePayload =
-              attempt === 0 || !best
+            try {
+              type DialoguePayload = typeof basePayload & {
+                previousAttempt?: DialogueVariant;
+                previousIssues?: string[];
+              };
+              const payload: DialoguePayload = !best
                 ? basePayload
                 : { ...basePayload, previousAttempt: best.variant, previousIssues: best.errors };
-            const { data, error } = await generateDialogueVariant({ body: payload });
-            if (error || !data) throw new Error(`не удалось запустить генерацию для bracket=${bracket}`);
-            const variant = await pollDialogueVariant(data.batchId);
-            const issues = validateDialogueVariant(variant);
-            const errors = issues
-              .filter(i => i.severity === 'error')
-              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-            if (!best || errors.length < best.errorCount) {
-              best = { variant, errorCount: errors.length, errors };
+              const { data, error } = await generateDialogueVariant({ body: payload });
+              if (error || !data) throw new Error(`не удалось запустить генерацию для bracket=${bracket}`);
+              const variant = await pollDialogueVariant(data.batchId);
+              const issues = validateDialogueVariant(variant);
+              const errors = issues
+                .filter(i => i.severity === 'error')
+                .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+              if (!best || errors.length < best.errorCount) {
+                best = { variant, errorCount: errors.length, errors };
+              }
+              if (errors.length === 0) break;
+            } catch (attemptErr) {
+              lastAttemptError = attemptErr;
             }
-            if (errors.length === 0) break;
+          }
+          if (!best) {
+            throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
           }
           variants.push(best!.variant);
           varCompleted++;
@@ -517,26 +563,34 @@ export function useBulkStoryGeneration() {
             storeNow.anchorBeats,
           );
           let best: { ending: EndingVariant; errorCount: number; errors: string[] } | null = null;
-          for (let attempt = 0; attempt < 2; attempt++) {
-            type EndingPayload = typeof basePayload & {
-              previousAttempt?: EndingVariant;
-              previousIssues?: string[];
-            };
-            const payload: EndingPayload =
-              attempt === 0 || !best
+          let lastAttemptError: unknown = null;
+          for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+              type EndingPayload = typeof basePayload & {
+                previousAttempt?: EndingVariant;
+                previousIssues?: string[];
+              };
+              const payload: EndingPayload = !best
                 ? basePayload
                 : { ...basePayload, previousAttempt: best.ending, previousIssues: best.errors };
-            const { data, error } = await generateEnding({ body: payload });
-            if (error || !data) throw new Error(`не удалось запустить генерацию концовки ${key}`);
-            const ending = await pollBatchResult(data.batchId, parseEndingVariant);
-            const issues = validateEndingVariant(ending, task.kind);
-            const errors = issues
-              .filter(i => i.severity === 'error')
-              .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-            if (!best || errors.length < best.errorCount) {
-              best = { ending, errorCount: errors.length, errors };
+              const { data, error } = await generateEnding({ body: payload });
+              if (error || !data) throw new Error(`не удалось запустить генерацию концовки ${key}`);
+              const ending = await pollBatchResult(data.batchId, parseEndingVariant);
+              const issues = validateEndingVariant(ending, task.kind);
+              const errors = issues
+                .filter(i => i.severity === 'error')
+                .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+              if (!best || errors.length < best.errorCount) {
+                best = { ending, errorCount: errors.length, errors };
+              }
+              if (errors.length === 0) break;
+            } catch (attemptErr) {
+              // invalid JSON / timeout отдельной попытки не убивает остальные
+              lastAttemptError = attemptErr;
             }
-            if (errors.length === 0) break;
+          }
+          if (!best) {
+            throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
           }
           // liId генератора может отсутствовать/врать — фиксируем свой.
           const normalized: EndingVariant = {
