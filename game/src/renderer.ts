@@ -1,7 +1,7 @@
 import { GameEngine } from "./engine";
 import { GameAudio } from "./audio";
 import { SceneNode, SceneType } from "./types";
-import { parseSpeaker } from "./speaker";
+import { parseScene, SceneLine } from "./speaker";
 
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const BG_PRELOAD_TIMEOUT = 1500;
@@ -220,11 +220,7 @@ export class GameRenderer {
     activeOutputs: SceneNode["data"]["outputs"],
     delayMs: number,
   ): void {
-    const { speaker, text } = parseSpeaker(node.data.label, sceneType);
-    const speakerHtml = speaker
-      ? `<div class="scene-speaker">${escapeHtml(speaker)}</div>`
-      : "";
-    this.textEl.innerHTML = `${speakerHtml}<div class="scene-text">${escapeHtml(text)}</div>`;
+    this.textEl.innerHTML = this.sceneTextHtml(node.data.label, sceneType);
 
     this.choicesEl.className = "stage-choices";
     this.choicesEl.innerHTML = activeOutputs
@@ -245,10 +241,38 @@ export class GameRenderer {
   }
 
   private renderNarration(node: SceneNode): void {
-    const { text } = parseSpeaker(node.data.label, "narration");
-    this.textEl.innerHTML = `<div class="scene-text scene-text--narration">${escapeHtml(text)}</div>`;
+    this.textEl.innerHTML = this.sceneTextHtml(node.data.label, "narration");
     this.choicesEl.className = "stage-choices";
     this.choicesEl.innerHTML = `<div class="advance-hint">…</div>`;
+  }
+
+  /**
+   * Разбивает label на отдельные блоки: описание-ремарку (наррация) и реплики
+   * персонажей (подпись + текст). Раньше всё склеивалось в один блок, из-за
+   * чего описание сцены и реплика попадали в одну строку.
+   */
+  private sceneTextHtml(label: string, sceneType: SceneType): string {
+    const { narration, lines } = parseScene(label, sceneType);
+
+    if (lines.length === 0) {
+      const cls =
+        sceneType === "narration"
+          ? "scene-text scene-text--narration"
+          : "scene-text";
+      return `<div class="${cls}">${escapeHtml(narration)}</div>`;
+    }
+
+    const lineHtml = (line: SceneLine): string => {
+      const speakerHtml = line.speaker
+        ? `<div class="scene-speaker">${escapeHtml(line.speaker)}</div>`
+        : "";
+      return `${speakerHtml}<div class="scene-text">${escapeHtml(line.text)}</div>`;
+    };
+
+    const narrationHtml = narration
+      ? `<div class="scene-text scene-text--narration">${escapeHtml(narration)}</div>`
+      : "";
+    return narrationHtml + lines.map(lineHtml).join("");
   }
 
   private renderEnd(fadeMs: number): void {

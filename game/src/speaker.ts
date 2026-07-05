@@ -1,27 +1,61 @@
 import { SceneType } from "./types";
 
-export type ParsedLine = {
+export type SceneLine = {
   speaker?: string;
   text: string;
 };
 
-/**
- * Эвристика имени говорящего для dialogue-сцен. Реплики хранятся в label как
- * «Имя: текст». Если первая строка похожа на такую подпись — выносим имя в
- * отдельный блок. Иначе отдаём label как есть (narration, описания и т.п.).
- */
-export function parseSpeaker(label: string, sceneType: SceneType): ParsedLine {
-  if (sceneType !== "dialogue") return { text: label };
+export type ParsedScene = {
+  /** Ведущая проза-ремарка (описание сцены). Может быть пустой. */
+  narration: string;
+  /** Реплики персонажей — каждая со своей подписью. */
+  lines: SceneLine[];
+};
 
-  const m = /^([^:\n]{1,40}):[ \t]*([\s\S]+)$/.exec(label);
-  if (!m) return { text: label };
+// Подпись реплики: «Имя: текст». Имя — коротко, без внутренней пунктуации
+// предложения и не длиннее четырёх слов (иначе это фраза, а не подпись).
+const SPEAKER_RE = /^([^:\n]{1,40}):[ \t]*(\S[\s\S]*)$/;
 
+function matchSpeakerLine(rawLine: string): SceneLine | null {
+  const line = rawLine.trim();
+  if (!line) return null;
+  const m = SPEAKER_RE.exec(line);
+  if (!m) return null;
   const name = m[1].trim();
-  // Отсекаем очевидно-не-имена: предложение с пунктуацией внутри «имени»
-  // или больше четырёх слов (это уже фраза, а не подпись).
-  if (/[.!?…]/.test(name) || name.split(/\s+/).length > 4) {
-    return { text: label };
+  if (!name || /[.!?…]/.test(name) || name.split(/\s+/).length > 4) return null;
+  return { speaker: name, text: m[2].trim() };
+}
+
+/**
+ * Разбирает плоский label сцены на ведущую наррацию и реплики. Реплики
+ * сериализуются (convertToGameProject.renderDraftSceneText) хвостовым блоком
+ * «Имя: текст» — строки через \n, отделённые от наррации пустой строкой (\n\n).
+ * Поэтому диалог — это максимальный хвост строк-подписей, а всё до него —
+ * наррация.
+ *
+ * Для не-dialogue сцен требуем и ведущую наррацию, и пустую строку-разделитель:
+ * иначе случайное «Слово: …» в описательной прозе приняли бы за подпись.
+ */
+export function parseScene(label: string, sceneType: SceneType): ParsedScene {
+  const physical = label.replace(/\r\n/g, "\n").split("\n");
+
+  const lines: SceneLine[] = [];
+  let start = physical.length;
+  for (let i = physical.length - 1; i >= 0; i--) {
+    const parsed = matchSpeakerLine(physical[i]);
+    if (!parsed) break;
+    lines.unshift(parsed);
+    start = i;
   }
 
-  return { speaker: name, text: m[2].trim() };
+  const separated = start === 0 || physical[start - 1].trim() === "";
+  const requireNarrationPrefix = sceneType !== "dialogue";
+  const hasDialogue =
+    lines.length > 0 && separated && (!requireNarrationPrefix || start > 0);
+
+  if (!hasDialogue) {
+    return { narration: label.trim(), lines: [] };
+  }
+
+  return { narration: physical.slice(0, start).join("\n").trim(), lines };
 }

@@ -5,7 +5,7 @@ import { processMelodyBatch, processVariationBatch, processSfxBatch } from './au
 import type { GenerateMelodyRequest, GenerateVariationRequest, GenerateSfxRequest } from './types.js';
 import { logger } from './logger.js';
 
-const PORT = Number(process.env.PORT) || 3200;
+const PORT = Number(process.env.PORT) || 3300;
 
 // Ленивая TTL-очистка внутри registry: батчи старше суток вычищаются
 // при создании нового.

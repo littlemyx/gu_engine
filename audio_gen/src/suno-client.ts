@@ -4,6 +4,11 @@ import { logger } from './logger.js';
 const SUNO_BASE = 'https://api.sunoapi.org';
 const SUNO_API_KEY = process.env.SUNO_API_KEY;
 
+// Suno-эндпоинты создания тасок требуют обязательный callBackUrl, даже если мы
+// работаем через polling (record-info) и колбэки не читаем. Достаточно любого
+// синтаксически валидного URL — доставка колбэка на результат не влияет.
+const SUNO_CALLBACK_URL = process.env.SUNO_CALLBACK_URL || 'https://example.com/suno-callback';
+
 if (!SUNO_API_KEY) {
   logger.error('SUNO_API_KEY environment variable is required');
   process.exit(1);
@@ -43,6 +48,19 @@ interface SunoRecordInfo {
   };
 }
 
+// Suno возвращает конверт { code, msg, data: { taskId } }. При логической
+// ошибке приходит HTTP 200, но code!=200 и data=null — без этой проверки код
+// падал бы с невнятным "Cannot read properties of null (reading 'taskId')"
+// вместо реального сообщения Suno.
+type SunoCreateResponse = { code?: number; msg?: string; data?: { taskId?: string } | null };
+
+function extractTaskId(data: SunoCreateResponse, endpoint: string): string {
+  if (data.code !== 200 || !data.data?.taskId) {
+    throw new Error(`Suno ${endpoint} отклонил запрос: code=${data.code} msg=${data.msg ?? 'no taskId in response'}`);
+  }
+  return data.data.taskId;
+}
+
 export async function generateTrack(
   style: string,
   instrumental: boolean,
@@ -56,6 +74,7 @@ export async function generateTrack(
     style,
     title: `gu_${Date.now()}`,
     prompt: instrumental ? '' : style,
+    callBackUrl: SUNO_CALLBACK_URL,
   };
 
   const res = await fetch(`${SUNO_BASE}/api/v1/generate`, {
@@ -69,8 +88,7 @@ export async function generateTrack(
     throw new Error(`Suno generate failed: ${res.status} ${text}`);
   }
 
-  const data = (await res.json()) as { data: { taskId: string } };
-  return data.data.taskId;
+  return extractTaskId((await res.json()) as SunoCreateResponse, 'generate');
 }
 
 export async function generateCover(
@@ -88,6 +106,7 @@ export async function generateCover(
     instrumental: true,
     style,
     title: `gu_var_${Date.now()}`,
+    callBackUrl: SUNO_CALLBACK_URL,
   };
 
   const res = await fetch(`${SUNO_BASE}/api/v1/generate/upload-cover`, {
@@ -101,8 +120,7 @@ export async function generateCover(
     throw new Error(`Suno upload-cover failed: ${res.status} ${text}`);
   }
 
-  const data = (await res.json()) as { data: { taskId: string } };
-  return data.data.taskId;
+  return extractTaskId((await res.json()) as SunoCreateResponse, 'upload-cover');
 }
 
 export async function generateSound(
@@ -115,6 +133,7 @@ export async function generateSound(
     prompt,
     model: 'V5',
     soundLoop,
+    callBackUrl: SUNO_CALLBACK_URL,
   };
 
   const res = await fetch(`${SUNO_BASE}/api/v1/generate/sounds`, {
@@ -128,8 +147,7 @@ export async function generateSound(
     throw new Error(`Suno generate/sounds failed: ${res.status} ${text}`);
   }
 
-  const data = (await res.json()) as { data: { taskId: string } };
-  return data.data.taskId;
+  return extractTaskId((await res.json()) as SunoCreateResponse, 'generate/sounds');
 }
 
 const POLL_INTERVAL_MS = 5_000;

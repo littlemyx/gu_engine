@@ -212,14 +212,30 @@ export function escapeNL(s: string): string {
   return s.replace(/\r\n/g, '\n').trim();
 }
 
-function renderDialogue(dialogue: DraftDialogueLine[]): string {
-  if (!dialogue.length) return '';
-  return dialogue.map(d => `${d.speaker}: ${d.line}`).join('\n');
+/**
+ * Резолвер id говорящего → отображаемое имя. Реплики хранят speaker как id
+ * персонажа ('kira'), тогда как проза-нарратив использует имя ('Кира'). Без
+ * резолва подпись реплики рассинхронизирована с текстом сцены.
+ */
+export type SpeakerNameResolver = (speakerId: string) => string;
+
+export function speakerNameResolver(brief: Brief): SpeakerNameResolver {
+  const byId = new Map(brief.loveInterests.map(li => [li.id, li.name]));
+  return id => byId.get(id) ?? id;
 }
 
-export function renderDraftSceneText(narration: string, dialogue: DraftDialogueLine[]): string {
+function renderDialogue(dialogue: DraftDialogueLine[], resolveName?: SpeakerNameResolver): string {
+  if (!dialogue.length) return '';
+  return dialogue.map(d => `${resolveName?.(d.speaker) ?? d.speaker}: ${d.line}`).join('\n');
+}
+
+export function renderDraftSceneText(
+  narration: string,
+  dialogue: DraftDialogueLine[],
+  resolveName?: SpeakerNameResolver,
+): string {
   const parts = [escapeNL(narration)];
-  const dlg = renderDialogue(dialogue);
+  const dlg = renderDialogue(dialogue, resolveName);
   if (dlg) parts.push(dlg);
   return parts.filter(Boolean).join('\n\n');
 }
@@ -246,6 +262,7 @@ export function convertToGameProject(
   let emotionsMapped = 0;
   let emotionsFallback = 0;
   let idCollisionsFixed = 0;
+  const resolveSpeaker = speakerNameResolver(brief);
 
   // ── 0. Дедупликация scene ID ──────────────────────────────────────────
   //  LLM-генератор может выдать одинаковые scene.id в разных сегментах
@@ -393,7 +410,7 @@ export function convertToGameProject(
             y: baseY,
           },
           data: {
-            label: renderDraftSceneText(draft.narration, draft.dialogue),
+            label: renderDraftSceneText(draft.narration, draft.dialogue, resolveSpeaker),
             image: segmentImage,
             sprite: legacySprite || undefined,
             sprites: sprites.length ? sprites : undefined,
@@ -551,6 +568,7 @@ export function convertStoryToGameProject(
   let encountersWired = 0;
   let narrationSceneCount = 0;
   let dialogueSceneCount = 0;
+  const resolveSpeaker = speakerNameResolver(brief);
 
   const uniqueId = (base: string): string => {
     let id = base;
@@ -794,7 +812,7 @@ export function convertStoryToGameProject(
                     type: 'scene',
                     position: { x: 0, y: 0 },
                     data: {
-                      label: renderDraftSceneText(vs.narration, vs.dialogue),
+                      label: renderDraftSceneText(vs.narration, vs.dialogue, resolveSpeaker),
                       image: segImage,
                       sprite: sprites[0]?.url,
                       sprites: sprites.length ? sprites : undefined,

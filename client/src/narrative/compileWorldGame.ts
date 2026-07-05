@@ -406,7 +406,7 @@ export function compileWorldGameProject(
           type: 'scene',
           position: { x: 0, y: 0 },
           data: {
-            label: renderDraftSceneText(vs.narration, vs.dialogue),
+            label: renderDraftSceneText(vs.narration, vs.dialogue, id => liNameById.get(id) ?? id),
             image: bgForLocation(locId),
             sprite: sprites[0]?.url,
             sprites: sprites.length ? sprites : undefined,
