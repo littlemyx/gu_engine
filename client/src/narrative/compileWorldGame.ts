@@ -94,6 +94,8 @@ export type WorldAudioInput = {
   base: AudioTrackState | null;
   /** Банк эмбиентов по настроению локации (LocationMood → трек). */
   moodBeds: Record<string, AudioTrackState>;
+  /** Диегетические беды особых локаций (SpecialAmbientKind → трек). */
+  specialBeds: Record<string, AudioTrackState>;
   byLi: Record<string, LiAudioState>;
   sfx: Record<string, string>;
 };
@@ -107,7 +109,7 @@ export function compileWorldGameProject(
   endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
-  audio: WorldAudioInput = { base: null, moodBeds: {}, byLi: {}, sfx: {} },
+  audio: WorldAudioInput = { base: null, moodBeds: {}, specialBeds: {}, byLi: {}, sfx: {} },
 ): WorldCompileResult {
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
@@ -551,7 +553,12 @@ export function compileWorldGameProject(
     }
   }
   const world: GameWorldManifest = {
-    locations: worldModel.locations.map(l => ({ id: l.id, name: l.name, mood: l.mood })),
+    locations: worldModel.locations.map(l => ({
+      id: l.id,
+      name: l.name,
+      mood: l.mood,
+      ...(l.specialKind ? { specialKind: l.specialKind } : {}),
+    })),
     edges: worldEdges,
   };
 
@@ -563,11 +570,20 @@ export function compileWorldGameProject(
   // подложку по mood текущей локации, а bgmUrl остаётся ultimate-фолбэком.
   const ambientByMood: Record<string, string> = {};
   if (bgmUrl) ambientByMood[DEFAULT_LOCATION_MOOD] = bgmUrl;
-  for (const [mood, track] of Object.entries(audio.moodBeds)) {
+  for (const [mood, track] of Object.entries(audio.moodBeds ?? {})) {
     const url = audioUrlFor(selectedTrackFile(track));
     if (url) ambientByMood[mood] = url;
   }
   const hasAmbient = Object.keys(ambientByMood).length > 0;
+
+  // Диегетические беды особых локаций: specialKind → URL. Рендерер отдаёт им
+  // приоритет над mood-бедом (special ?? mood ?? bgmUrl).
+  const ambientBySpecial: Record<string, string> = {};
+  for (const [kind, track] of Object.entries(audio.specialBeds ?? {})) {
+    const url = audioUrlFor(selectedTrackFile(track));
+    if (url) ambientBySpecial[kind] = url;
+  }
+  const hasSpecial = Object.keys(ambientBySpecial).length > 0;
 
   const project: GameProjectFile = {
     title,
@@ -581,6 +597,7 @@ export function compileWorldGameProject(
       world,
       ...(bgmUrl ? { bgmUrl, crossfadeDurationMs: 2000, bgmVolume: 0.3, sfxVolume: 0.5 } : {}),
       ...(hasAmbient ? { ambientByMood } : {}),
+      ...(hasSpecial ? { ambientBySpecial } : {}),
     },
   };
 

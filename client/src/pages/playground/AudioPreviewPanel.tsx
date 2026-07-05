@@ -1,11 +1,18 @@
 import { useState } from 'react';
-import { useNarrativeStore, useBriefStore, audioUrlFor, LOCATION_MOOD_LABELS } from '@/narrative';
+import {
+  useNarrativeStore,
+  useBriefStore,
+  audioUrlFor,
+  LOCATION_MOOD_LABELS,
+  SPECIAL_AMBIENT_KIND_LABELS,
+} from '@/narrative';
 import type { AudioTrackState, AudioVariationTone } from '@/narrative/narrativeStore';
-import type { LocationMood } from '@/narrative';
+import type { LocationMood, SpecialAmbientKind } from '@/narrative';
 import { MiniAudioPlayer } from '@/pages/main/components/MiniAudioPlayer';
 import styles from './playground.module.css';
 
 const isLocationMoodKey = (k: string): k is LocationMood => k in LOCATION_MOOD_LABELS;
+const isSpecialKindKey = (k: string): k is SpecialAmbientKind => k in SPECIAL_AMBIENT_KIND_LABELS;
 
 const TONE_LABELS: Record<AudioVariationTone, string> = {
   positive: 'Позитивный',
@@ -75,22 +82,26 @@ export const AudioPreviewPanel = () => {
   const brief = useBriefStore(s => s.brief);
   const audioBase = useNarrativeStore(s => s.audioBase);
   const audioMoodBeds = useNarrativeStore(s => s.audioMoodBeds);
+  const audioSpecialBeds = useNarrativeStore(s => s.audioSpecialBeds);
   const audioByLi = useNarrativeStore(s => s.audioByLi);
   const audioSfx = useNarrativeStore(s => s.audioSfx);
   const audioSfxState = useNarrativeStore(s => s.audioSfxState);
   const selectAudioBase = useNarrativeStore(s => s.selectAudioBase);
   const selectAudioMoodBed = useNarrativeStore(s => s.selectAudioMoodBed);
+  const selectAudioSpecialBed = useNarrativeStore(s => s.selectAudioSpecialBed);
   const selectAudioVariation = useNarrativeStore(s => s.selectAudioVariation);
   const [open, setOpen] = useState(true);
 
   const baseDone = audioBase?.status === 'done';
   const moodBedEntries = Object.entries(audioMoodBeds);
   const anyMoodBed = moodBedEntries.some(([, t]) => t.status === 'done');
+  const specialBedEntries = Object.entries(audioSpecialBeds);
+  const anySpecialBed = specialBedEntries.some(([, t]) => t.status === 'done');
   const anyVariation = Object.values(audioByLi).some(
     li => li.positive?.status === 'done' || li.negative?.status === 'done',
   );
   const sfxEntries = Object.entries(audioSfx);
-  if (!baseDone && !anyMoodBed && !anyVariation && sfxEntries.length === 0) return null;
+  if (!baseDone && !anyMoodBed && !anySpecialBed && !anyVariation && sfxEntries.length === 0) return null;
 
   return (
     <section className={styles.audioPreview}>
@@ -122,6 +133,24 @@ export const AudioPreviewPanel = () => {
                     track={track}
                     groupName={`audio-bed-${mood}`}
                     onSelect={i => selectAudioMoodBed(mood, i)}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {specialBedEntries.length > 0 && (
+            <div className={styles.audioPreviewGroup}>
+              <span className={styles.audioPreviewGroupTitle}>Особые локации (диегетика)</span>
+              {specialBedEntries.map(([kind, track]) => (
+                <div key={kind} className={styles.audioPreviewTone}>
+                  <span className={styles.audioPreviewToneLabel}>
+                    {isSpecialKindKey(kind) ? SPECIAL_AMBIENT_KIND_LABELS[kind] : kind}
+                  </span>
+                  <VariantRows
+                    track={track}
+                    groupName={`audio-special-${kind}`}
+                    onSelect={i => selectAudioSpecialBed(kind, i)}
                   />
                 </div>
               ))}

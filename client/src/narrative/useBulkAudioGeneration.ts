@@ -6,7 +6,7 @@ import {
   getAudioBatchStatus,
   type BatchStatus,
 } from '@root/audio_gen/generated_client';
-import type { ArtStyle, Brief, LocationMood, LoveInterestCard } from './types';
+import type { ArtStyle, Brief, LocationMood, LoveInterestCard, SpecialAmbientKind } from './types';
 import { DEFAULT_LOCATION_MOOD } from './types';
 import { useNarrativeStore, type AudioVariationTone } from './narrativeStore';
 import { CANONICAL_POSES } from './emotionResolver';
@@ -112,6 +112,29 @@ export function buildAmbientStyle(mood: LocationMood, timbre: string, contextHin
 }
 
 /**
+ * Диегетические подложки особых локаций (Phase 2). У каждой — СВОЙ хвост
+ * (у толпы стадиона/рынка нужен голос-гул, поэтому общий 'no vocals' не годится).
+ * `{timbre}` подставляется там, где под звук ложится музыкальная составляющая.
+ */
+export const SPECIAL_STYLE_TEMPLATES: Record<SpecialAmbientKind, string> = {
+  bar_tavern:
+    '{timbre} reinterpreted as low-volume diegetic bar music, warm background jazz-lounge feel, muffled room ambience, clinking glasses murmur, no vocals, seamless loop',
+  party_club:
+    '{timbre} as muffled distant dance music heard through a wall, low-pass filtered pad, crowd chatter bed, no clear beat, no vocals, seamless loop',
+  sports_stadium:
+    'diegetic stadium crowd ambience, distant roar and chants swelling and receding, open-air reverb, occasional whistle, no music, seamless loop',
+  market_street:
+    'diegetic open-air market ambience, layered distant chatter, footsteps and stalls, gentle {timbre} pad far underneath, no beat, seamless loop',
+  ceremony:
+    '{timbre} as solemn ceremonial underscore, slow reverent sustained tones, hall reverb, dignified, no drums, no vocals, seamless loop',
+};
+
+/** Style-строка диегетического беда особой локации (тембр проекта где уместно). */
+export function buildSpecialAmbientStyle(kind: SpecialAmbientKind, timbre: string): string {
+  return SPECIAL_STYLE_TEMPLATES[kind].replace('{timbre}', timbre);
+}
+
+/**
  * Базовая/фолбэк-подложка проекта — нейтральный эмбиент в тембре проекта.
  * Больше НЕ содержит слова 'melody' (главный триггер задорности): роль сменена
  * на ambient underscore, а инструментовка выводится из brief.artStyle.
@@ -157,9 +180,14 @@ export function useBulkAudioGeneration() {
     const usedMoods: LocationMood[] = worldModel
       ? [...new Set(worldModel.locations.map(l => l.mood))].filter(m => m !== DEFAULT_LOCATION_MOOD)
       : [];
+    // Особые локации (бар/стадион/…) — один диегетический бед на присутствующий
+    // specialKind, переиспользуется всеми локациями этого типа.
+    const usedSpecials: SpecialAmbientKind[] = worldModel
+      ? [...new Set(worldModel.locations.map(l => l.specialKind).filter((k): k is SpecialAmbientKind => k != null))]
+      : [];
 
-    // база + mood-беды + 2 тона на LI + один SFX-батч
-    const total = 1 + usedMoods.length + brief.loveInterests.length * 2 + 1;
+    // база + mood-беды + special-беды + 2 тона на LI + один SFX-батч
+    const total = 1 + usedMoods.length + usedSpecials.length + brief.loveInterests.length * 2 + 1;
     let completed = 0;
 
     const publish = (phase: 'base' | 'beds' | 'variations' | 'sfx') => {
@@ -242,6 +270,32 @@ export function useBulkAudioGeneration() {
         const error = e instanceof Error ? e.message : String(e);
         failures.push({ key: `bed:${mood}`, error });
         store.setAudioMoodBed(mood, { status: 'failed', error });
+      }
+      publish('beds');
+    }
+
+    // ── 2b. Диегетические беды особых локаций ─────────────────────────────
+    for (const kind of usedSpecials) {
+      if (cancelledRef.current) break;
+      const existingSpecial = useNarrativeStore.getState().audioSpecialBeds[kind];
+      if (existingSpecial?.status === 'done') {
+        completed++;
+        publish('beds');
+        continue;
+      }
+      try {
+        const { data, error } = await generateMelody({
+          body: { style: buildSpecialAmbientStyle(kind, timbre), instrumental: true },
+        });
+        if (error || !data) throw new Error('не удалось запустить генерацию спец-эмбиента');
+        store.setAudioSpecialBed(kind, { status: 'generating', batchId: data.batchId });
+        const files = await pollBatch(data.batchId);
+        store.setAudioSpecialBed(kind, { status: 'done', filenames: files, selected: 0 });
+        completed++;
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        failures.push({ key: `special:${kind}`, error });
+        store.setAudioSpecialBed(kind, { status: 'failed', error });
       }
       publish('beds');
     }

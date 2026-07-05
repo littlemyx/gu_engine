@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { buildBaseStyle, buildAmbientStyle, deriveArtStyleTimbre } from '../src/narrative/useBulkAudioGeneration';
+import {
+  buildBaseStyle,
+  buildAmbientStyle,
+  buildSpecialAmbientStyle,
+  deriveArtStyleTimbre,
+} from '../src/narrative/useBulkAudioGeneration';
 import type { ArtStyle, Brief } from '../src/narrative/types';
 
 const artStyle = (referenceDescriptor: string): ArtStyle => ({
@@ -41,5 +46,17 @@ describe('audio style — визуал → эмбиент (убираем зад
     expect(s).not.toContain('background melody');
     // тембр из anime-стиля просочился в базу
     expect(s).toMatch(/celesta|nylon/);
+  });
+
+  it('buildSpecialAmbientStyle: диегетика с тембром (бар) и без (стадион)', () => {
+    const bar = buildSpecialAmbientStyle('bar_tavern', 'warm Rhodes');
+    expect(bar).toContain('diegetic bar music');
+    expect(bar).toContain('warm Rhodes'); // тембр подставлен
+    expect(bar).toContain('seamless loop');
+
+    const stadium = buildSpecialAmbientStyle('sports_stadium', 'warm Rhodes');
+    expect(stadium).toContain('crowd');
+    expect(stadium).not.toContain('warm Rhodes'); // без {timbre} — плейсхолдера нет
+    expect(stadium).not.toContain('{timbre}');
   });
 });

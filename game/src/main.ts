@@ -178,9 +178,10 @@ function settingRow(key: string, label: string, value: number): string {
 function collectAudioUrlsForPreload(project: ResolvedProject): string[] {
   const urls: string[] = [];
   if (project.settings.bgmUrl) urls.push(project.settings.bgmUrl);
-  // Все mood-беды банка, иначе первый вход в новую-по-настроению локацию
-  // фетчит синхронно и кроссфейд стартует поздно.
+  // Все mood- и special-беды банка, иначе первый вход в новую-по-настроению
+  // локацию фетчит синхронно и кроссфейд стартует поздно.
   for (const url of Object.values(project.settings.ambientByMood ?? {})) urls.push(url);
+  for (const url of Object.values(project.settings.ambientBySpecial ?? {})) urls.push(url);
   for (const node of project.scenes.nodes) {
     const p = node.data.audioProfile;
     if (p?.positiveUrl) urls.push(p.positiveUrl);
@@ -238,17 +239,22 @@ function launchGame(project: ResolvedProject): void {
     showProjectScreen();
   });
 
-  // Эмбиент-подложка по локации: настроение текущей локации → URL из банка.
-  // worldState.onScene выполняется перед renderScene, поэтому getCurrent() свеж.
-  // Нет модели мира / нет mood → provider вернёт undefined → фолбэк на bgmUrl.
+  // Эмбиент-подложка по локации: спец-бед (бар/стадион) в приоритете, иначе
+  // бед по настроению. worldState.onScene выполняется перед renderScene, поэтому
+  // getCurrent() свеж. Нет модели мира / нет тега → undefined → фолбэк на bgmUrl.
   const ambientByMood = project.settings.ambientByMood ?? {};
+  const ambientBySpecial = project.settings.ambientBySpecial ?? {};
   const locationMood: Record<string, string> = {};
+  const locationSpecial: Record<string, string> = {};
   for (const l of manifest?.locations ?? []) {
     if (l.mood) locationMood[l.id] = l.mood;
+    if (l.specialKind) locationSpecial[l.id] = l.specialKind;
   }
   renderer.setBaseBedProvider(() => {
     const loc = worldState?.getCurrent();
     if (!loc) return undefined;
+    const special = locationSpecial[loc];
+    if (special && ambientBySpecial[special]) return ambientBySpecial[special];
     const mood = locationMood[loc];
     return mood ? ambientByMood[mood] : undefined;
   });

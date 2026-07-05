@@ -70,13 +70,13 @@ const worldModel: WorldModel = {
 describe('compileWorldGameProject — манифест мира', () => {
   const { project, scenes } = compileWorldGameProject(brief, outline, worldModel, {});
 
-  it('эмитит все локации (id + имя + mood)', () => {
+  it('эмитит все локации (id + имя + mood + specialKind где есть)', () => {
     const world = project.settings.world;
     expect(world).toBeDefined();
     expect(world!.locations).toEqual([
       { id: 'a', name: 'Маяк', mood: 'ominous_mysterious' },
       { id: 'b', name: 'Порт', mood: 'neutral_calm' },
-      { id: 'c', name: 'Таверна', mood: 'cozy_tender' },
+      { id: 'c', name: 'Таверна', mood: 'cozy_tender', specialKind: 'bar_tavern' },
     ]);
   });
 
@@ -109,6 +109,9 @@ describe('compileWorldGameProject — манифест мира', () => {
           ominous_mysterious: doneTrack('ominous.mp3'),
           cozy_tender: doneTrack('cozy.mp3'),
         },
+        specialBeds: {
+          bar_tavern: doneTrack('bar.mp3'),
+        },
         byLi: {},
         sfx: {},
       },
@@ -120,10 +123,14 @@ describe('compileWorldGameProject — манифест мира', () => {
       ominous_mysterious: 'http://localhost:3008/audio/ominous.mp3',
       cozy_tender: 'http://localhost:3008/audio/cozy.mp3',
     });
+    expect(s.ambientBySpecial).toEqual({
+      bar_tavern: 'http://localhost:3008/audio/bar.mp3',
+    });
   });
 
-  it('без аудио не эмитит ambientByMood', () => {
+  it('без аудио не эмитит банки эмбиентов', () => {
     expect(project.settings.ambientByMood).toBeUndefined();
+    expect(project.settings.ambientBySpecial).toBeUndefined();
     expect(project.settings.bgmUrl).toBeUndefined();
   });
 

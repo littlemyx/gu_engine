@@ -1255,6 +1255,15 @@ export const SPECIAL_AMBIENT_KINDS = [
 
 export type SpecialAmbientKind = typeof SPECIAL_AMBIENT_KINDS[number];
 
+/** Русские метки особых локаций для UI. */
+export const SPECIAL_AMBIENT_KIND_LABELS: Record<SpecialAmbientKind, string> = {
+  bar_tavern: 'бар / таверна',
+  party_club: 'вечеринка / клуб',
+  sports_stadium: 'стадион',
+  market_street: 'рынок / улица',
+  ceremony: 'церемония',
+};
+
 export function isSpecialAmbientKind(v: unknown): v is SpecialAmbientKind {
   return typeof v === 'string' && (SPECIAL_AMBIENT_KINDS as readonly string[]).includes(v);
 }

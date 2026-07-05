@@ -104,6 +104,8 @@ type NarrativeState = {
    * живёт в audioBase; здесь — остальные реально используемые настроения.
    */
   audioMoodBeds: Record<string, AudioTrackState>;
+  /** Диегетические беды особых локаций (SpecialAmbientKind → трек). */
+  audioSpecialBeds: Record<string, AudioTrackState>;
   /** Вариации per-LI, раздельно по тонам. Ключ — id LI из брифа. */
   audioByLi: Record<string, LiAudioState>;
   /** SFX по каноническим эмоциям: emotion → filename на audio_server. */
@@ -138,6 +140,8 @@ type NarrativeState = {
   selectAudioBase: (index: number) => void;
   setAudioMoodBed: (mood: string, state: AudioTrackState) => void;
   selectAudioMoodBed: (mood: string, index: number) => void;
+  setAudioSpecialBed: (kind: string, state: AudioTrackState) => void;
+  selectAudioSpecialBed: (kind: string, index: number) => void;
   setAudioVariation: (liId: string, tone: AudioVariationTone, state: AudioTrackState) => void;
   selectAudioVariation: (liId: string, tone: AudioVariationTone, index: number) => void;
   setAudioSfx: (emotion: string, filename: string) => void;
@@ -165,6 +169,7 @@ type PersistedNarrativeState = Pick<
   | 'worldModel'
   | 'audioBase'
   | 'audioMoodBeds'
+  | 'audioSpecialBeds'
   | 'audioByLi'
   | 'audioSfx'
 >;
@@ -185,6 +190,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       worldModel: null,
       audioBase: null,
       audioMoodBeds: {},
+      audioSpecialBeds: {},
       audioByLi: {},
       audioSfx: {},
       audioSfxState: null,
@@ -300,6 +306,18 @@ export const useNarrativeStore = create<NarrativeState>()(
         });
       },
 
+      setAudioSpecialBed: (kind, state) => {
+        set(s => ({ audioSpecialBeds: { ...s.audioSpecialBeds, [kind]: state } }));
+      },
+
+      selectAudioSpecialBed: (kind, index) => {
+        set(s => {
+          const track = s.audioSpecialBeds[kind];
+          if (track?.status !== 'done') return s;
+          return { audioSpecialBeds: { ...s.audioSpecialBeds, [kind]: { ...track, selected: index } } };
+        });
+      },
+
       setAudioVariation: (liId, tone, state) => {
         set(s => ({
           audioByLi: { ...s.audioByLi, [liId]: { ...s.audioByLi[liId], [tone]: state } },
@@ -325,7 +343,15 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       setAudioSfxState: state => set({ audioSfxState: state }),
 
-      clearAudio: () => set({ audioBase: null, audioMoodBeds: {}, audioByLi: {}, audioSfx: {}, audioSfxState: null }),
+      clearAudio: () =>
+        set({
+          audioBase: null,
+          audioMoodBeds: {},
+          audioSpecialBeds: {},
+          audioByLi: {},
+          audioSfx: {},
+          audioSfxState: null,
+        }),
 
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
@@ -355,6 +381,7 @@ export const useNarrativeStore = create<NarrativeState>()(
         worldModel: state.worldModel,
         audioBase: state.audioBase,
         audioMoodBeds: state.audioMoodBeds,
+        audioSpecialBeds: state.audioSpecialBeds,
         audioByLi: state.audioByLi,
         audioSfx: state.audioSfx,
       }),
@@ -390,6 +417,7 @@ export const useNarrativeStore = create<NarrativeState>()(
           worldModel,
           audioBase: prev.audioBase ?? null,
           audioMoodBeds: prev.audioMoodBeds ?? {},
+          audioSpecialBeds: prev.audioSpecialBeds ?? {},
           audioByLi: prev.audioByLi ?? {},
           audioSfx: prev.audioSfx ?? {},
         };

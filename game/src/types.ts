@@ -88,6 +88,8 @@ export type WorldMapLocation = {
   name: string;
   /** Настроение локации → выбор эмбиент-беда из settings.ambientByMood. */
   mood?: string;
+  /** Особый диегетический эмбиент → settings.ambientBySpecial (приоритет над mood). */
+  specialKind?: string;
 };
 
 export type WorldMapEdge = {
@@ -115,6 +117,8 @@ export type ProjectSettings = {
    * подложку по mood текущей локации; bgmUrl остаётся фолбэком.
    */
   ambientByMood?: Record<string, string>;
+  /** Диегетические беды особых локаций: SpecialAmbientKind → URL (приоритет над mood). */
+  ambientBySpecial?: Record<string, string>;
   crossfadeDurationMs?: number;
   bgmVolume?: number;
   sfxVolume?: number;
