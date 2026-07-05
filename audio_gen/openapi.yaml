@@ -1,0 +1,269 @@
+openapi: 3.0.3
+info:
+  title: GU Engine Audio Generation API
+  version: 1.0.0
+  description: Audio generation service wrapping Suno API for the visual novel engine
+
+servers:
+  - url: http://localhost:3200
+
+paths:
+  /generate/melody:
+    post:
+      operationId: generateMelody
+      summary: Generate a base melody track
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateMelodyRequest'
+      responses:
+        '200':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchCreated'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /generate/variation:
+    post:
+      operationId: generateVariation
+      summary: Generate a character-tinted variation of a base melody
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateVariationRequest'
+      responses:
+        '200':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchCreated'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /generate/sfx:
+    post:
+      operationId: generateSfx
+      summary: Generate emotional sound effects
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GenerateSfxRequest'
+      responses:
+        '200':
+          description: Batch created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchCreated'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /status/{batchId}:
+    parameters:
+      - name: batchId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Batch UUID
+    get:
+      operationId: getAudioBatchStatus
+      summary: Get batch generation status
+      responses:
+        '200':
+          description: Batch status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchStatus'
+        '404':
+          description: Batch not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /status:
+    get:
+      operationId: listAudioBatches
+      summary: List all batches
+      responses:
+        '200':
+          description: Array of batch summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BatchSummary'
+
+components:
+  schemas:
+    GenerateMelodyRequest:
+      type: object
+      required:
+        - style
+        - instrumental
+      properties:
+        style:
+          type: string
+          description: Style description (genre, instruments, mood)
+        instrumental:
+          type: boolean
+          description: Generate instrumental-only track
+
+    GenerateVariationRequest:
+      type: object
+      required:
+        - baseAudioName
+        - toneStyle
+        - variationType
+      properties:
+        baseAudioName:
+          type: string
+          description: Filename of base melody on audio_server
+        toneStyle:
+          type: string
+          description: Style for the variation
+        variationType:
+          type: string
+          enum: [positive, negative]
+          description: Type of variation
+
+    SfxItem:
+      type: object
+      required:
+        - id
+        - prompt
+      properties:
+        id:
+          type: string
+          description: Unique ID for this SFX item
+        prompt:
+          type: string
+          description: Sound description prompt
+        soundLoop:
+          type: boolean
+          description: Whether sound should loop seamlessly
+
+    GenerateSfxRequest:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SfxItem'
+
+    BatchCreated:
+      type: object
+      required:
+        - batchId
+        - itemIds
+      properties:
+        batchId:
+          type: string
+        itemIds:
+          type: array
+          items:
+            type: string
+
+    CompletedItem:
+      type: object
+      required:
+        - id
+        - file
+      properties:
+        id:
+          type: string
+        file:
+          type: string
+
+    FailedItem:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+        error:
+          type: string
+
+    BatchStatus:
+      type: object
+      required:
+        - batchId
+        - createdAt
+        - total
+        - completed
+        - pending
+        - failed
+        - done
+      properties:
+        batchId:
+          type: string
+        createdAt:
+          type: string
+        total:
+          type: number
+        completed:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompletedItem'
+        pending:
+          type: array
+          items:
+            type: string
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/FailedItem'
+        done:
+          type: boolean
+
+    BatchSummary:
+      type: object
+      properties:
+        batchId:
+          type: string
+        createdAt:
+          type: string
+        total:
+          type: number
+        completed:
+          type: number
+        pending:
+          type: number
+        failed:
+          type: number
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

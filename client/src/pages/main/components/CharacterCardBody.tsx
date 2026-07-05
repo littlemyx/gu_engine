@@ -11,6 +11,7 @@ import { useGenerationPolling } from '../hooks/useGenerationPolling';
 import { MasterPromptHandle } from './MasterPromptHandle';
 import { DescriptionTextarea } from './DescriptionTextarea';
 import { PosesSection } from './PosesSection';
+import { AudioCharacterSection } from './AudioCharacterSection';
 import { GenerateControls } from './GenerateControls';
 import styles from './CharacterCardBody.module.css';
 
@@ -85,42 +86,41 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
           pose: poseDescription,
           referenceImageUrl,
         },
-      })
-        .then(({ data: respData }) => {
-          if (!respData) throw new Error('Нет ответа от сервера');
-          const resp = respData as { batchId: string; itemIds: string[] };
+      }).then(({ data: respData }) => {
+        if (!respData) throw new Error('Нет ответа от сервера');
+        const resp = respData as { batchId: string; itemIds: string[] };
 
-          return new Promise<void>((resolve, reject) => {
-            const poll = setInterval(async () => {
-              try {
-                const { data: statusData } = await getBatchStatus({
-                  path: { batchId: resp.batchId },
-                });
-                if (!statusData) return;
-                const status = statusData as BatchStatus;
-                if (!status.done) return;
+        return new Promise<void>((resolve, reject) => {
+          const poll = setInterval(async () => {
+            try {
+              const { data: statusData } = await getBatchStatus({
+                path: { batchId: resp.batchId },
+              });
+              if (!statusData) return;
+              const status = statusData as BatchStatus;
+              if (!status.done) return;
 
-                clearInterval(poll);
-                const poseId = poseDescription.toLowerCase().trim();
-                const match = status.completed.find((c: { id: string; file: string }) => c.id === poseId);
-                const file = match?.file;
-                if (file) {
-                  updateGeneratedImage(id, poseIndex, file);
-                  if (oldImage) {
-                    deleteImage({ path: { name: oldImage } }).catch(() => {});
-                  }
-                  resolve();
-                } else {
-                  const failed = status.failed.find(f => f.id === poseId);
-                  reject(new Error(failed?.error ?? 'Генерация позы не удалась'));
+              clearInterval(poll);
+              const poseId = poseDescription.toLowerCase().trim();
+              const match = status.completed.find((c: { id: string; file: string }) => c.id === poseId);
+              const file = match?.file;
+              if (file) {
+                updateGeneratedImage(id, poseIndex, file);
+                if (oldImage) {
+                  deleteImage({ path: { name: oldImage } }).catch(() => {});
                 }
-              } catch {
-                clearInterval(poll);
-                reject(new Error('Сервер генерации недоступен'));
+                resolve();
+              } else {
+                const failed = status.failed.find(f => f.id === poseId);
+                reject(new Error(failed?.error ?? 'Генерация позы не удалась'));
               }
-            }, 5000);
-          });
+            } catch {
+              clearInterval(poll);
+              reject(new Error('Сервер генерации недоступен'));
+            }
+          }, 5000);
         });
+      });
     },
     [id, data.description, data.generatedImages, data.poses, edges, nodes, updateGeneratedImage],
   );
@@ -147,6 +147,7 @@ export const CharacterCardBody = ({ id, data }: { id: string; data: CardNodeData
         generatedImages={data.generatedImages}
         onRegeneratePose={onRegeneratePose}
       />
+      <AudioCharacterSection nodeId={id} data={data} edges={edges} nodes={nodes} />
       <GenerateControls generation={data.generation} onGenerate={onGenerate} />
     </div>
   );

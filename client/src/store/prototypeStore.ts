@@ -8,6 +8,7 @@ import type {
   SceneCharacter,
   CharacterPose,
   GenerationState,
+  AudioTone,
 } from '../pages/main/index';
 
 type PrototypeState = {
@@ -34,6 +35,11 @@ type PrototypeState = {
   setGeneration: (nodeId: string, generation: GenerationState | undefined) => void;
   setGeneratedImages: (nodeId: string, images: string[]) => void;
   updateGeneratedImage: (nodeId: string, index: number, image: string) => void;
+  setAudioGeneration: (nodeId: string, generation: GenerationState | undefined) => void;
+  setGeneratedAudio: (nodeId: string, audio: string[]) => void;
+  setAudioToneGeneration: (nodeId: string, tone: AudioTone, generation: GenerationState | undefined) => void;
+  setAudioVariations: (nodeId: string, tone: AudioTone, files: string[]) => void;
+  setAudioSelected: (nodeId: string, kind: 'base' | AudioTone, index: number) => void;
 
   loadScenes: (nodes: CardNode[], edges: CardEdge[]) => void;
   reset: () => void;
@@ -272,6 +278,60 @@ export const usePrototypeStore = create<PrototypeState>()(
         }));
       },
 
+      setAudioGeneration: (nodeId, generation) => {
+        set(s => ({
+          nodes: s.nodes.map(n => (n.id === nodeId ? { ...n, data: { ...n.data, audioGeneration: generation } } : n)),
+        }));
+      },
+
+      setGeneratedAudio: (nodeId, audio) => {
+        set(s => ({
+          nodes: s.nodes.map(n => (n.id === nodeId ? { ...n, data: { ...n.data, generatedAudio: audio } } : n)),
+        }));
+      },
+
+      setAudioToneGeneration: (nodeId, tone, generation) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    audioGenerationByTone: { ...n.data.audioGenerationByTone, [tone]: generation },
+                  },
+                }
+              : n,
+          ),
+        }));
+      },
+
+      setAudioVariations: (nodeId, tone, files) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    audioVariations: { ...n.data.audioVariations, [tone]: files },
+                  },
+                }
+              : n,
+          ),
+        }));
+      },
+
+      setAudioSelected: (nodeId, kind, index) => {
+        set(s => ({
+          nodes: s.nodes.map(n =>
+            n.id === nodeId
+              ? { ...n, data: { ...n.data, audioSelected: { ...n.data.audioSelected, [kind]: index } } }
+              : n,
+          ),
+        }));
+      },
+
       loadScenes: (nodes, edges) => {
         set({ nodes, edges });
       },
@@ -282,7 +342,7 @@ export const usePrototypeStore = create<PrototypeState>()(
     }),
     {
       name: 'gu-prototype',
-      version: 3,
+      version: 4,
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as { nodes?: CardNode[]; edges?: CardEdge[] };
         let nodes = state.nodes || [];
@@ -300,7 +360,8 @@ export const usePrototypeStore = create<PrototypeState>()(
 
         if (version < 2) {
           nodes = nodes.map(n => {
-            const needsMigration = (n.type as string) === 'master_prompt' || (n.data.cardType as string) === 'master_prompt';
+            const needsMigration =
+              (n.type as string) === 'master_prompt' || (n.data.cardType as string) === 'master_prompt';
             if (!needsMigration) return n;
             return {
               ...n,
@@ -316,6 +377,21 @@ export const usePrototypeStore = create<PrototypeState>()(
               return { ...e, targetHandle: 'visual_style' };
             }
             return e;
+          });
+        }
+
+        if (version < 4) {
+          // generatedAudio на карточках персонажей хранил «2 варианта
+          // последнего батча» без привязки к тону — семантически битые
+          // данные, восстановить тон невозможно. Чистим; база на
+          // audio_master_prompt остаётся.
+          nodes = nodes.map(n => {
+            if (n.data.cardType !== 'character') return n;
+            if (!n.data.generatedAudio && !n.data.audioGeneration) return n;
+            const data = { ...n.data };
+            delete data.generatedAudio;
+            delete data.audioGeneration;
+            return { ...n, data };
           });
         }
 

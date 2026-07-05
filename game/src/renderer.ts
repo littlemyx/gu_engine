@@ -1,4 +1,5 @@
 import { GameEngine } from "./engine";
+import { GameAudio } from "./audio";
 import { SceneNode, SceneType } from "./types";
 import { parseSpeaker } from "./speaker";
 
@@ -14,6 +15,7 @@ const BG_PRELOAD_TIMEOUT = 1500;
 export class GameRenderer {
   private root: HTMLElement;
   private engine: GameEngine | null = null;
+  private audio: GameAudio | null = null;
   private backCallback: (() => void) | null = null;
   private topLabelProvider: (() => string) | null = null;
   private mapAvailable = false;
@@ -41,6 +43,10 @@ export class GameRenderer {
 
   bind(engine: GameEngine): void {
     this.engine = engine;
+  }
+
+  bindAudio(audio: GameAudio): void {
+    this.audio = audio;
   }
 
   onBack(callback: () => void): void {
@@ -148,6 +154,23 @@ export class GameRenderer {
     this.topLabelEl.textContent = this.topLabelProvider?.() ?? "";
     this.swapBackground(node.data.image, settings.sceneFadeInMs);
     this.renderSprites(node);
+
+    if (this.audio) {
+      // Total target function: цель вычисляется на КАЖДОМ рендере — выход из
+      // encounter-ветки в сцену без профиля автоматически возвращает базу
+      // (или тишину при её отсутствии). Идемпотентность crossfadeTo по
+      // targetUrl делает повторные вызовы бесплатными.
+      const target = this.audio.evaluateAudioState(
+        this.engine.getState(),
+        node.data.audioProfile,
+        settings.bgmUrl,
+      );
+      this.audio.crossfadeTo(target);
+
+      if (node.data.sfxUrl) {
+        this.audio.playSfx(node.data.sfxUrl);
+      }
+    }
 
     const connected = this.engine.getConnectedOutputIds();
     const activeOutputs = node.data.outputs.filter((o) => connected.has(o.id));

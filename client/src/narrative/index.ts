@@ -26,7 +26,13 @@ export { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatP
 export { buildEndingRequestPayload } from './buildEndingRequest';
 export { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 export { useNarrativeStore } from './narrativeStore';
-export type { ImageGenState, CharacterGenState } from './narrativeStore';
+export type {
+  ImageGenState,
+  CharacterGenState,
+  AudioTrackState,
+  AudioVariationTone,
+  LiAudioState,
+} from './narrativeStore';
 export { useBriefStore } from './briefStore';
 export { useBulkSegmentGeneration } from './useBulkSegmentGeneration';
 export type { BulkGenStatus, BulkFailure } from './useBulkSegmentGeneration';
@@ -64,3 +70,12 @@ export {
 } from './emotionResolver';
 export { useRegeneratePoses, poseKey } from './useRegeneratePoses';
 export type { PoseRegenEntry, PoseRegenStatus, PoseItemStatus } from './useRegeneratePoses';
+export { useBulkAudioGeneration, buildBaseStyle, buildToneStyle } from './useBulkAudioGeneration';
+export type { AudioBulkStatus, AudioBulkFailure } from './useBulkAudioGeneration';
+export {
+  AUDIO_SERVER_BASE,
+  audioUrlFor,
+  selectedTrackFile,
+  buildSceneAudioProfile,
+  resolveSfxUrl,
+} from './audioResolver';

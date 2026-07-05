@@ -1,0 +1,12 @@
+{
+  "name": "gu-engine-gen-shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "description": "Общий код gen-сервисов: батч-машина, логгер, rate limiter, storage-upload",
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

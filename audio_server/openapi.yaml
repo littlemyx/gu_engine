@@ -1,0 +1,186 @@
+openapi: 3.0.3
+info:
+  title: GU Engine Audio API
+  version: 1.0.0
+  description: CRUD API for managing audio files in the visual novel engine
+
+servers:
+  - url: http://localhost:3008
+
+paths:
+  /audio:
+    get:
+      operationId: listAudio
+      summary: List all audio files with duration
+      responses:
+        '200':
+          description: Array of audio file metadata
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AudioFile'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      operationId: uploadAudio
+      summary: Upload a new audio file
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - audio
+              properties:
+                audio:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Audio uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioFile'
+        '400':
+          description: No audio provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /audio/{name}:
+    parameters:
+      - name: name
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Audio filename
+
+    get:
+      operationId: getAudio
+      summary: Get audio file by name
+      responses:
+        '200':
+          description: The audio file
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Audio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    delete:
+      operationId: deleteAudio
+      summary: Delete an audio file
+      responses:
+        '200':
+          description: Audio deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioDeleted'
+        '404':
+          description: Audio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      operationId: updateAudio
+      summary: Rename audio file
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                newName:
+                  type: string
+                  description: New filename for the audio
+      responses:
+        '200':
+          description: Audio renamed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioRenamed'
+        '400':
+          description: No newName provided
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Audio not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Target name already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    AudioFile:
+      type: object
+      required:
+        - name
+        - durationMs
+      properties:
+        name:
+          type: string
+          description: Audio filename
+        durationMs:
+          type: number
+          description: Duration in milliseconds
+
+    AudioRenamed:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+          description: New audio filename
+
+    AudioDeleted:
+      type: object
+      required:
+        - deleted
+      properties:
+        deleted:
+          type: string
+          description: Name of the deleted audio file
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message

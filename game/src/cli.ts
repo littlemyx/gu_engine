@@ -15,6 +15,19 @@ function collectImageUrls(scenes: SceneGraph): string[] {
   return [...new Set(urls)];
 }
 
+/** Collect all audio URLs: project-level bgmUrl + per-scene audioProfile/sfxUrl */
+function collectAudioUrls(project: ResolvedProject): string[] {
+  const urls: string[] = [];
+  if (project.settings.bgmUrl) urls.push(project.settings.bgmUrl);
+  for (const node of project.scenes.nodes) {
+    const p = node.data.audioProfile;
+    if (p?.positiveUrl) urls.push(p.positiveUrl);
+    if (p?.negativeUrl) urls.push(p.negativeUrl);
+    if (node.data.sfxUrl) urls.push(node.data.sfxUrl);
+  }
+  return [...new Set(urls)];
+}
+
 /** Download a URL to a local file. Returns true on success. */
 async function downloadFile(url: string, dest: string): Promise<boolean> {
   try {
@@ -49,15 +62,18 @@ function filenameFromUrl(url: string): string {
 }
 
 /**
- * Download all assets to assetsDir, return a mapping from original URL to relative path.
+ * Download all assets to assetsDir, return a mapping from original URL to
+ * relative path. usedNames разделяется между проходами (image/audio), чтобы
+ * файл одного прохода не перезаписал одноимённый файл другого.
  */
 async function downloadAssets(
   urls: string[],
   assetsDir: string,
+  usedNames: Set<string>,
+  failed: string[],
 ): Promise<Map<string, string>> {
   mkdirSync(assetsDir, { recursive: true });
   const mapping = new Map<string, string>();
-  const usedNames = new Set<string>();
 
   for (const url of urls) {
     let name = filenameFromUrl(url);
@@ -76,6 +92,8 @@ async function downloadAssets(
     const ok = await downloadFile(url, dest);
     if (ok) {
       mapping.set(url, `./assets/${name}`);
+    } else {
+      failed.push(url);
     }
   }
 
@@ -96,6 +114,45 @@ function rewriteImageUrls(
         data: {
           ...node.data,
           image: mapping.get(node.data.image) ?? node.data.image,
+        },
+      })),
+    },
+  };
+}
+
+/** Replace audio URLs in settings.bgmUrl, audioProfile and sfxUrl */
+function rewriteAudioUrls(
+  project: ResolvedProject,
+  mapping: Map<string, string>,
+): ResolvedProject {
+  return {
+    ...project,
+    settings: {
+      ...project.settings,
+      bgmUrl: project.settings.bgmUrl
+        ? (mapping.get(project.settings.bgmUrl) ?? project.settings.bgmUrl)
+        : undefined,
+    },
+    scenes: {
+      ...project.scenes,
+      nodes: project.scenes.nodes.map((node) => ({
+        ...node,
+        data: {
+          ...node.data,
+          audioProfile: node.data.audioProfile
+            ? {
+                ...node.data.audioProfile,
+                positiveUrl: node.data.audioProfile.positiveUrl
+                  ? (mapping.get(node.data.audioProfile.positiveUrl) ?? node.data.audioProfile.positiveUrl)
+                  : undefined,
+                negativeUrl: node.data.audioProfile.negativeUrl
+                  ? (mapping.get(node.data.audioProfile.negativeUrl) ?? node.data.audioProfile.negativeUrl)
+                  : undefined,
+              }
+            : undefined,
+          sfxUrl: node.data.sfxUrl
+            ? (mapping.get(node.data.sfxUrl) ?? node.data.sfxUrl)
+            : undefined,
         },
       })),
     },
@@ -206,13 +263,31 @@ async function main() {
   // Download assets and rewrite image URLs to relative paths
   const imageUrls = collectImageUrls(project.scenes);
   let buildProject = project;
+  const usedNames = new Set<string>();
+  const failedDownloads: string[] = [];
+  const assetsDir = resolve(absOutDir, "assets");
 
   if (imageUrls.length > 0) {
-    console.log(`\nСкачивание ассетов (${imageUrls.length})...`);
-    const assetsDir = resolve(absOutDir, "assets");
-    const mapping = await downloadAssets(imageUrls, assetsDir);
+    console.log(`\nСкачивание изображений (${imageUrls.length})...`);
+    const mapping = await downloadAssets(imageUrls, assetsDir, usedNames, failedDownloads);
     console.log(`Скачано: ${mapping.size}/${imageUrls.length}`);
     buildProject = rewriteImageUrls(project, mapping);
+  }
+
+  const audioUrls = collectAudioUrls(buildProject);
+  if (audioUrls.length > 0) {
+    console.log(`\nСкачивание аудио (${audioUrls.length})...`);
+    const mapping = await downloadAssets(audioUrls, assetsDir, usedNames, failedDownloads);
+    console.log(`Скачано: ${mapping.size}/${audioUrls.length}`);
+    buildProject = rewriteAudioUrls(buildProject, mapping);
+  }
+
+  if (failedDownloads.length > 0) {
+    console.warn(
+      `\n⚠ Не скачано ассетов: ${failedDownloads.length}. ` +
+        `В сборке останутся исходные URL (на другой машине они будут недоступны):`,
+    );
+    for (const url of failedDownloads) console.warn(`  - ${url}`);
   }
 
   await build({

@@ -32,3 +32,16 @@
 .masterPromptLabelStory {
   color: #0e7490;
 }
+
+.masterPromptSectionAudio {
+  border-color: #8b5cf6;
+  background: #f5f3ff;
+}
+
+.styleHandleAudio {
+  background: #8b5cf6 !important;
+}
+
+.masterPromptLabelAudio {
+  color: #7c3aed;
+}

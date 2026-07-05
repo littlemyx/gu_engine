@@ -15,11 +15,13 @@ import '@alenaksu/json-viewer';
 import type { JsonViewer } from '@alenaksu/json-viewer/dist/JsonViewer';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import { toCardEdge } from '../utils';
+import { AUDIO_SERVER_BASE } from '../constants';
 import type { CardNode, CardNodeData } from '../types';
 import styles from '../main.module.css';
 import common from '../common.module.css';
 import { CardShell } from './CardShell';
 import { ImageGallery } from './ImageGallery';
+import { AudioGallery } from './AudioGallery';
 import { SettingsPanel } from './SettingsPanel';
 import { NewProjectDialog } from './NewProjectDialog';
 
@@ -29,7 +31,26 @@ const nodeTypes = {
   visual_master_prompt: CardShell,
   story_master_prompt: CardShell,
   background: CardShell,
+  audio_master_prompt: CardShell,
 };
+
+/**
+ * Базовая мелодия для канвас-экспорта: выбранный вариант первой
+ * audio_master_prompt карточки с готовой генерацией. Вариации по метрикам
+ * работают только в нарративном пайплайне (compileWorldGame) — у
+ * канвас-экспорта нет ни state, ни effects.
+ */
+function findCanvasBgmUrl(allNodes: CardNode[]): string | undefined {
+  for (const node of allNodes) {
+    if (node.data.cardType !== 'audio_master_prompt') continue;
+    const files = node.data.generatedAudio ?? [];
+    const selected = files[node.data.audioSelected?.base ?? 0] || files.find(Boolean);
+    if (selected) {
+      return `${AUDIO_SERVER_BASE}/audio/${encodeURIComponent(selected)}`;
+    }
+  }
+  return undefined;
+}
 
 export const Flow = () => {
   const { nodes, edges, setNodes, setEdges, deleteNode, updateNodeData, loadScenes, reset } = usePrototypeStore();
@@ -246,7 +267,14 @@ export const Flow = () => {
   );
 
   const onExport = useCallback(() => {
-    const scenes = JSON.stringify({ nodes, edges }, null, 2);
+    // В scenes.json уходят только сцены и рёбра между ними: служебные
+    // карточки (персонажи, промпты) с нулём входящих рёбер ломали
+    // findStartNode движка.
+    const sceneIds = new Set(nodes.filter(n => n.data.cardType === 'scene').map(n => n.id));
+    const sceneNodes = nodes.filter(n => sceneIds.has(n.id));
+    const sceneEdges = edges.filter(e => sceneIds.has(e.source) && sceneIds.has(e.target));
+
+    const scenes = JSON.stringify({ nodes: sceneNodes, edges: sceneEdges }, null, 2);
     const scenesBlob = new Blob([scenes], { type: 'application/json' });
     const scenesUrl = URL.createObjectURL(scenesBlob);
     const scenesLink = document.createElement('a');
@@ -255,7 +283,21 @@ export const Flow = () => {
     scenesLink.click();
     URL.revokeObjectURL(scenesUrl);
 
-    const project = JSON.stringify({ title: 'Новелла', scenes: './scenes.json', settings: {} }, null, 2);
+    const bgmUrl = findCanvasBgmUrl(nodes);
+    const project = JSON.stringify(
+      {
+        title: 'Новелла',
+        scenes: './scenes.json',
+        settings: {
+          crossfadeDurationMs: 2000,
+          bgmVolume: 0.3,
+          sfxVolume: 0.5,
+          ...(bgmUrl ? { bgmUrl } : {}),
+        },
+      },
+      null,
+      2,
+    );
     const projectBlob = new Blob([project], { type: 'application/json' });
     const projectUrl = URL.createObjectURL(projectBlob);
     const projectLink = document.createElement('a');
@@ -334,6 +376,7 @@ export const Flow = () => {
                 + Добавить
               </button>
               <ImageGallery />
+              <AudioGallery />
               <SettingsPanel />
             </>
           )}

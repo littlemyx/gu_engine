@@ -1,0 +1,22 @@
+.body {
+  border: 1px solid #8b5cf6;
+  background: #f5f3ff;
+  border-radius: 6px;
+  padding: 6px;
+}
+
+.audioResults {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px;
+  background: #ede9fe;
+  border-radius: 4px;
+}
+
+.variantRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

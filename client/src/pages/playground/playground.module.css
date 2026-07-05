@@ -655,3 +655,20 @@
   border-radius: 3px;
   transition: width 0.25s ease;
 }
+
+.audioStyleInput {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.audioStyleInput:focus {
+  outline: none;
+  border-color: #a78bfa;
+}

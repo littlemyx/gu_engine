@@ -13,6 +13,7 @@ export type {
   CardNode,
   CardEdge,
   ExportData,
+  AudioTone,
 } from './types';
 
 const Main = () => {

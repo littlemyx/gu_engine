@@ -8,7 +8,7 @@ import type {
   WorldLocation,
   WorldModel,
 } from './types';
-import type { CharacterGenState, ImageGenState } from './narrativeStore';
+import type { CharacterGenState, ImageGenState, AudioTrackState, LiAudioState } from './narrativeStore';
 import type {
   GameProjectFile,
   GameSceneEdge,
@@ -30,6 +30,7 @@ import {
 } from './convertToGameProject';
 import { ARCHETYPES } from './archetypes';
 import { pickCharacterEmotion, resolveEmotionToSpriteUrl } from './emotionResolver';
+import { audioUrlFor, buildSceneAudioProfile, resolveSfxUrl, selectedTrackFile } from './audioResolver';
 import { directPredecessors, topoOrderAnchors } from './anchorOrder';
 
 /**
@@ -88,6 +89,12 @@ function movementLabel(to: WorldLocation, via: string): string {
   return v ? `Пойти: ${to.name} (${v})` : `Пойти: ${to.name}`;
 }
 
+export type WorldAudioInput = {
+  base: AudioTrackState | null;
+  byLi: Record<string, LiAudioState>;
+  sfx: Record<string, string>;
+};
+
 export function compileWorldGameProject(
   brief: Brief,
   outline: StoryOutlinePlan,
@@ -97,6 +104,7 @@ export function compileWorldGameProject(
   endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
+  audio: WorldAudioInput = { base: null, byLi: {}, sfx: {} },
 ): WorldCompileResult {
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
@@ -311,6 +319,10 @@ export function compileWorldGameProject(
       [TIME_VAR]: 1,
     });
 
+    // Аудио-профиль ветки персонажа: один на все сцены encounter-а
+    // (включая choice-less narration-сцены — они внутри той же ветки).
+    const audioProfile = buildSceneAudioProfile(liId, audio.byLi[liId]);
+
     for (const variant of variants) {
       const condition = bracketCondition(liId, variant.bracket);
 
@@ -395,6 +407,8 @@ export function compileWorldGameProject(
             sprites: sprites.length ? sprites : undefined,
             outputs: vsOutputs,
             sceneType: vs.choices.length === 0 ? 'narration' : 'dialogue',
+            audioProfile,
+            sfxUrl: resolveSfxUrl(pickCharacterEmotion(vs, liId), audio.sfx),
           },
         });
       }
@@ -539,6 +553,7 @@ export function compileWorldGameProject(
   };
 
   const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
+  const bgmUrl = audioUrlFor(selectedTrackFile(audio.base));
   const project: GameProjectFile = {
     title,
     scenes: './scenes.json',
@@ -549,6 +564,7 @@ export function compileWorldGameProject(
       endFadeInMs: 400,
       stateSchema,
       world,
+      ...(bgmUrl ? { bgmUrl, crossfadeDurationMs: 2000, bgmVolume: 0.3, sfxVolume: 0.5 } : {}),
     },
   };
 

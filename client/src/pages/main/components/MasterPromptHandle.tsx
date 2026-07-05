@@ -36,9 +36,20 @@ export const MasterPromptHandle = ({
             return !alreadyConnected;
           }}
         />
-        <span className={`${styles.masterPromptLabel} ${styles.masterPromptLabelStory}`}>
-          Мастер-промпт истории
-        </span>
+        <span className={`${styles.masterPromptLabel} ${styles.masterPromptLabelStory}`}>Мастер-промпт истории</span>
+      </div>
+      <div className={`${styles.masterPromptSection} ${styles.masterPromptSectionAudio}`}>
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="audio_style"
+          className={styles.styleHandleAudio}
+          isValidConnection={() => {
+            const alreadyConnected = edges.some(e => e.target === nodeId && e.targetHandle === 'audio_style');
+            return !alreadyConnected;
+          }}
+        />
+        <span className={`${styles.masterPromptLabel} ${styles.masterPromptLabelAudio}`}>Аудио мастер-промпт</span>
       </div>
     </>
   );

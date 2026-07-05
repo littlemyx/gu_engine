@@ -9,6 +9,7 @@ import { CharacterCardBody } from './CharacterCardBody';
 import { BackgroundCardBody } from './BackgroundCardBody';
 import { VisualMasterPromptCardBody } from './VisualMasterPromptCardBody';
 import { StoryMasterPromptCardBody } from './StoryMasterPromptCardBody';
+import { AudioMasterPromptCardBody } from './AudioMasterPromptCardBody';
 import common from '../common.module.css';
 import styles from './CardShell.module.css';
 
@@ -46,7 +47,8 @@ export const CardShell = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
   const isCharacter = cardType === 'character';
   const isVisualMasterPrompt = cardType === 'visual_master_prompt';
   const isStoryMasterPrompt = cardType === 'story_master_prompt';
-  const isMasterPrompt = isVisualMasterPrompt || isStoryMasterPrompt;
+  const isAudioMasterPrompt = cardType === 'audio_master_prompt';
+  const isMasterPrompt = isVisualMasterPrompt || isStoryMasterPrompt || isAudioMasterPrompt;
   const isBackground = cardType === 'background';
   const isScene = !isCharacter && !isMasterPrompt && !isBackground;
 
@@ -109,6 +111,7 @@ export const CardShell = ({ id, data }: NodeProps<Node<CardNodeData>>) => {
         {isBackground && <BackgroundCardBody id={id} data={data} />}
         {isVisualMasterPrompt && <VisualMasterPromptCardBody id={id} data={data} />}
         {isStoryMasterPrompt && <StoryMasterPromptCardBody id={id} data={data} />}
+        {isAudioMasterPrompt && <AudioMasterPromptCardBody id={id} data={data} />}
       </div>
     </>
   );

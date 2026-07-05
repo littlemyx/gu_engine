@@ -65,6 +65,15 @@ export type GameSpriteEntry = {
   position: 'left' | 'center' | 'right';
 };
 
+/** Локальная реплика game/src/types.ts SceneAudioProfile. */
+export type GameSceneAudioProfile = {
+  liId: string;
+  positiveUrl?: string;
+  negativeUrl?: string;
+  positiveGte: number;
+  negativeLte: number;
+};
+
 export type GameSceneNodeData = {
   label: string;
   image: string;
@@ -72,6 +81,8 @@ export type GameSceneNodeData = {
   sprites?: GameSpriteEntry[];
   outputs: GameSceneOutput[];
   sceneType?: GameSceneType;
+  audioProfile?: GameSceneAudioProfile;
+  sfxUrl?: string;
 };
 
 export type GameSceneNode = {
@@ -127,6 +138,10 @@ export type GameProjectFile = {
     endFadeInMs?: number;
     stateSchema?: GameStateSchema;
     world?: GameWorldManifest;
+    bgmUrl?: string;
+    crossfadeDurationMs?: number;
+    bgmVolume?: number;
+    sfxVolume?: number;
   };
 };
 
@@ -493,6 +508,8 @@ export type StoryConversionResult = {
   stats: StoryConversionStats;
 };
 
+// АУДИО: сознательно не поддерживается в этом легаси-пути — audioProfile/
+// sfxUrl/bgmUrl эмитит только compileWorldGameProject (world-compile-only).
 export function convertStoryToGameProject(
   brief: Brief,
   outline: StoryOutlinePlan,
@@ -985,13 +1002,19 @@ export const BRACKET_WIRE_ORDER: Record<DialogueVariantBracket, number> = {
   neutral: 2,
 };
 
+// Единственная точка истины порогов тона. Ими же собираются аудио-профили
+// сцен (compileWorldGame) — музыкальный bracket совпадает с диалоговым
+// по построению, а не по совпадению литералов.
+export const BRACKET_POSITIVE_GTE = 0.3;
+export const BRACKET_NEGATIVE_LTE = 0;
+
 export function bracketCondition(liId: string, bracket: DialogueVariantBracket): GameStateCondition[] {
   const path = `relationship[${liId}].affection`;
   switch (bracket) {
     case 'positive':
-      return [{ path, gte: 0.3 }];
+      return [{ path, gte: BRACKET_POSITIVE_GTE }];
     case 'negative':
-      return [{ path, lte: 0 }];
+      return [{ path, lte: BRACKET_NEGATIVE_LTE }];
     case 'neutral':
       return [];
   }

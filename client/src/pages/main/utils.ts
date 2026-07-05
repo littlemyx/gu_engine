@@ -56,9 +56,7 @@ export const getSceneContext = (nodeId: string, edges: CardEdge[], nodes: CardNo
 
     // The sourceHandle is the output ID that was used
     const outputId = inEdge.sourceHandle;
-    const output = outputId
-      ? sourceNode.data.outputs?.find(o => o.id === outputId)
-      : undefined;
+    const output = outputId ? sourceNode.data.outputs?.find(o => o.id === outputId) : undefined;
     const outputText = output?.text || '';
 
     // For the first iteration, this is the output that leads INTO our target node
@@ -83,8 +81,24 @@ export const getSceneContext = (nodeId: string, edges: CardEdge[], nodes: CardNo
 
 const DEFAULT_MAX_DEPTH = 10;
 
+// eslint-disable-next-line no-unused-vars
 export const getMaxDepthFromNode = (_nodeId: string, _edges: CardEdge[], _nodes: CardNode[]): number => {
   return DEFAULT_MAX_DEPTH;
+};
+
+export const getAudioMasterPromptForNode = (
+  nodeId: string,
+  edges: CardEdge[],
+  nodes: CardNode[],
+): CardNode | undefined => {
+  const incoming = edges.filter(e => e.target === nodeId && e.targetHandle === 'audio_style');
+  for (const edge of incoming) {
+    const sourceNode = nodes.find(n => n.id === edge.source);
+    if (sourceNode && sourceNode.data.cardType === 'audio_master_prompt') {
+      return sourceNode;
+    }
+  }
+  return undefined;
 };
 
 export const getStoryMasterPromptForNode = (nodeId: string, edges: CardEdge[], nodes: CardNode[]): string => {

@@ -161,7 +161,10 @@ export class GameEngine {
   private applyEffects(effects: OutputEffects): void {
     if (effects.stateDeltas) {
       for (const [key, delta] of Object.entries(effects.stateDeltas)) {
-        this.state[key] = (this.state[key] ?? 0) + delta;
+        const next = (this.state[key] ?? 0) + delta;
+        // Диапазон из stateSchema, для канвас-экспортов без схемы — [0, 1]
+        const range = this.settings.stateSchema?.vars[key]?.range ?? [0, 1];
+        this.state[key] = Math.max(range[0], Math.min(range[1], next));
       }
     }
     if (effects.flagSet) {

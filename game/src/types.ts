@@ -17,6 +17,20 @@ export type SpriteEntry = {
   position: 'left' | 'center' | 'right';
 };
 
+/**
+ * Аудио-профиль encounter-сцены. Пороги копируются компилятором мира из
+ * bracketCondition-констант — музыкальный тон совпадает с диалоговым
+ * bracket-ом по построению. Негатив — по affection (не tension), как в
+ * диалогах.
+ */
+export type SceneAudioProfile = {
+  liId: string;
+  positiveUrl?: string;
+  negativeUrl?: string;
+  positiveGte: number;
+  negativeLte: number;
+};
+
 export type SceneNodeData = {
   label: string;
   image: string;
@@ -25,6 +39,9 @@ export type SceneNodeData = {
   sprites?: SpriteEntry[];
   outputs: SceneOutput[];
   sceneType?: SceneType;
+  audioProfile?: SceneAudioProfile;
+  /** SFX сцены, разрешён по эмоции на этапе конверсии (emotionResolver). */
+  sfxUrl?: string;
 };
 
 export type SceneNode = {
@@ -89,6 +106,11 @@ export type ProjectSettings = {
   endFadeInMs: number;
   stateSchema?: StateSchema;
   world?: WorldManifest;
+  /** Базовая мелодия проекта — играет во всех сценах без audioProfile. */
+  bgmUrl?: string;
+  crossfadeDurationMs?: number;
+  bgmVolume?: number;
+  sfxVolume?: number;
 };
 
 export type ProjectFile = {

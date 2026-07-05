@@ -9,6 +9,8 @@ import {
   useBulkStoryGeneration,
   useBulkImageGeneration,
   useBulkCharacterGeneration,
+  useBulkAudioGeneration,
+  buildBaseStyle,
   useNarrativeStore,
   useRegeneratePoses,
   CANONICAL_POSES,
@@ -21,10 +23,12 @@ import {
   type BulkStoryGenStatus,
   type CharacterBulkStatus,
   type ImageBulkStatus,
+  type AudioBulkStatus,
   type StoryAnchor,
   type StoryOutlinePlan,
   type PoseRegenEntry,
   type PoseRegenStatus,
+  type Brief,
 } from '@/narrative';
 import { OutlineGraph } from './OutlineGraph';
 import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
@@ -44,6 +48,7 @@ const Playground = () => {
   const imageGen = useBulkImageGeneration();
   const characterGen = useBulkCharacterGeneration();
   const poseRegen = useRegeneratePoses();
+  const audioGen = useBulkAudioGeneration();
 
   const isBlocked = errorCount > 0;
 
@@ -104,6 +109,13 @@ const Playground = () => {
                   regenStatus={poseRegen.status}
                   onStart={entries => poseRegen.start(entries, brief, outline)}
                   onReset={poseRegen.reset}
+                />
+                <AudioGenBar
+                  status={audioGen.status}
+                  brief={brief}
+                  onStart={style => audioGen.start(brief, style)}
+                  onCancel={audioGen.cancel}
+                  onReset={audioGen.reset}
                 />
                 <ExportBar outline={outline} />
                 <div className={styles.outlineDetailsToggleRow}>
@@ -805,6 +817,109 @@ const MissingPosesBar: React.FC<{
 // EXPORT BAR (.gu.json + scenes.json для game/-движка)
 // ────────────────────────────────────────────────────────────────────────────
 
+// ────────────────────────────────────────────────────────────────────────────
+// AUDIO GENERATION (базовая мелодия + вариации per-LI + SFX через audio_gen)
+// ────────────────────────────────────────────────────────────────────────────
+
+const AudioGenBar: React.FC<{
+  status: AudioBulkStatus;
+  brief: Brief;
+  onStart: (baseStyle: string) => void;
+  onCancel: () => void;
+  onReset: () => void;
+}> = ({ status, brief, onStart, onCancel, onReset }) => {
+  const audioBase = useNarrativeStore(s => s.audioBase);
+  const audioByLi = useNarrativeStore(s => s.audioByLi);
+  const audioSfx = useNarrativeStore(s => s.audioSfx);
+  const [baseStyle, setBaseStyle] = useState(() => buildBaseStyle(brief));
+
+  const liCount = brief.loveInterests.length;
+  const variationsDone = Object.values(audioByLi).reduce(
+    (acc, li) => acc + (li.positive?.status === 'done' ? 1 : 0) + (li.negative?.status === 'done' ? 1 : 0),
+    0,
+  );
+  const sfxDone = Object.keys(audioSfx).length;
+  const baseDone = audioBase?.status === 'done';
+
+  const phaseLabel: Record<string, string> = {
+    base: 'базовая мелодия',
+    variations: 'вариации персонажей',
+    sfx: 'SFX',
+  };
+
+  if (status.state === 'running') {
+    const pct = status.total === 0 ? 100 : Math.round((status.completed / status.total) * 100);
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Аудио-генерация · {phaseLabel[status.phase]} · {status.completed} / {status.total}
+            {status.cancelled && ' (отменяется...)'}
+          </span>
+          <div className={styles.progressTrack}>
+            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          </div>
+          <span className={styles.bulkMeta}>
+            Suno-задачи идут минуты каждая
+            {status.failures.length > 0 && ` · ✗ ошибок: ${status.failures.length}`}
+          </span>
+        </div>
+        <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={status.cancelled}>
+          {status.cancelled ? 'Отменяется...' : 'Остановить'}
+        </button>
+      </div>
+    );
+  }
+
+  if (status.state === 'done') {
+    return (
+      <div className={styles.bulkBar}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Аудио-генерация завершена · {status.completed} / {status.total}
+            {status.cancelled && ' (остановлено)'}
+          </span>
+          <span className={styles.bulkMeta}>
+            {status.failures.length > 0
+              ? `✗ ${status.failures.length} ошибок: ${status.failures
+                  .slice(0, 3)
+                  .map(f => f.key)
+                  .join(', ')}${status.failures.length > 3 ? ` и ещё ${status.failures.length - 3}` : ''}`
+              : 'база, вариации и SFX готовы'}
+          </span>
+        </div>
+        <button type="button" className={styles.secondaryBtn} onClick={onReset}>
+          OK
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={styles.bulkBar}>
+      <div className={styles.bulkLeft}>
+        <span className={styles.bulkTitle}>
+          Генерация аудио · база: {baseDone ? '✓' : '—'} · вариации: {variationsDone}/{liCount * 2} · SFX: {sfxDone}/7
+        </span>
+        <span className={styles.bulkMeta}>
+          Suno API · мелодия → per-LI вариации (positive/negative) → SFX по эмоциям · нужен audio_gen (:3200) c
+          SUNO_API_KEY и S3-кредами
+        </span>
+        <textarea
+          className={styles.audioStyleInput}
+          value={baseStyle}
+          onChange={e => setBaseStyle(e.target.value)}
+          rows={2}
+          placeholder="Стиль базовой мелодии"
+        />
+      </div>
+      <button type="button" className={styles.primaryBtn} onClick={() => onStart(baseStyle)}>
+        Сгенерировать аудио
+      </button>
+    </div>
+  );
+};
+
 const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
@@ -813,6 +928,9 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const worldModel = useNarrativeStore(s => s.worldModel);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
+  const audioBase = useNarrativeStore(s => s.audioBase);
+  const audioByLi = useNarrativeStore(s => s.audioByLi);
+  const audioSfx = useNarrativeStore(s => s.audioSfx);
   const beatCount = Object.keys(anchorBeats).length;
   const variantCount = Object.keys(dialogueVariants).length;
   // При наличии модели мира фоны ключуются по loc:<id> — считаем только их.
@@ -822,13 +940,28 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const imageTotal = worldModel ? worldModel.locations.length : outline.anchors.length;
   const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
   const liCount = brief.loveInterests.length;
+  const audioReady = audioBase?.status === 'done';
 
   const onExport = () => {
     // С моделью мира игра компилируется как стейт-машина по графу локаций
     // (свободное перемещение, события/встречи гейтятся состоянием); без неё —
-    // легаси-конвертация (прямые рёбра якорь→якорь).
+    // легаси-конвертация (прямые рёбра якорь→якорь, без аудио).
     const result = worldModel
-      ? compileWorldGameProject(brief, outline, worldModel, dialogueVariants, anchorBeats, endings, images, characters)
+      ? compileWorldGameProject(
+          brief,
+          outline,
+          worldModel,
+          dialogueVariants,
+          anchorBeats,
+          endings,
+          images,
+          characters,
+          {
+            base: audioBase,
+            byLi: audioByLi,
+            sfx: audioSfx,
+          },
+        )
       : convertStoryToGameProject(brief, outline, {}, dialogueVariants, anchorBeats, endings, images, characters, null);
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
@@ -843,6 +976,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
           {beatCount}/{outline.anchors.length} beat-сцен · {variantCount} dialogue variants ·{' '}
           {Object.keys(endings).length} концовок · {imageCount}/{imageTotal} фонов · {characterCount}/{liCount} спрайтов
           {worldModel ? ` · ${worldModel.locations.length} локаций` : ' · без модели мира'}
+          {audioReady ? ' · аудио готово' : ' · без аудио'}
         </span>
       </div>
       <button type="button" className={styles.primaryBtn} onClick={onExport}>

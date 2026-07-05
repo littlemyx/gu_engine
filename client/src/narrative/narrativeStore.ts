@@ -53,6 +53,20 @@ export type CharacterGenState =
   | { status: 'done'; idleFilename: string; poseFilenames?: Record<string, string> }
   | { status: 'failed'; error: string };
 
+/**
+ * Стейт генерации одного аудио-трека (Suno всегда отдаёт 2 варианта;
+ * selected — индекс выбранного). filenames — имена на audio_server.
+ */
+export type AudioTrackState =
+  | { status: 'pending' }
+  | { status: 'generating'; batchId: string }
+  | { status: 'done'; filenames: string[]; selected: number }
+  | { status: 'failed'; error: string };
+
+export type AudioVariationTone = 'positive' | 'negative';
+
+export type LiAudioState = Partial<Record<AudioVariationTone, AudioTrackState>>;
+
 type NarrativeState = {
   outline: OutlinePlan | null;
   segments: Record<string, GeneratedSegment>;
@@ -81,6 +95,15 @@ type NarrativeState = {
   /** Модель мира: реестр локаций со связностью + маппинг якорей. */
   worldModel: WorldModel | null;
 
+  /** Базовая мелодия проекта (одна, инструментал). */
+  audioBase: AudioTrackState | null;
+  /** Вариации per-LI, раздельно по тонам. Ключ — id LI из брифа. */
+  audioByLi: Record<string, LiAudioState>;
+  /** SFX по каноническим эмоциям: emotion → filename на audio_server. */
+  audioSfx: Record<string, string>;
+  /** Стейт генерации SFX-набора (результаты пишутся в audioSfx). */
+  audioSfxState: AudioTrackState | null;
+
   setOutline: (outline: OutlinePlan | null) => void;
   setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
   clearSegments: () => void;
@@ -102,6 +125,14 @@ type NarrativeState = {
   clearEndings: () => void;
   setWorldModel: (world: WorldModel | null) => void;
 
+  setAudioBase: (state: AudioTrackState | null) => void;
+  selectAudioBase: (index: number) => void;
+  setAudioVariation: (liId: string, tone: AudioVariationTone, state: AudioTrackState) => void;
+  selectAudioVariation: (liId: string, tone: AudioVariationTone, index: number) => void;
+  setAudioSfx: (emotion: string, filename: string) => void;
+  setAudioSfxState: (state: AudioTrackState | null) => void;
+  clearAudio: () => void;
+
   getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
   getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
   getDialogueVariants: (anchorId: string, liId: string) => DialogueVariant[] | undefined;
@@ -121,6 +152,9 @@ type PersistedNarrativeState = Pick<
   | 'beatPlan'
   | 'endings'
   | 'worldModel'
+  | 'audioBase'
+  | 'audioByLi'
+  | 'audioSfx'
 >;
 
 export const useNarrativeStore = create<NarrativeState>()(
@@ -137,6 +171,10 @@ export const useNarrativeStore = create<NarrativeState>()(
       beatPlan: null,
       endings: {},
       worldModel: null,
+      audioBase: null,
+      audioByLi: {},
+      audioSfx: {},
+      audioSfxState: null,
 
       setOutline: outline => {
         // При установке нового outline сбрасываем outline-зависимые кэши:
@@ -216,6 +254,42 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       setWorldModel: worldModel => set({ worldModel }),
 
+      setAudioBase: state => set({ audioBase: state }),
+
+      selectAudioBase: index => {
+        set(s => {
+          if (s.audioBase?.status !== 'done') return s;
+          return { audioBase: { ...s.audioBase, selected: index } };
+        });
+      },
+
+      setAudioVariation: (liId, tone, state) => {
+        set(s => ({
+          audioByLi: { ...s.audioByLi, [liId]: { ...s.audioByLi[liId], [tone]: state } },
+        }));
+      },
+
+      selectAudioVariation: (liId, tone, index) => {
+        set(s => {
+          const track = s.audioByLi[liId]?.[tone];
+          if (track?.status !== 'done') return s;
+          return {
+            audioByLi: {
+              ...s.audioByLi,
+              [liId]: { ...s.audioByLi[liId], [tone]: { ...track, selected: index } },
+            },
+          };
+        });
+      },
+
+      setAudioSfx: (emotion, filename) => {
+        set(s => ({ audioSfx: { ...s.audioSfx, [emotion]: filename } }));
+      },
+
+      setAudioSfxState: state => set({ audioSfxState: state }),
+
+      clearAudio: () => set({ audioBase: null, audioByLi: {}, audioSfx: {}, audioSfxState: null }),
+
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
       getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
@@ -226,8 +300,9 @@ export const useNarrativeStore = create<NarrativeState>()(
     }),
     {
       name: 'gu-narrative-state',
-      version: 6,
-      // Персистим только данные, не действия.
+      version: 7,
+      // Персистим только данные, не действия. audioSfxState — транзиентный
+      // прогресс, не персистится (batchId протухает при рестарте audio_gen).
       partialize: state => ({
         outline: state.outline,
         segments: state.segments,
@@ -240,12 +315,15 @@ export const useNarrativeStore = create<NarrativeState>()(
         beatPlan: state.beatPlan,
         endings: state.endings,
         worldModel: state.worldModel,
+        audioBase: state.audioBase,
+        audioByLi: state.audioByLi,
+        audioSfx: state.audioSfx,
       }),
       // Без migrate zustand выбрасывает состояние при несовпадении версии —
       // дорогие кэши генерации должны переживать апгрейд схемы.
       migrate: persisted => {
-        // Старые версии не имели полей anchorBeats/beatPlan — дозаполняем
-        // дефолтами, не трогая накопленные кэши генерации.
+        // Старые версии не имели части полей — дозаполняем дефолтами,
+        // не трогая накопленные кэши генерации.
         const prev = (persisted ?? {}) as Partial<PersistedNarrativeState>;
         return {
           outline: prev.outline ?? null,
@@ -259,6 +337,9 @@ export const useNarrativeStore = create<NarrativeState>()(
           beatPlan: prev.beatPlan ?? null,
           endings: prev.endings ?? {},
           worldModel: prev.worldModel ?? null,
+          audioBase: prev.audioBase ?? null,
+          audioByLi: prev.audioByLi ?? {},
+          audioSfx: prev.audioSfx ?? {},
         };
       },
     },

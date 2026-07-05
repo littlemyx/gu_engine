@@ -21,12 +21,20 @@ export type GenerationState = {
   itemIds?: string[];
 };
 
-export type CardType = 'scene' | 'character' | 'visual_master_prompt' | 'story_master_prompt' | 'background';
+export type CardType =
+  | 'scene'
+  | 'character'
+  | 'visual_master_prompt'
+  | 'story_master_prompt'
+  | 'background'
+  | 'audio_master_prompt';
 
 export type SceneCharacter = {
   id: string;
   name: string;
 };
+
+export type AudioTone = 'positive' | 'negative';
 
 export type CardNodeData = {
   label: string;
@@ -40,6 +48,16 @@ export type CardNodeData = {
   characters?: SceneCharacter[];
   generation?: GenerationState;
   generatedImages?: string[];
+  audioPositiveTone?: string;
+  audioNegativeTone?: string;
+  /** База (audio_master_prompt): 2 Suno-варианта одной генерации. */
+  generatedAudio?: string[];
+  audioGeneration?: GenerationState;
+  /** Вариации персонажа, раздельно по тонам (каждый тон — 2 Suno-варианта). */
+  audioVariations?: Partial<Record<AudioTone, string[]>>;
+  audioGenerationByTone?: Partial<Record<AudioTone, GenerationState>>;
+  /** Выбранный вариант (индекс) для базы и каждого тона. */
+  audioSelected?: { base?: number; positive?: number; negative?: number };
 };
 
 export type CardNode = {

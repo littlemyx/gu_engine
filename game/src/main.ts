@@ -2,6 +2,7 @@ import { GameEngine } from "./engine";
 import { GameRenderer } from "./renderer";
 import { WorldState } from "./worldState";
 import { WorldMap } from "./map";
+import { GameAudio } from "./audio";
 import {
   ResolvedProject,
   ProjectFile,
@@ -174,8 +175,27 @@ function settingRow(key: string, label: string, value: number): string {
 
 // ── Игра ──
 
+function collectAudioUrlsForPreload(project: ResolvedProject): string[] {
+  const urls: string[] = [];
+  if (project.settings.bgmUrl) urls.push(project.settings.bgmUrl);
+  for (const node of project.scenes.nodes) {
+    const p = node.data.audioProfile;
+    if (p?.positiveUrl) urls.push(p.positiveUrl);
+    if (p?.negativeUrl) urls.push(p.negativeUrl);
+    if (node.data.sfxUrl) urls.push(node.data.sfxUrl);
+  }
+  return urls;
+}
+
 function launchGame(project: ResolvedProject): void {
   document.title = project.title;
+
+  const audio = new GameAudio({
+    bgmVolume: project.settings.bgmVolume ?? 0.3,
+    sfxVolume: project.settings.sfxVolume ?? 0.5,
+    crossfadeDurationMs: project.settings.crossfadeDurationMs ?? 2000,
+  });
+  audio.preload(collectAudioUrlsForPreload(project)).catch(() => {});
 
   const manifest = project.settings.world;
   const worldState =
@@ -189,6 +209,7 @@ function launchGame(project: ResolvedProject): void {
   });
   engine.setProjectMeta(project.title, project.projectFile, project.scenesFile);
   renderer.bind(engine);
+  renderer.bindAudio(audio);
   renderer.mount();
 
   renderer.setTopLabel(() => {
@@ -209,6 +230,7 @@ function launchGame(project: ResolvedProject): void {
   }
 
   renderer.onBack(() => {
+    audio.dispose();
     document.title = "Движок новелл";
     showProjectScreen();
   });

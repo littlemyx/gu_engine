@@ -1,0 +1,77 @@
+.section {
+  margin-top: 6px;
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+}
+
+.toneBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+}
+
+.toneLabel {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.toneLabelText {
+  font-size: 11px;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.audioResults {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+  background: #ede9fe;
+  border-radius: 4px;
+}
+
+.variantRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.noBaseWarning {
+  font-size: 11px;
+  color: #d97706;
+  padding: 4px 6px;
+  background: #fffbeb;
+  border: 1px dashed #f59e0b;
+  border-radius: 4px;
+}
+
+.toneGenBtn {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  border: 1px solid #a78bfa;
+  border-radius: 4px;
+  background: #7c3aed;
+  color: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.toneGenBtn:hover {
+  background: #6d28d9;
+}
+
+.toneGenBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
