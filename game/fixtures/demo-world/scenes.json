@@ -1,0 +1,156 @@
+{
+  "nodes": [
+    {
+      "id": "a_intro",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "Ветер усиливается. Доски причала скрипят под ногами. Пора осмотреться.",
+        "image": "",
+        "outputs": [{ "id": "a_intro__auto", "text": "" }],
+        "sceneType": "narration"
+      }
+    },
+    {
+      "id": "hub_pier",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "Старый порт. Причал уходит в темную воду, вдалеке молчит маяк.",
+        "image": "",
+        "outputs": [
+          { "id": "hub_pier__meet_kira", "text": "Подойти: Кира" },
+          { "id": "hub_pier__go_lighthouse", "text": "Пойти: Маяк (тропа вдоль воды)" },
+          { "id": "hub_pier__go_tavern", "text": "Пойти: Таверна (переулок)" }
+        ],
+        "sceneType": "branch"
+      }
+    },
+    {
+      "id": "dlg1",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "Кира: Ты опоздал. Прилив уже унёс то, что ты искал.",
+        "image": "",
+        "outputs": [
+          { "id": "dlg1_ask", "text": "Спросить о приливе" },
+          { "id": "dlg1_leave", "text": "Промолчать и уйти" }
+        ],
+        "sceneType": "dialogue"
+      }
+    },
+    {
+      "id": "dlg2",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "Кира: Море редко отдаёт хорошее. Идём, пока совсем не стемнело.",
+        "image": "",
+        "outputs": [{ "id": "dlg2_ok", "text": "Кивнуть и вернуться" }],
+        "sceneType": "dialogue"
+      }
+    },
+    {
+      "id": "enter_lighthouse",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "",
+        "image": "",
+        "outputs": [{ "id": "enter_lighthouse__hub", "text": "" }],
+        "sceneType": "router"
+      }
+    },
+    {
+      "id": "hub_lighthouse",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "Маяк давно погас. Внутри пахнет ржавчиной и холодом.",
+        "image": "",
+        "outputs": [
+          { "id": "hub_lighthouse__go_pier", "text": "Пойти: Причал (тропа вдоль воды)" }
+        ],
+        "sceneType": "branch"
+      }
+    },
+    {
+      "id": "enter_pier",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "",
+        "image": "",
+        "outputs": [{ "id": "enter_pier__hub", "text": "" }],
+        "sceneType": "router"
+      }
+    },
+    {
+      "id": "enter_tavern",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "",
+        "image": "",
+        "outputs": [{ "id": "enter_tavern__hub", "text": "" }],
+        "sceneType": "router"
+      }
+    },
+    {
+      "id": "hub_tavern",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "В таверне «Якорь» пахнет солью и дымом. За стойкой кто-то смеётся.",
+        "image": "",
+        "outputs": [
+          { "id": "hub_tavern__go_cove", "text": "Пойти: Бухта (скользкие камни)" },
+          { "id": "hub_tavern__go_pier", "text": "Пойти: Причал (переулок)" }
+        ],
+        "sceneType": "branch"
+      }
+    },
+    {
+      "id": "enter_cove",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "",
+        "image": "",
+        "outputs": [{ "id": "enter_cove__hub", "text": "" }],
+        "sceneType": "router"
+      }
+    },
+    {
+      "id": "hub_cove",
+      "type": "scene",
+      "position": { "x": 0, "y": 0 },
+      "data": {
+        "label": "Бухта. Дальше пути нет — только чёрная вода и туман.",
+        "image": "",
+        "outputs": [
+          { "id": "hub_cove__go_tavern", "text": "Пойти: Таверна (скользкие камни)" }
+        ],
+        "sceneType": "branch"
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e_a_intro", "source": "a_intro", "sourceHandle": "a_intro__auto", "target": "hub_pier" },
+    { "id": "e_meet", "source": "hub_pier", "sourceHandle": "hub_pier__meet_kira", "target": "dlg1" },
+    { "id": "e_go_lh", "source": "hub_pier", "sourceHandle": "hub_pier__go_lighthouse", "target": "enter_lighthouse" },
+    { "id": "e_go_tv", "source": "hub_pier", "sourceHandle": "hub_pier__go_tavern", "target": "enter_tavern" },
+    { "id": "e_dlg1_ask", "source": "dlg1", "sourceHandle": "dlg1_ask", "target": "dlg2" },
+    { "id": "e_dlg1_leave", "source": "dlg1", "sourceHandle": "dlg1_leave", "target": "hub_pier" },
+    { "id": "e_dlg2_ok", "source": "dlg2", "sourceHandle": "dlg2_ok", "target": "hub_pier" },
+    { "id": "e_enter_lh", "source": "enter_lighthouse", "sourceHandle": "enter_lighthouse__hub", "target": "hub_lighthouse" },
+    { "id": "e_lh_go_pier", "source": "hub_lighthouse", "sourceHandle": "hub_lighthouse__go_pier", "target": "enter_pier" },
+    { "id": "e_enter_pier", "source": "enter_pier", "sourceHandle": "enter_pier__hub", "target": "hub_pier" },
+    { "id": "e_enter_tv", "source": "enter_tavern", "sourceHandle": "enter_tavern__hub", "target": "hub_tavern" },
+    { "id": "e_tv_go_cove", "source": "hub_tavern", "sourceHandle": "hub_tavern__go_cove", "target": "enter_cove" },
+    { "id": "e_tv_go_pier", "source": "hub_tavern", "sourceHandle": "hub_tavern__go_pier", "target": "enter_pier" },
+    { "id": "e_enter_cove", "source": "enter_cove", "sourceHandle": "enter_cove__hub", "target": "hub_cove" },
+    { "id": "e_cove_go_tv", "source": "hub_cove", "sourceHandle": "hub_cove__go_tavern", "target": "enter_tavern" }
+  ]
+}

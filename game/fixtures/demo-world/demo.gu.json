@@ -1,0 +1,23 @@
+{
+  "title": "Старый порт — демо",
+  "scenes": "./scenes.json",
+  "settings": {
+    "sceneFadeInMs": 600,
+    "sceneFadeOutMs": 400,
+    "choiceAppearDelayMs": 120,
+    "endFadeInMs": 400,
+    "world": {
+      "locations": [
+        { "id": "pier", "name": "Причал" },
+        { "id": "lighthouse", "name": "Маяк" },
+        { "id": "tavern", "name": "Таверна" },
+        { "id": "cove", "name": "Бухта" }
+      ],
+      "edges": [
+        { "from": "pier", "to": "lighthouse", "via": "тропа вдоль воды" },
+        { "from": "pier", "to": "tavern", "via": "переулок" },
+        { "from": "tavern", "to": "cove", "via": "скользкие камни" }
+      ]
+    }
+  }
+}

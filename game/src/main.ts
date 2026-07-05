@@ -1,5 +1,7 @@
 import { GameEngine } from "./engine";
 import { GameRenderer } from "./renderer";
+import { WorldState } from "./worldState";
+import { WorldMap } from "./map";
 import {
   ResolvedProject,
   ProjectFile,
@@ -98,6 +100,7 @@ function showProjectScreen(): void {
         <h2>Настройки</h2>
         <div class="settings-grid">
           ${settingRow("sceneFadeInMs", "Появление сцены (мс)", p.settings.sceneFadeInMs)}
+          ${settingRow("sceneFadeOutMs", "Затухание сцены (мс)", p.settings.sceneFadeOutMs)}
           ${settingRow("choiceAppearDelayMs", "Задержка между вариантами (мс)", p.settings.choiceAppearDelayMs)}
           ${settingRow("endFadeInMs", "Появление конца (мс)", p.settings.endFadeInMs)}
         </div>
@@ -174,11 +177,36 @@ function settingRow(key: string, label: string, value: number): string {
 function launchGame(project: ResolvedProject): void {
   document.title = project.title;
 
-  const engine = new GameEngine(project.scenes, project.settings, (node, isEnd) =>
-    renderer.renderScene(node, isEnd),
-  );
+  const manifest = project.settings.world;
+  const worldState =
+    manifest && manifest.locations.length > 0
+      ? new WorldState(manifest, project.scenes)
+      : null;
+
+  const engine = new GameEngine(project.scenes, project.settings, (node, isEnd) => {
+    worldState?.onScene(node);
+    renderer.renderScene(node, isEnd);
+  });
   engine.setProjectMeta(project.title, project.projectFile, project.scenesFile);
   renderer.bind(engine);
+  renderer.mount();
+
+  renderer.setTopLabel(() => {
+    const cur = worldState?.getCurrent();
+    return cur ? worldState!.nameOf(cur) : project.title;
+  });
+
+  if (worldState) {
+    const map = new WorldMap(renderer.getMapRoot(), worldState, (loc) => {
+      const outId = worldState.travelOutputId(loc);
+      if (!outId) return;
+      worldState.setPending(loc);
+      renderer.runAction(() => engine.choose(outId));
+    });
+    renderer.setMap(true, () => map.open(worldState.canTravel(engine.getCurrentNode())));
+  } else {
+    renderer.setMap(false, () => {});
+  }
 
   renderer.onBack(() => {
     document.title = "Движок новелл";

@@ -110,14 +110,23 @@ export type GameStateSchema = {
   flags: string[];
 };
 
+/** Компактный манифест мира для карты в плеере (game/src/types.ts).
+ *  Зеркалит WorldManifest движка. */
+export type GameWorldManifest = {
+  locations: { id: string; name: string }[];
+  edges: { from: string; to: string; via?: string }[];
+};
+
 export type GameProjectFile = {
   title: string;
   scenes: string;
   settings: {
     sceneFadeInMs?: number;
+    sceneFadeOutMs?: number;
     choiceAppearDelayMs?: number;
     endFadeInMs?: number;
     stateSchema?: GameStateSchema;
+    world?: GameWorldManifest;
   };
 };
 

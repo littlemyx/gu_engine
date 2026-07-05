@@ -63,11 +63,32 @@ export type StateSchema = {
   flags: string[];
 };
 
+/** Компактный манифест мира для карты в игре. Эмитится компилятором
+ *  (client/src/narrative/compileWorldGame.ts) в settings.world. Отсутствует →
+ *  кнопка карты в плеере скрыта. */
+export type WorldMapLocation = {
+  id: string;
+  name: string;
+};
+
+export type WorldMapEdge = {
+  from: string;
+  to: string;
+  via?: string;
+};
+
+export type WorldManifest = {
+  locations: WorldMapLocation[];
+  edges: WorldMapEdge[];
+};
+
 export type ProjectSettings = {
   sceneFadeInMs: number;
+  sceneFadeOutMs: number;
   choiceAppearDelayMs: number;
   endFadeInMs: number;
   stateSchema?: StateSchema;
+  world?: WorldManifest;
 };
 
 export type ProjectFile = {
@@ -86,6 +107,7 @@ export type ResolvedProject = {
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   sceneFadeInMs: 600,
-  choiceAppearDelayMs: 100,
+  sceneFadeOutMs: 400,
+  choiceAppearDelayMs: 120,
   endFadeInMs: 400,
 };

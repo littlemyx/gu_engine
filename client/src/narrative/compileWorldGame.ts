@@ -17,6 +17,7 @@ import type {
   GameSceneOutput,
   GameSpriteEntry,
   GameStateCondition,
+  GameWorldManifest,
 } from './convertToGameProject';
 import {
   BRACKET_WIRE_ORDER,
@@ -518,15 +519,36 @@ export function compileWorldGameProject(
     stateSchema.vars[key] = { range: decl.range, default: decl.default };
   }
 
+  // Манифест мира для карты в плеере: локации (id+имя) и уникальные
+  // неориентированные рёбра. Дедуп из исходной объявленной adjacency, чтобы
+  // сохранить авторский via (первое объявленное направление выигрывает).
+  const seenPairs = new Set<string>();
+  const worldEdges: GameWorldManifest['edges'] = [];
+  for (const l of worldModel.locations) {
+    for (const adj of l.adjacent) {
+      if (!locById.has(adj.locationId)) continue;
+      const key = [l.id, adj.locationId].sort().join('|');
+      if (seenPairs.has(key)) continue;
+      seenPairs.add(key);
+      worldEdges.push({ from: l.id, to: adj.locationId, via: adj.via?.trim() || undefined });
+    }
+  }
+  const world: GameWorldManifest = {
+    locations: worldModel.locations.map(l => ({ id: l.id, name: l.name })),
+    edges: worldEdges,
+  };
+
   const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
   const project: GameProjectFile = {
     title,
     scenes: './scenes.json',
     settings: {
       sceneFadeInMs: 600,
-      choiceAppearDelayMs: 100,
+      sceneFadeOutMs: 400,
+      choiceAppearDelayMs: 120,
       endFadeInMs: 400,
       stateSchema,
+      world,
     },
   };
 
