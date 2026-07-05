@@ -134,6 +134,17 @@ describe('compileWorldGameProject — манифест мира', () => {
     expect(project.settings.bgmUrl).toBeUndefined();
   });
 
+  it('коэрсит отсутствующий mood к neutral_calm (persisted-модель до Phase 1)', () => {
+    // Локация 'a' (на неё мапится якорь a1) без mood/specialKind — как из старого
+    // localStorage до миграции. Компайлер обязан выдать валидный дефолт, не undefined.
+    const stale = {
+      locations: [{ id: 'a', name: 'Старая', description: '', pointsOfInterest: [], adjacent: [] }],
+      anchorLocations: { a1: 'a' },
+    } as unknown as WorldModel;
+    const { project: p } = compileWorldGameProject(brief, outline, stale, {});
+    expect(p.settings.world!.locations[0]).toEqual({ id: 'a', name: 'Старая', mood: 'neutral_calm' });
+  });
+
   it('сохраняет движковый контракт: hub_/enter_ ноды и hub__go_ выходы', () => {
     const ids = new Set(scenes.nodes.map(n => n.id));
     for (const loc of ['a', 'b', 'c']) {

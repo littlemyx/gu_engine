@@ -7,7 +7,7 @@ import {
   type BatchStatus,
 } from '@root/audio_gen/generated_client';
 import type { ArtStyle, Brief, LocationMood, LoveInterestCard, SpecialAmbientKind } from './types';
-import { DEFAULT_LOCATION_MOOD } from './types';
+import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
 import { useNarrativeStore, type AudioVariationTone } from './narrativeStore';
 import { CANONICAL_POSES } from './emotionResolver';
 
@@ -177,13 +177,19 @@ export function useBulkAudioGeneration() {
     // настроения. Тембр выводится из визуального стиля проекта.
     const timbre = deriveArtStyleTimbre(brief.artStyle);
     const worldModel = useNarrativeStore.getState().worldModel;
+    // Коэрсим mood/specialKind при чтении: persisted-модель мира могла быть
+    // сохранена до Phase 1 (mood=undefined), а если страница только HMR-нулась
+    // без полного релоада — миграция не отработала. Невалидное → дефолт, иначе
+    // buildAmbientStyle(undefined) падал бы (ключ 'bed:undefined').
     const usedMoods: LocationMood[] = worldModel
-      ? [...new Set(worldModel.locations.map(l => l.mood))].filter(m => m !== DEFAULT_LOCATION_MOOD)
+      ? [...new Set(worldModel.locations.map(l => (isLocationMood(l.mood) ? l.mood : DEFAULT_LOCATION_MOOD)))].filter(
+          m => m !== DEFAULT_LOCATION_MOOD,
+        )
       : [];
     // Особые локации (бар/стадион/…) — один диегетический бед на присутствующий
     // specialKind, переиспользуется всеми локациями этого типа.
     const usedSpecials: SpecialAmbientKind[] = worldModel
-      ? [...new Set(worldModel.locations.map(l => l.specialKind).filter((k): k is SpecialAmbientKind => k != null))]
+      ? [...new Set(worldModel.locations.map(l => l.specialKind).filter(isSpecialAmbientKind))]
       : [];
 
     // база + mood-беды + special-беды + 2 тона на LI + один SFX-батч

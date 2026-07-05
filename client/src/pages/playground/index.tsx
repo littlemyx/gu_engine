@@ -16,6 +16,8 @@ import {
   CANONICAL_POSES,
   LOCATION_MOODS,
   LOCATION_MOOD_LABELS,
+  DEFAULT_LOCATION_MOOD,
+  isLocationMood,
   SPECIAL_AMBIENT_KINDS,
   SPECIAL_AMBIENT_KIND_LABELS,
   convertStoryToGameProject,
@@ -856,7 +858,7 @@ const LocationMoodPanel: React.FC = () => {
             <div className={styles.moodSelects}>
               <select
                 className={styles.moodSelect}
-                value={loc.mood}
+                value={isLocationMood(loc.mood) ? loc.mood : DEFAULT_LOCATION_MOOD}
                 onChange={e => patchLocation(loc.id, { mood: e.target.value as LocationMood })}
                 title="Настроение → эмбиент-бед"
               >

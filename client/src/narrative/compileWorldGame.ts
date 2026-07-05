@@ -8,7 +8,7 @@ import type {
   WorldLocation,
   WorldModel,
 } from './types';
-import { DEFAULT_LOCATION_MOOD } from './types';
+import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
 import type { CharacterGenState, ImageGenState, AudioTrackState, LiAudioState } from './narrativeStore';
 import type {
   GameProjectFile,
@@ -553,11 +553,13 @@ export function compileWorldGameProject(
     }
   }
   const world: GameWorldManifest = {
+    // Коэрсим mood/specialKind: persisted-локации из до-Phase-1 модели мира могут
+    // не иметь этих полей — эмитим валидный дефолт, не undefined.
     locations: worldModel.locations.map(l => ({
       id: l.id,
       name: l.name,
-      mood: l.mood,
-      ...(l.specialKind ? { specialKind: l.specialKind } : {}),
+      mood: isLocationMood(l.mood) ? l.mood : DEFAULT_LOCATION_MOOD,
+      ...(isSpecialAmbientKind(l.specialKind) ? { specialKind: l.specialKind } : {}),
     })),
     edges: worldEdges,
   };
