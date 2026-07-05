@@ -14,11 +14,14 @@ import {
   useNarrativeStore,
   useRegeneratePoses,
   CANONICAL_POSES,
+  LOCATION_MOODS,
+  LOCATION_MOOD_LABELS,
   convertStoryToGameProject,
   compileWorldGameProject,
   downloadJson,
   slugify,
   type ArchetypeProfile,
+  type LocationMood,
   type StoryOutlineGenStatus,
   type BulkStoryGenStatus,
   type CharacterBulkStatus,
@@ -32,6 +35,7 @@ import {
 } from '@/narrative';
 import { OutlineGraph } from './OutlineGraph';
 import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
+import { AudioPreviewPanel } from './AudioPreviewPanel';
 import { BriefEditor } from './BriefEditor';
 import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
 import styles from './playground.module.css';
@@ -110,6 +114,7 @@ const Playground = () => {
                   onStart={entries => poseRegen.start(entries, brief, outline)}
                   onReset={poseRegen.reset}
                 />
+                <LocationMoodPanel />
                 <AudioGenBar
                   status={audioGen.status}
                   brief={brief}
@@ -117,6 +122,7 @@ const Playground = () => {
                   onCancel={audioGen.cancel}
                   onReset={audioGen.reset}
                 />
+                <AudioPreviewPanel />
                 <ExportBar outline={outline} />
                 <div className={styles.outlineDetailsToggleRow}>
                   <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
@@ -821,6 +827,44 @@ const MissingPosesBar: React.FC<{
 // AUDIO GENERATION (базовая мелодия + вариации per-LI + SFX через audio_gen)
 // ────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Редактор настроения локаций. LLM проставляет mood при генерации модели мира;
+ * здесь автор может переопределить его перед генерацией аудио — от mood зависит,
+ * какой эмбиент-бед из банка играет на локации. Скрыт без модели мира.
+ */
+const LocationMoodPanel: React.FC = () => {
+  const worldModel = useNarrativeStore(s => s.worldModel);
+  const patchLocation = useNarrativeStore(s => s.patchLocation);
+  if (!worldModel || worldModel.locations.length === 0) return null;
+
+  return (
+    <section className={styles.section}>
+      <h2 className={styles.sectionTitle}>
+        Настроение локаций{' '}
+        <span className={styles.sectionMeta}>определяет эмбиент-подложку — задайте до генерации аудио</span>
+      </h2>
+      <div className={styles.moodGrid}>
+        {worldModel.locations.map(loc => (
+          <label key={loc.id} className={styles.moodRow}>
+            <span className={styles.moodLocName}>{loc.name || loc.id}</span>
+            <select
+              className={styles.moodSelect}
+              value={loc.mood}
+              onChange={e => patchLocation(loc.id, { mood: e.target.value as LocationMood })}
+            >
+              {LOCATION_MOODS.map(m => (
+                <option key={m} value={m}>
+                  {LOCATION_MOOD_LABELS[m]}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+    </section>
+  );
+};
+
 const AudioGenBar: React.FC<{
   status: AudioBulkStatus;
   brief: Brief;
@@ -842,7 +886,8 @@ const AudioGenBar: React.FC<{
   const baseDone = audioBase?.status === 'done';
 
   const phaseLabel: Record<string, string> = {
-    base: 'базовая мелодия',
+    base: 'базовая подложка',
+    beds: 'эмбиенты по настроению',
     variations: 'вариации персонажей',
     sfx: 'SFX',
   };
@@ -902,7 +947,7 @@ const AudioGenBar: React.FC<{
           Генерация аудио · база: {baseDone ? '✓' : '—'} · вариации: {variationsDone}/{liCount * 2} · SFX: {sfxDone}/7
         </span>
         <span className={styles.bulkMeta}>
-          Suno API · мелодия → per-LI вариации (positive/negative) → SFX по эмоциям · нужен audio_gen (:3200) c
+          Suno API · мелодия → per-LI вариации (positive/negative) → SFX по эмоциям · нужен audio_gen (:3300) c
           SUNO_API_KEY и S3-кредами
         </span>
         <textarea
@@ -929,6 +974,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const audioBase = useNarrativeStore(s => s.audioBase);
+  const audioMoodBeds = useNarrativeStore(s => s.audioMoodBeds);
   const audioByLi = useNarrativeStore(s => s.audioByLi);
   const audioSfx = useNarrativeStore(s => s.audioSfx);
   const beatCount = Object.keys(anchorBeats).length;
@@ -958,6 +1004,7 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
           characters,
           {
             base: audioBase,
+            moodBeds: audioMoodBeds,
             byLi: audioByLi,
             sfx: audioSfx,
           },

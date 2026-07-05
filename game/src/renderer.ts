@@ -18,6 +18,9 @@ export class GameRenderer {
   private audio: GameAudio | null = null;
   private backCallback: (() => void) | null = null;
   private topLabelProvider: (() => string) | null = null;
+  // Возвращает URL эмбиент-подложки для текущей локации (mood-бед), либо undefined
+  // → фолбэк на settings.bgmUrl. Локационная семантика живёт в main.ts/WorldState.
+  private baseBedProvider: (() => string | undefined) | null = null;
   private mapAvailable = false;
   private onMapOpen: (() => void) | null = null;
   private busy = false;
@@ -56,6 +59,11 @@ export class GameRenderer {
 
   setTopLabel(provider: () => string): void {
     this.topLabelProvider = provider;
+  }
+
+  /** Провайдер эмбиент-подложки для текущей локации (см. baseBedProvider). */
+  setBaseBedProvider(provider: () => string | undefined): void {
+    this.baseBedProvider = provider;
   }
 
   setMap(available: boolean, onOpen: () => void): void {
@@ -160,10 +168,13 @@ export class GameRenderer {
       // encounter-ветки в сцену без профиля автоматически возвращает базу
       // (или тишину при её отсутствии). Идемпотентность crossfadeTo по
       // targetUrl делает повторные вызовы бесплатными.
+      // База = эмбиент текущей локации (mood-бед) с фолбэком на settings.bgmUrl;
+      // encounter-audioProfile по-прежнему оверрайдит её по affection.
+      const baseBed = this.baseBedProvider?.() ?? settings.bgmUrl;
       const target = this.audio.evaluateAudioState(
         this.engine.getState(),
         node.data.audioProfile,
-        settings.bgmUrl,
+        baseBed,
       );
       this.audio.crossfadeTo(target);
 

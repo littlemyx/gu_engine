@@ -1204,6 +1204,61 @@ export function validateEndingVariant(variant: EndingVariant, expectedKind: Endi
 // WORLD MODEL (persistent locations registry with adjacency)
 // ============================================================================
 
+/**
+ * Настроенческая характеристика локации → выбирает эмбиент-подложку из банка.
+ * Конечный (но расширяемый) набор: гарантирует переиспользование бедов и не даёт
+ * музыке разъехаться с визуалом (напр. дождливый универ = melancholic_sad, а не
+ * задорная полька). Расширять = добавить ключ сюда + шаблон в MOOD_STYLE_TEMPLATES
+ * (useBulkAudioGeneration.ts) + строку в промпт world-model (text_gen).
+ */
+export const LOCATION_MOODS = [
+  'neutral_calm',
+  'cheerful_warm',
+  'cozy_tender',
+  'romantic',
+  'melancholic_sad',
+  'wistful_nostalgic',
+  'tense_anxious',
+  'ominous_mysterious',
+  'tragic_heavy',
+] as const;
+
+export type LocationMood = typeof LOCATION_MOODS[number];
+
+/** Русские метки настроений для UI (селект локаций, превью аудио). */
+export const LOCATION_MOOD_LABELS: Record<LocationMood, string> = {
+  neutral_calm: 'нейтральная',
+  cheerful_warm: 'весёлая',
+  cozy_tender: 'уютная',
+  romantic: 'романтическая',
+  melancholic_sad: 'меланхоличная',
+  wistful_nostalgic: 'ностальгическая',
+  tense_anxious: 'тревожная',
+  ominous_mysterious: 'зловещая',
+  tragic_heavy: 'трагическая',
+};
+
+export const DEFAULT_LOCATION_MOOD: LocationMood = 'neutral_calm';
+
+export function isLocationMood(v: unknown): v is LocationMood {
+  return typeof v === 'string' && (LOCATION_MOODS as readonly string[]).includes(v);
+}
+
+/** Диегетические особые локации — дедикейтед эмбиент вместо mood-бакета (Phase 2). */
+export const SPECIAL_AMBIENT_KINDS = [
+  'bar_tavern',
+  'party_club',
+  'sports_stadium',
+  'market_street',
+  'ceremony',
+] as const;
+
+export type SpecialAmbientKind = typeof SPECIAL_AMBIENT_KINDS[number];
+
+export function isSpecialAmbientKind(v: unknown): v is SpecialAmbientKind {
+  return typeof v === 'string' && (SPECIAL_AMBIENT_KINDS as readonly string[]).includes(v);
+}
+
 export type WorldLocation = {
   /** snake_case id: 'library', 'campus_alley'. */
   id: string;
@@ -1215,6 +1270,10 @@ export type WorldLocation = {
   pointsOfInterest: string[];
   /** Соседние локации и как до них добраться. */
   adjacent: { locationId: string; via: string }[];
+  /** Настроение локации → эмбиент из банка. Дефолт neutral_calm. */
+  mood: LocationMood;
+  /** Особый диегетический эмбиент (бар/стадион/…). null = обычная mood-локация. */
+  specialKind: SpecialAmbientKind | null;
 };
 
 export type WorldModel = {
@@ -1254,6 +1313,10 @@ export function parseWorldModel(raw: string): WorldModel {
             return { locationId: String(adj.locationId ?? ''), via: String(adj.via ?? '') };
           })
         : [],
+      // Косметические аудио-поля: неизвестный/пустой mood молча коэрсим к дефолту
+      // (не роняем валидацию — автор поправит в UI). specialKind опционален.
+      mood: isLocationMood(loc.mood) ? loc.mood : DEFAULT_LOCATION_MOOD,
+      specialKind: isSpecialAmbientKind(loc.specialKind) ? loc.specialKind : null,
     };
   });
 

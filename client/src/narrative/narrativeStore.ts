@@ -5,12 +5,14 @@ import type {
   BeatPlan,
   EndingVariant,
   WorldModel,
+  WorldLocation,
   GeneratedSegment,
   OutlinePlan,
   StoryOutlinePlan,
   NarrationWeb,
   DialogueVariant,
 } from './types';
+import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
 
 /**
  * Стор для procedural-narrative-пилота.
@@ -95,8 +97,13 @@ type NarrativeState = {
   /** Модель мира: реестр локаций со связностью + маппинг якорей. */
   worldModel: WorldModel | null;
 
-  /** Базовая мелодия проекта (одна, инструментал). */
+  /** Базовая/фолбэк-подложка проекта (neutral_calm, инструментал). */
   audioBase: AudioTrackState | null;
+  /**
+   * Банк эмбиент-бедов по настроению локации (LocationMood → трек). neutral_calm
+   * живёт в audioBase; здесь — остальные реально используемые настроения.
+   */
+  audioMoodBeds: Record<string, AudioTrackState>;
   /** Вариации per-LI, раздельно по тонам. Ключ — id LI из брифа. */
   audioByLi: Record<string, LiAudioState>;
   /** SFX по каноническим эмоциям: emotion → filename на audio_server. */
@@ -124,9 +131,13 @@ type NarrativeState = {
   setEnding: (key: string, ending: EndingVariant) => void;
   clearEndings: () => void;
   setWorldModel: (world: WorldModel | null) => void;
+  /** Гранулярная правка настроения/спец-типа локации (авторский оверрайд). */
+  patchLocation: (id: string, patch: Partial<Pick<WorldLocation, 'mood' | 'specialKind'>>) => void;
 
   setAudioBase: (state: AudioTrackState | null) => void;
   selectAudioBase: (index: number) => void;
+  setAudioMoodBed: (mood: string, state: AudioTrackState) => void;
+  selectAudioMoodBed: (mood: string, index: number) => void;
   setAudioVariation: (liId: string, tone: AudioVariationTone, state: AudioTrackState) => void;
   selectAudioVariation: (liId: string, tone: AudioVariationTone, index: number) => void;
   setAudioSfx: (emotion: string, filename: string) => void;
@@ -153,6 +164,7 @@ type PersistedNarrativeState = Pick<
   | 'endings'
   | 'worldModel'
   | 'audioBase'
+  | 'audioMoodBeds'
   | 'audioByLi'
   | 'audioSfx'
 >;
@@ -172,6 +184,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       endings: {},
       worldModel: null,
       audioBase: null,
+      audioMoodBeds: {},
       audioByLi: {},
       audioSfx: {},
       audioSfxState: null,
@@ -254,12 +267,36 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       setWorldModel: worldModel => set({ worldModel }),
 
+      patchLocation: (id, patch) => {
+        set(s => {
+          if (!s.worldModel) return s;
+          return {
+            worldModel: {
+              ...s.worldModel,
+              locations: s.worldModel.locations.map(l => (l.id === id ? { ...l, ...patch } : l)),
+            },
+          };
+        });
+      },
+
       setAudioBase: state => set({ audioBase: state }),
 
       selectAudioBase: index => {
         set(s => {
           if (s.audioBase?.status !== 'done') return s;
           return { audioBase: { ...s.audioBase, selected: index } };
+        });
+      },
+
+      setAudioMoodBed: (mood, state) => {
+        set(s => ({ audioMoodBeds: { ...s.audioMoodBeds, [mood]: state } }));
+      },
+
+      selectAudioMoodBed: (mood, index) => {
+        set(s => {
+          const track = s.audioMoodBeds[mood];
+          if (track?.status !== 'done') return s;
+          return { audioMoodBeds: { ...s.audioMoodBeds, [mood]: { ...track, selected: index } } };
         });
       },
 
@@ -288,7 +325,7 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       setAudioSfxState: state => set({ audioSfxState: state }),
 
-      clearAudio: () => set({ audioBase: null, audioByLi: {}, audioSfx: {}, audioSfxState: null }),
+      clearAudio: () => set({ audioBase: null, audioMoodBeds: {}, audioByLi: {}, audioSfx: {}, audioSfxState: null }),
 
       getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
 
@@ -300,7 +337,8 @@ export const useNarrativeStore = create<NarrativeState>()(
     }),
     {
       name: 'gu-narrative-state',
-      version: 7,
+      // v8: у локаций появились mood/specialKind (банк эмбиентов) + audioMoodBeds.
+      version: 8,
       // Персистим только данные, не действия. audioSfxState — транзиентный
       // прогресс, не персистится (batchId протухает при рестарте audio_gen).
       partialize: state => ({
@@ -316,6 +354,7 @@ export const useNarrativeStore = create<NarrativeState>()(
         endings: state.endings,
         worldModel: state.worldModel,
         audioBase: state.audioBase,
+        audioMoodBeds: state.audioMoodBeds,
         audioByLi: state.audioByLi,
         audioSfx: state.audioSfx,
       }),
@@ -325,6 +364,18 @@ export const useNarrativeStore = create<NarrativeState>()(
         // Старые версии не имели части полей — дозаполняем дефолтами,
         // не трогая накопленные кэши генерации.
         const prev = (persisted ?? {}) as Partial<PersistedNarrativeState>;
+        // v7→v8: у persisted-локаций нет mood/specialKind. Инжектим дефолты, иначе
+        // required-поле mood окажется undefined в рантайме (тип бы соврал).
+        const worldModel = prev.worldModel
+          ? {
+              ...prev.worldModel,
+              locations: prev.worldModel.locations.map(l => ({
+                ...l,
+                mood: isLocationMood(l.mood) ? l.mood : DEFAULT_LOCATION_MOOD,
+                specialKind: isSpecialAmbientKind(l.specialKind) ? l.specialKind : null,
+              })),
+            }
+          : null;
         return {
           outline: prev.outline ?? null,
           segments: prev.segments ?? {},
@@ -336,8 +387,9 @@ export const useNarrativeStore = create<NarrativeState>()(
           anchorBeats: prev.anchorBeats ?? {},
           beatPlan: prev.beatPlan ?? null,
           endings: prev.endings ?? {},
-          worldModel: prev.worldModel ?? null,
+          worldModel,
           audioBase: prev.audioBase ?? null,
+          audioMoodBeds: prev.audioMoodBeds ?? {},
           audioByLi: prev.audioByLi ?? {},
           audioSfx: prev.audioSfx ?? {},
         };

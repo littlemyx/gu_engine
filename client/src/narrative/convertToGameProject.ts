@@ -124,7 +124,7 @@ export type GameStateSchema = {
 /** Компактный манифест мира для карты в плеере (game/src/types.ts).
  *  Зеркалит WorldManifest движка. */
 export type GameWorldManifest = {
-  locations: { id: string; name: string }[];
+  locations: { id: string; name: string; mood?: string }[];
   edges: { from: string; to: string; via?: string }[];
 };
 
@@ -139,6 +139,8 @@ export type GameProjectFile = {
     stateSchema?: GameStateSchema;
     world?: GameWorldManifest;
     bgmUrl?: string;
+    /** Банк эмбиентов: LocationMood → URL. Рендерер выбирает по mood локации. */
+    ambientByMood?: Record<string, string>;
     crossfadeDurationMs?: number;
     bgmVolume?: number;
     sfxVolume?: number;

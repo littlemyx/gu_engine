@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { compileWorldGameProject } from '../src/narrative/compileWorldGame';
 import type { Brief, StoryOutlinePlan, WorldModel } from '../src/narrative/types';
+import type { AudioTrackState } from '../src/narrative/narrativeStore';
+
+const doneTrack = (file: string): AudioTrackState => ({ status: 'done', filenames: [file], selected: 0 });
 
 // Минимальные фикстуры. Компилятор из полей брифа читает только
 // loveInterests и world.setting.place (фолбэк заголовка), поэтому остальное
@@ -39,6 +42,8 @@ const worldModel: WorldModel = {
       description: 'опис A',
       pointsOfInterest: [],
       adjacent: [{ locationId: 'b', via: 'тропа' }],
+      mood: 'ominous_mysterious',
+      specialKind: null,
     },
     {
       id: 'b',
@@ -46,6 +51,8 @@ const worldModel: WorldModel = {
       description: 'опис B',
       pointsOfInterest: [],
       adjacent: [{ locationId: 'c', via: 'мост' }],
+      mood: 'neutral_calm',
+      specialKind: null,
     },
     {
       id: 'c',
@@ -53,6 +60,8 @@ const worldModel: WorldModel = {
       description: 'опис C',
       pointsOfInterest: [],
       adjacent: [{ locationId: 'b', via: 'обратный путь' }],
+      mood: 'cozy_tender',
+      specialKind: 'bar_tavern',
     },
   ],
   anchorLocations: { a1: 'a' },
@@ -61,13 +70,13 @@ const worldModel: WorldModel = {
 describe('compileWorldGameProject — манифест мира', () => {
   const { project, scenes } = compileWorldGameProject(brief, outline, worldModel, {});
 
-  it('эмитит все локации (id + имя)', () => {
+  it('эмитит все локации (id + имя + mood)', () => {
     const world = project.settings.world;
     expect(world).toBeDefined();
     expect(world!.locations).toEqual([
-      { id: 'a', name: 'Маяк' },
-      { id: 'b', name: 'Порт' },
-      { id: 'c', name: 'Таверна' },
+      { id: 'a', name: 'Маяк', mood: 'ominous_mysterious' },
+      { id: 'b', name: 'Порт', mood: 'neutral_calm' },
+      { id: 'c', name: 'Таверна', mood: 'cozy_tender' },
     ]);
   });
 
@@ -82,6 +91,40 @@ describe('compileWorldGameProject — манифест мира', () => {
   it('проставляет новые тайминги анимаций', () => {
     expect(project.settings.sceneFadeOutMs).toBe(400);
     expect(project.settings.choiceAppearDelayMs).toBe(120);
+  });
+
+  it('строит банк эмбиентов: neutral_calm → база, остальные настроения → mood-беды', () => {
+    const withAudio = compileWorldGameProject(
+      brief,
+      outline,
+      worldModel,
+      {},
+      {},
+      {},
+      {},
+      {},
+      {
+        base: doneTrack('base.mp3'),
+        moodBeds: {
+          ominous_mysterious: doneTrack('ominous.mp3'),
+          cozy_tender: doneTrack('cozy.mp3'),
+        },
+        byLi: {},
+        sfx: {},
+      },
+    );
+    const s = withAudio.project.settings;
+    expect(s.bgmUrl).toBe('http://localhost:3008/audio/base.mp3');
+    expect(s.ambientByMood).toEqual({
+      neutral_calm: 'http://localhost:3008/audio/base.mp3',
+      ominous_mysterious: 'http://localhost:3008/audio/ominous.mp3',
+      cozy_tender: 'http://localhost:3008/audio/cozy.mp3',
+    });
+  });
+
+  it('без аудио не эмитит ambientByMood', () => {
+    expect(project.settings.ambientByMood).toBeUndefined();
+    expect(project.settings.bgmUrl).toBeUndefined();
   });
 
   it('сохраняет движковый контракт: hub_/enter_ ноды и hub__go_ выходы', () => {

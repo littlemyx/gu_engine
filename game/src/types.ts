@@ -86,6 +86,8 @@ export type StateSchema = {
 export type WorldMapLocation = {
   id: string;
   name: string;
+  /** Настроение локации → выбор эмбиент-беда из settings.ambientByMood. */
+  mood?: string;
 };
 
 export type WorldMapEdge = {
@@ -108,6 +110,11 @@ export type ProjectSettings = {
   world?: WorldManifest;
   /** Базовая мелодия проекта — играет во всех сценах без audioProfile. */
   bgmUrl?: string;
+  /**
+   * Банк эмбиентов по настроению локации: LocationMood → URL. Рендерер выбирает
+   * подложку по mood текущей локации; bgmUrl остаётся фолбэком.
+   */
+  ambientByMood?: Record<string, string>;
   crossfadeDurationMs?: number;
   bgmVolume?: number;
   sfxVolume?: number;

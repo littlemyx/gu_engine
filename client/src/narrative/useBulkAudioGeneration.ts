@@ -6,7 +6,8 @@ import {
   getAudioBatchStatus,
   type BatchStatus,
 } from '@root/audio_gen/generated_client';
-import type { Brief, LoveInterestCard } from './types';
+import type { ArtStyle, Brief, LocationMood, LoveInterestCard } from './types';
+import { DEFAULT_LOCATION_MOOD } from './types';
 import { useNarrativeStore, type AudioVariationTone } from './narrativeStore';
 import { CANONICAL_POSES } from './emotionResolver';
 
@@ -44,7 +45,7 @@ export type AudioBulkStatus =
   | { state: 'idle' }
   | {
       state: 'running';
-      phase: 'base' | 'variations' | 'sfx';
+      phase: 'base' | 'beds' | 'variations' | 'sfx';
       total: number;
       completed: number;
       failures: AudioBulkFailure[];
@@ -52,20 +53,87 @@ export type AudioBulkStatus =
     }
   | { state: 'done'; total: number; completed: number; failures: AudioBulkFailure[]; cancelled: boolean };
 
-export function buildBaseStyle(brief: Brief): string {
-  const parts: string[] = ['instrumental background melody, seamless loop'];
-  if (brief.world.tone.mood) parts.push(`mood: ${brief.world.tone.mood}`);
-  if (brief.world.tone.themes.length) parts.push(`themes: ${brief.world.tone.themes.join(', ')}`);
-  parts.push(`setting: ${brief.world.setting.era}, ${brief.world.setting.place}`);
-  return parts.join('. ');
+/**
+ * Одна инструментовочная клауза, выведенная из визуального стиля проекта
+ * (brief.artStyle.referenceDescriptor). Подставляется во ВСЕ mood-шаблоны, так
+ * что весь банк эмбиентов звучит как один проект и совпадает с задниками.
+ * Fuzzy-lookup по ключевым словам, нейтральный дефолт для незнакомых стилей.
+ */
+export function deriveArtStyleTimbre(artStyle: ArtStyle): string {
+  const ref = (artStyle.referenceDescriptor || '').toLowerCase();
+  const has = (...kws: string[]) => kws.some(k => ref.includes(k));
+  if (has('watercolor', 'painterly', 'impressionist', 'gouache'))
+    return 'impressionist solo piano and harp, soft felt textures';
+  if (has('noir', 'ink', 'high-contrast', 'high contrast', 'monochrome'))
+    return 'sparse low strings and muted double bass, film-noir chamber';
+  if (has('lo-fi', 'lofi', 'pixel', 'retro', '8-bit', '8bit'))
+    return 'warm tape-saturated synth pads, mellow Rhodes, vinyl hiss';
+  if (has('anime', 'cel-shaded', 'cel shaded', 'manga')) return 'clean nylon guitar and celesta, light woodwinds';
+  if (has('storybook', 'pastel', 'fairytale', 'fairy tale', 'children'))
+    return 'music-box, glockenspiel and gentle strings';
+  if (has('cyber', 'neon', 'synthwave', 'sci-fi', 'sci fi', 'futuristic'))
+    return 'analog synth pads and drones, no arpeggio';
+  if (has('oil', 'renaissance', 'classical', 'baroque', 'realistic', 'photoreal'))
+    return 'string quartet and solo oboe, chamber acoustic';
+  return 'soft neutral piano and warm pads';
 }
 
+/** Аппендится КО ВСЕМ mood-стилям: держит трек фоновым, глушит задорность. */
+const AMBIENT_NEGATIVE_TAIL =
+  ', no drums, no beat, no percussion, no vocals, no lead melody, ambient underscore, seamless loop';
+
+/**
+ * Шаблоны эмбиент-подложек по настроению. `{timbre}` заменяется на
+ * deriveArtStyleTimbre. Расширять набор = добавить ключ в LOCATION_MOODS (types.ts)
+ * и запись сюда (+ строку в промпт world-model). Слова-магниты задорности
+ * (melody/upbeat/catchy/dance) сюда не попадают — только underscore/pad/drone.
+ */
+export const MOOD_STYLE_TEMPLATES: Record<LocationMood, string> = {
+  neutral_calm: '{timbre}, calm neutral ambient underscore, gentle sustained pads, unhurried, soft-focus',
+  cheerful_warm: '{timbre}, warm bright ambient underscore, gently optimistic, airy major-leaning harmony, sunlit',
+  cozy_tender: '{timbre}, intimate cozy ambient underscore, tender close-mic warmth, hearthlike',
+  romantic: '{timbre}, tender romantic ambient underscore, warm intimate harmony, slow swelling pads, dusk glow',
+  melancholic_sad:
+    '{timbre}, melancholic ambient underscore, slow minor-leaning harmony, distant and rainy, quiet ache',
+  wistful_nostalgic: '{timbre}, wistful nostalgic ambient underscore, faded bittersweet harmony, gentle reverb haze',
+  tense_anxious:
+    '{timbre}, tense anxious ambient underscore, low sustained drone, subtle dissonant swell, uneasy stillness',
+  ominous_mysterious:
+    '{timbre}, ominous mysterious ambient underscore, dark low drone, sparse unresolved intervals, cold air',
+  tragic_heavy:
+    '{timbre}, tragic heavy ambient underscore, deep mournful sustained low strings, slow grief-laden swell',
+};
+
+/** Style-строка эмбиент-беда: mood-шаблон + тембр из artStyle + негативный хвост. */
+export function buildAmbientStyle(mood: LocationMood, timbre: string, contextHint?: string): string {
+  const core = MOOD_STYLE_TEMPLATES[mood].replace('{timbre}', timbre);
+  const ctx = contextHint ? `, ${contextHint}` : '';
+  return `${core}${ctx}${AMBIENT_NEGATIVE_TAIL}`;
+}
+
+/**
+ * Базовая/фолбэк-подложка проекта — нейтральный эмбиент в тембре проекта.
+ * Больше НЕ содержит слова 'melody' (главный триггер задорности): роль сменена
+ * на ambient underscore, а инструментовка выводится из brief.artStyle.
+ */
+export function buildBaseStyle(brief: Brief): string {
+  const timbre = deriveArtStyleTimbre(brief.artStyle);
+  const setting = [brief.world.setting.era, brief.world.setting.place].filter(Boolean).join(', ');
+  return buildAmbientStyle(DEFAULT_LOCATION_MOOD, timbre, setting ? `setting: ${setting}` : undefined);
+}
+
+/**
+ * Per-LI вариация базового беда = ТОНКИЙ affect-сдвиг (не смена лада/инструментов).
+ * Cover сохраняет тембр базы; строка лишь чуть теплее/прохладнее по affection,
+ * чтобы все треки проекта звучали как один саунд-дизайн.
+ */
 export function buildToneStyle(li: LoveInterestCard, tone: AudioVariationTone): string {
-  const traits = li.personality.traits.slice(0, 3).join(', ');
+  const traits = li.personality.traits.slice(0, 2).join(', ');
+  const feel = traits ? `, character feel: ${traits}` : '';
   if (tone === 'positive') {
-    return `warm, uplifting, major key, tender; character feel: ${traits || li.name}`;
+    return `same instrumentation and tempo, very subtly warmer and more open, one shade brighter, minimal change, ambient underscore, no vocals${feel}`;
   }
-  return `dark, minor key, tense strings, unsettling; character feel: ${traits || li.name}`;
+  return `same instrumentation and tempo, very subtly cooler and more shadowed, one shade darker, minimal change, ambient underscore, no vocals${feel}`;
 }
 
 export function useBulkAudioGeneration() {
@@ -80,11 +148,21 @@ export function useBulkAudioGeneration() {
 
     const store = useNarrativeStore.getState();
     const failures: AudioBulkFailure[] = [];
-    // база + 2 тона на LI + один SFX-батч
-    const total = 1 + brief.loveInterests.length * 2 + 1;
+
+    // Настроения, реально используемые локациями (кроме neutral_calm — он живёт
+    // в базе). Один бед на настроение, переиспользуется всеми локациями этого
+    // настроения. Тембр выводится из визуального стиля проекта.
+    const timbre = deriveArtStyleTimbre(brief.artStyle);
+    const worldModel = useNarrativeStore.getState().worldModel;
+    const usedMoods: LocationMood[] = worldModel
+      ? [...new Set(worldModel.locations.map(l => l.mood))].filter(m => m !== DEFAULT_LOCATION_MOOD)
+      : [];
+
+    // база + mood-беды + 2 тона на LI + один SFX-батч
+    const total = 1 + usedMoods.length + brief.loveInterests.length * 2 + 1;
     let completed = 0;
 
-    const publish = (phase: 'base' | 'variations' | 'sfx') => {
+    const publish = (phase: 'base' | 'beds' | 'variations' | 'sfx') => {
       setStatus({
         state: 'running',
         phase,
@@ -103,7 +181,7 @@ export function useBulkAudioGeneration() {
         failures: [
           {
             key: '__service__',
-            error: 'audio_gen недоступен (http://localhost:3200). Запустите сервис: cd audio_gen && pnpm dev',
+            error: 'audio_gen недоступен (http://localhost:3300). Запустите сервис: cd audio_gen && pnpm dev',
           },
         ],
         cancelled: false,
@@ -139,7 +217,36 @@ export function useBulkAudioGeneration() {
     const baseFile =
       base?.status === 'done' ? base.filenames[base.selected] || base.filenames.find(Boolean) : undefined;
 
-    // ── 2. Per-LI вариации ────────────────────────────────────────────────
+    // ── 2. Банк эмбиентов по настроению локаций ───────────────────────────
+    // Каждое реально используемое настроение (кроме neutral_calm = база) — один
+    // спокойный бед в тембре проекта. Resumable: готовые пропускаются.
+    publish('beds');
+    for (const mood of usedMoods) {
+      if (cancelledRef.current) break;
+      const existingBed = useNarrativeStore.getState().audioMoodBeds[mood];
+      if (existingBed?.status === 'done') {
+        completed++;
+        publish('beds');
+        continue;
+      }
+      try {
+        const { data, error } = await generateMelody({
+          body: { style: buildAmbientStyle(mood, timbre), instrumental: true },
+        });
+        if (error || !data) throw new Error('не удалось запустить генерацию эмбиента');
+        store.setAudioMoodBed(mood, { status: 'generating', batchId: data.batchId });
+        const files = await pollBatch(data.batchId);
+        store.setAudioMoodBed(mood, { status: 'done', filenames: files, selected: 0 });
+        completed++;
+      } catch (e) {
+        const error = e instanceof Error ? e.message : String(e);
+        failures.push({ key: `bed:${mood}`, error });
+        store.setAudioMoodBed(mood, { status: 'failed', error });
+      }
+      publish('beds');
+    }
+
+    // ── 3. Per-LI вариации ────────────────────────────────────────────────
     publish('variations');
     if (baseFile) {
       for (const li of brief.loveInterests) {
@@ -175,7 +282,7 @@ export function useBulkAudioGeneration() {
       }
     }
 
-    // ── 3. SFX-набор ──────────────────────────────────────────────────────
+    // ── 4. SFX-набор ──────────────────────────────────────────────────────
     publish('sfx');
     const existingSfx = useNarrativeStore.getState().audioSfx;
     const missingSfx = SFX_EMOTIONS.filter(e => !existingSfx[e]);
@@ -260,7 +367,7 @@ function sleep(ms: number): Promise<void> {
 
 async function isAudioGenReachable(): Promise<boolean> {
   try {
-    const res = await fetch('http://localhost:3200/status', { method: 'GET' });
+    const res = await fetch('http://localhost:3300/status', { method: 'GET' });
     return res.ok;
   } catch {
     return false;

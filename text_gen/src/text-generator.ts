@@ -795,6 +795,18 @@ const WORLD_MODEL_SYSTEM_PROMPT = `Ты — картограф мира рома
      (аллея, коридор, двор), если они нужны для естественных путей.
   4. anchorLocations — маппинг id КАЖДОГО якоря outline на id локации.
   5. Все тексты — по-русски (кроме id).
+  6. mood — доминирующее НАСТРОЕНИЕ локации (для подбора фоновой музыки-эмбиента).
+     Ровно одно значение из фиксированного набора:
+       neutral_calm (нейтральная/спокойная), cheerful_warm (весёлая/тёплая),
+       cozy_tender (уютная/нежная), romantic (романтическая),
+       melancholic_sad (грустная/меланхоличная), wistful_nostalgic (ностальгическая),
+       tense_anxious (тревожная/напряжённая), ominous_mysterious (зловещая/таинственная),
+       tragic_heavy (трагическая/тяжёлая).
+     Выбирай по атмосфере места и его роли в сюжете (дождливый пустой универ → melancholic_sad,
+     тёплое кафе свиданий → cozy_tender). Если сомневаешься — neutral_calm.
+  7. specialKind — ТОЛЬКО для локаций с характерным собственным звуком; одно из:
+     bar_tavern, party_club, sports_stadium, market_street, ceremony. Для обычных
+     локаций поле опусти или поставь null.
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
@@ -804,7 +816,18 @@ const WORLD_MODEL_SYSTEM_PROMPT = `Ты — картограф мира рома
       "name": "университетская библиотека",
       "description": "Просторный зал с рядами стеллажей до потолка...",
       "pointsOfInterest": ["стол у окна", "стеллажи у входа"],
-      "adjacent": [{ "locationId": "campus_alley", "via": "через главные двери на аллею" }]
+      "adjacent": [{ "locationId": "campus_alley", "via": "через главные двери на аллею" }],
+      "mood": "melancholic_sad",
+      "specialKind": null
+    },
+    {
+      "id": "campus_bar",
+      "name": "студенческий бар",
+      "description": "Полутёмный бар с барной стойкой и гулом голосов...",
+      "pointsOfInterest": ["барная стойка", "угловой диван"],
+      "adjacent": [{ "locationId": "campus_alley", "via": "с аллеи через боковую дверь" }],
+      "mood": "cheerful_warm",
+      "specialKind": "bar_tavern"
     }
   ],
   "anchorLocations": { "library_first_encounter": "library" }

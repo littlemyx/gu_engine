@@ -8,6 +8,7 @@ import type {
   WorldLocation,
   WorldModel,
 } from './types';
+import { DEFAULT_LOCATION_MOOD } from './types';
 import type { CharacterGenState, ImageGenState, AudioTrackState, LiAudioState } from './narrativeStore';
 import type {
   GameProjectFile,
@@ -91,6 +92,8 @@ function movementLabel(to: WorldLocation, via: string): string {
 
 export type WorldAudioInput = {
   base: AudioTrackState | null;
+  /** Банк эмбиентов по настроению локации (LocationMood → трек). */
+  moodBeds: Record<string, AudioTrackState>;
   byLi: Record<string, LiAudioState>;
   sfx: Record<string, string>;
 };
@@ -104,7 +107,7 @@ export function compileWorldGameProject(
   endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
-  audio: WorldAudioInput = { base: null, byLi: {}, sfx: {} },
+  audio: WorldAudioInput = { base: null, moodBeds: {}, byLi: {}, sfx: {} },
 ): WorldCompileResult {
   const nodes: GameSceneNode[] = [];
   const edges: GameSceneEdge[] = [];
@@ -548,12 +551,24 @@ export function compileWorldGameProject(
     }
   }
   const world: GameWorldManifest = {
-    locations: worldModel.locations.map(l => ({ id: l.id, name: l.name })),
+    locations: worldModel.locations.map(l => ({ id: l.id, name: l.name, mood: l.mood })),
     edges: worldEdges,
   };
 
   const title = outline.title?.trim() || `${brief.world.setting.place} — пилот`;
   const bgmUrl = audioUrlFor(selectedTrackFile(audio.base));
+
+  // Банк эмбиентов для рантайма: настроение локации → URL беда. neutral_calm
+  // резолвится в базу (bgmUrl), остальные — в mood-беды. Рендерер выбирает
+  // подложку по mood текущей локации, а bgmUrl остаётся ultimate-фолбэком.
+  const ambientByMood: Record<string, string> = {};
+  if (bgmUrl) ambientByMood[DEFAULT_LOCATION_MOOD] = bgmUrl;
+  for (const [mood, track] of Object.entries(audio.moodBeds)) {
+    const url = audioUrlFor(selectedTrackFile(track));
+    if (url) ambientByMood[mood] = url;
+  }
+  const hasAmbient = Object.keys(ambientByMood).length > 0;
+
   const project: GameProjectFile = {
     title,
     scenes: './scenes.json',
@@ -565,6 +580,7 @@ export function compileWorldGameProject(
       stateSchema,
       world,
       ...(bgmUrl ? { bgmUrl, crossfadeDurationMs: 2000, bgmVolume: 0.3, sfxVolume: 0.5 } : {}),
+      ...(hasAmbient ? { ambientByMood } : {}),
     },
   };
 
