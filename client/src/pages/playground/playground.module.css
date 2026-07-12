@@ -1045,3 +1045,92 @@
 .sectionPad {
   margin: 16px 32px 0 32px;
 }
+
+/* ── Story QA panel (фаза 6) ─────────────────────────────────────────────── */
+
+.qaPanel {
+  margin: 16px 32px 0 32px;
+  padding: 14px 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qaHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.qaGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qaGroupTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin: 4px 0 2px 0;
+}
+
+.qaBadgeError {
+  font-size: 10px;
+  font-weight: 600;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.qaBadgeWarning {
+  font-size: 10px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.qaPolicyTable {
+  border-collapse: collapse;
+  font-size: 12px;
+  color: #374151;
+}
+
+.qaPolicyTable th {
+  text-align: left;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.qaPolicyTable td {
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.qaPolicyName {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.qaOverrideRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #b91c1c;
+  margin-top: 4px;
+  cursor: pointer;
+}

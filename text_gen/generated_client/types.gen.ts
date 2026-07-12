@@ -779,6 +779,33 @@ export type DialogueQaRequest = {
     liCardSummary: string;
 };
 
+export type StoryLeafQaRequest = {
+    /**
+     * Which branch-outcome combination forms this leaf ("bp1=o1, bp2=o2").
+     */
+    leafLabel: string;
+    /**
+     * Beats of the leaf in assigned-slot order.
+     */
+    beatSummariesOrdered: Array<{
+        id: string;
+        summary: string;
+        timeMarker: string;
+    }>;
+    /**
+     * Spine endings available to this story.
+     */
+    endings: Array<{
+        id: string;
+        kind: string;
+        summary?: string;
+    }>;
+    /**
+     * World tone digest from the brief (mood, themes, intensity).
+     */
+    briefTone: string;
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -1054,6 +1081,22 @@ export type GenerateDialogueQaResponses = {
 };
 
 export type GenerateDialogueQaResponse = GenerateDialogueQaResponses[keyof GenerateDialogueQaResponses];
+
+export type GenerateStoryLeafQaData = {
+    body: StoryLeafQaRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/storyLeafQA';
+};
+
+export type GenerateStoryLeafQaResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateStoryLeafQaResponse = GenerateStoryLeafQaResponses[keyof GenerateStoryLeafQaResponses];
 
 export type ListBatchesData = {
     body?: never;

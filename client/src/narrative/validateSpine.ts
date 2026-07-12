@@ -1,5 +1,5 @@
 import type { Brief, SegmentIssue, WorldModel } from './types';
-import type { Calendar, SpineBeat, SpineBeatOutcome, SpinePlan } from './calendarTypes';
+import type { Calendar, SpineBeat, SpinePlan } from './calendarTypes';
 import { actSlotWindow } from './calendarTypes';
 import { assignBeatSlots } from './beatSchedule';
 import type { Guard } from './events';
@@ -28,6 +28,79 @@ export function guardFlags(guard: Guard): string[] {
 }
 
 const VALID_ENDING_KINDS = new Set(['good', 'normal', 'bad']);
+
+/** Лист ветвления: по одному исходу на каждую перечисляемую развилку. */
+export type LeafAssignment = {
+  /** «bp1=o1, bp2=o2»; пустая строка = развилок нет (единственный лист). */
+  label: string;
+  /** branchPointId → выбранный outcomeId. */
+  assignment: Record<string, string>;
+};
+
+/**
+ * Все комбинации исходов развилок (декартово произведение). Перечисляются
+ * только структурно валидные развилки (2-3 исхода); без развилок — один
+ * лист с пустым assignment. Реюз: feasibility validateSpine, dead-content
+ * storyQA, критик листьев (D4).
+ */
+export function enumerateLeafAssignments(spine: SpinePlan): LeafAssignment[] {
+  const bps = spine.beats.filter(b => {
+    const n = b.outcomes?.length ?? 0;
+    return b.kind === 'branchPoint' && n >= 2 && n <= 3;
+  });
+  let acc: Record<string, string>[] = [{}];
+  for (const bp of bps) {
+    acc = acc.flatMap(a => (bp.outcomes ?? []).map(o => ({ ...a, [bp.id]: o.id })));
+  }
+  return acc.map(assignment => ({
+    label: bps.map(bp => `${bp.id}=${assignment[bp.id]}`).join(', '),
+    assignment,
+  }));
+}
+
+/**
+ * Симуляция установления флагов на одном листе (фикспойнт): флаг доступен
+ * со слота установителя (бит — в назначенный assignBeatSlots слот); флаги
+ * НЕвыбранных исходов недоступны никогда; бит играется, если каждый его
+ * guard-флаг доступен не позже конца окна бита.
+ */
+export function playableBeatsForLeaf(
+  spine: SpinePlan,
+  calendar: Calendar,
+  assignment: Record<string, string>,
+): { played: Set<string>; earliest: Map<string, number> } {
+  const beatSlots = assignBeatSlots(spine, calendar);
+  const slotOfBeat = (b: SpineBeat): number => beatSlots[b.id] ?? Math.max(0, b.window.fromSlot);
+
+  const earliest = new Map<string, number>();
+  const played = new Set<string>();
+  const note = (f: string, s: number) => {
+    const prev = earliest.get(f);
+    if (prev == null || s < prev) earliest.set(f, s);
+  };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const b of spine.beats) {
+      if (played.has(b.id)) continue;
+      const ok = guardFlags(b.guard).every(f => {
+        const e = earliest.get(f);
+        return e != null && e <= b.window.toSlot;
+      });
+      if (!ok) continue;
+      played.add(b.id);
+      changed = true;
+      const s = slotOfBeat(b);
+      for (const f of b.establishes) note(f, s);
+      const chosen = assignment[b.id];
+      for (const o of b.outcomes ?? []) {
+        // У перечисляемой развилки доступен ТОЛЬКО выбранный исход.
+        if (chosen == null || o.id === chosen) note(o.setsFlag, s);
+      }
+    }
+  }
+  return { played, earliest };
+}
 
 export function validateSpine(
   spine: SpinePlan,
@@ -307,55 +380,12 @@ export function validateSpine(
     return n >= 2 && n <= 3;
   });
   if (finale && enumerableBps.length > 0 && enumerableBps.length <= 3) {
-    const beatSlots = assignBeatSlots(spine, calendar);
-    const slotOfBeat = (b: SpineBeat): number => beatSlots[b.id] ?? Math.max(0, b.window.fromSlot);
-
-    // Все комбинации исходов (декартово произведение).
-    let assignments: Array<Map<string, SpineBeatOutcome>> = [new Map()];
-    for (const bp of enumerableBps) {
-      assignments = assignments.flatMap(a =>
-        (bp.outcomes ?? []).map(o => {
-          const next = new Map(a);
-          next.set(bp.id, o);
-          return next;
-        }),
-      );
-    }
-
     const outcomeFlags = new Set<string>();
     for (const bp of enumerableBps) for (const o of bp.outcomes ?? []) outcomeFlags.add(o.setsFlag);
     const playedUnion = new Set<string>();
 
-    for (const assignment of assignments) {
-      const leafLabel = enumerableBps.map(bp => `${bp.id}=${assignment.get(bp.id)!.id}`).join(', ');
-
-      const earliest = new Map<string, number>();
-      const played = new Set<string>();
-      const note = (f: string, s: number) => {
-        const prev = earliest.get(f);
-        if (prev == null || s < prev) earliest.set(f, s);
-      };
-      let changed = true;
-      while (changed) {
-        changed = false;
-        for (const b of beats) {
-          if (played.has(b.id)) continue;
-          const ok = guardFlags(b.guard).every(f => {
-            const e = earliest.get(f);
-            return e != null && e <= b.window.toSlot;
-          });
-          if (!ok) continue;
-          played.add(b.id);
-          changed = true;
-          const s = slotOfBeat(b);
-          for (const f of b.establishes) note(f, s);
-          const chosen = assignment.get(b.id);
-          for (const o of b.outcomes ?? []) {
-            // У перечисляемой развилки доступен ТОЛЬКО выбранный исход.
-            if (!chosen || o.id === chosen.id) note(o.setsFlag, s);
-          }
-        }
-      }
+    for (const { label: leafLabel, assignment } of enumerateLeafAssignments(spine)) {
+      const { played, earliest } = playableBeatsForLeaf(spine, calendar, assignment);
       for (const id of played) playedUnion.add(id);
 
       if (!played.has(finale.id)) {

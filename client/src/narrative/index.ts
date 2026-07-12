@@ -142,7 +142,19 @@ export {
 export type { DialogueChoiceKind, DialogueUnit, DialogueUnitChoice, DialogueUnitNode } from './dialogueUnit';
 export { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
 export { computeBracketRanges } from './buildDialogueVariantRequest';
-export { validateSpine, guardFlags } from './validateSpine';
+export { validateSpine, guardFlags, enumerateLeafAssignments, playableBeatsForLeaf } from './validateSpine';
+export type { LeafAssignment } from './validateSpine';
+export {
+  runStoryQAStructural,
+  simulatePolicies,
+  summarizePolicyReports,
+  buildStoryLeafQARequests,
+  DEFAULT_POLICIES,
+  MAX_LEAF_QA_CALLS,
+} from './storyQA';
+export type { StoryQAInputs, PolicyReport, StoryLeafQAPayload } from './storyQA';
+export { useStoryQA } from './useStoryQA';
+export type { StoryQAState, StoryQAStatus } from './useStoryQA';
 export { validateCalendar } from './validateCalendar';
 export { validateCastPlan, REQUIRED_ARC_STAGES } from './validateCastPlan';
 export { buildCastPlanRequestPayload } from './buildCastPlanRequest';
@@ -162,7 +174,7 @@ export { buildStubCastPlan } from './castPlanStub';
 export { buildWorldCalendarRequestPayload } from './buildWorldCalendarRequest';
 export { buildSpineRequestPayload, computeSpineTargets } from './buildSpineRequest';
 export { useBulkCalendarGeneration } from './useBulkCalendarGeneration';
-export type { BulkCalendarPhase, BulkCalendarProgress } from './useBulkCalendarGeneration';
+export type { BulkCalendarPhase, BulkCalendarProgress, BulkCalendarRunOptions } from './useBulkCalendarGeneration';
 export { deriveCalendarMontage } from './calendarSliceModel';
 export type { CalendarMontageModel } from './calendarSliceModel';
 export { deriveLegacyOutline } from './deriveLegacyOutline';

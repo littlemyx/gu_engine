@@ -66,6 +66,20 @@ export type BulkCalendarPhase =
 
 export type BulkCalendarProgress = { completed: number; total: number };
 
+/**
+ * Затравки фидбека от story QA («перегенерировать с фидбеком»): issue-строки
+ * вливаются в previousIssues ПЕРВОЙ попытки целевой стадии, а кэшированный
+ * артефакт при их наличии считается невалидным — best-of retry регенерирует
+ * его с фидбеком, сохранив как previousAttempt (сброс стора не нужен).
+ */
+export type BulkCalendarRunOptions = {
+  seedIssues?: {
+    spine?: string[];
+    /** unitId → issue-строки для его диалоговой прозы. */
+    dialogue?: Record<string, string[]>;
+  };
+};
+
 /** Артефакт стадии worldCalendar целиком (пишется в стор одним сеттером). */
 type WorldCalendarArtifact = {
   world: WorldModel;
@@ -82,7 +96,7 @@ export function useBulkCalendarGeneration() {
   const [issues, setIssues] = useState<string[]>([]);
   const runningRef = useRef(false);
 
-  const run = useCallback(async (brief: Brief) => {
+  const run = useCallback(async (brief: Brief, options?: BulkCalendarRunOptions) => {
     if (runningRef.current) return;
     runningRef.current = true;
     setError(null);
@@ -247,13 +261,17 @@ export function useBulkCalendarGeneration() {
 
       const cachedSpine = useNarrativeStore.getState().spine;
       const cachedSpineErrors = cachedSpine ? spineErrors(cachedSpine) : [];
+      // Затравки story QA: кэш считается невалидным, его ошибки + затравки
+      // уходят фидбеком первой попытки (previousAttempt сохраняется).
+      const spineSeeds = options?.seedIssues?.spine ?? [];
+      const cachedSpineFeedback = [...cachedSpineErrors, ...spineSeeds];
 
-      if (!cachedSpine || cachedSpineErrors.length > 0) {
+      if (!cachedSpine || cachedSpineFeedback.length > 0) {
         try {
           const basePayload = buildSpineRequestPayload(brief, worldModel, calendar, tagMap);
           let best: { plan: SpinePlan; errorCount: number; errors: string[] } | null =
-            cachedSpine && cachedSpineErrors.length > 0
-              ? { plan: cachedSpine, errorCount: cachedSpineErrors.length, errors: cachedSpineErrors }
+            cachedSpine && cachedSpineFeedback.length > 0
+              ? { plan: cachedSpine, errorCount: cachedSpineFeedback.length, errors: cachedSpineFeedback }
               : null;
           let lastAttemptError: unknown = null;
           for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -432,8 +450,13 @@ export function useBulkCalendarGeneration() {
             .filter(i => i.severity === 'error')
             .map(formatIssue);
 
+        // Затравки story QA для этого юнита: валидный кэш регенерируется
+        // с фидбеком (previousAttempt = кэш, previousIssues = затравки).
+        const unitSeeds = options?.seedIssues?.dialogue?.[unitKey] ?? [];
+
         const cached = useNarrativeStore.getState().unitProse[unitKey] ?? [];
         const cachedComplete =
+          unitSeeds.length === 0 &&
           cached.length === 3 &&
           BRACKETS.every(b => {
             const u = cached.find(x => x.bracket === b);
@@ -443,9 +466,9 @@ export function useBulkCalendarGeneration() {
 
         const units: DialogueUnit[] = [];
         for (const bracket of BRACKETS) {
-          // Валидный кэшированный брекет не трогаем.
+          // Валидный кэшированный брекет не трогаем (если нет затравок QA).
           const cachedForBracket = cached.find(u => u.bracket === bracket);
-          if (cachedForBracket && unitErrors(cachedForBracket).length === 0) {
+          if (unitSeeds.length === 0 && cachedForBracket && unitErrors(cachedForBracket).length === 0) {
             units.push(cachedForBracket);
             continue;
           }
@@ -473,15 +496,13 @@ export function useBulkCalendarGeneration() {
               return pollBatchResult(data.batchId, parseDialogueUnit);
             };
 
-            // Невалидный кэш сидирует best — его ошибки уходят фидбеком.
-            let best: { unit: DialogueUnit; errorCount: number; errors: string[] } | null =
-              cachedForBracket != null
-                ? {
-                    unit: cachedForBracket,
-                    errorCount: unitErrors(cachedForBracket).length,
-                    errors: unitErrors(cachedForBracket),
-                  }
-                : null;
+            // Невалидный кэш (или валидный с затравками QA) сидирует best —
+            // его ошибки + затравки уходят фидбеком первой попытки.
+            let best: { unit: DialogueUnit; errorCount: number; errors: string[] } | null = null;
+            if (cachedForBracket != null) {
+              const cachedFeedback = [...unitErrors(cachedForBracket), ...unitSeeds];
+              best = { unit: cachedForBracket, errorCount: cachedFeedback.length, errors: cachedFeedback };
+            }
             let lastAttemptError: unknown = null;
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
               try {

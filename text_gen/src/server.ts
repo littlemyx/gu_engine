@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueVariant, processDialogueUnit, processDialogueQA, processEnding } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueVariant, processDialogueUnit, processDialogueQA, processStoryLeafQA, processEnding } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
@@ -19,6 +19,7 @@ import type {
   DialogueVariantRequest,
   DialogueUnitRequest,
   DialogueQARequest,
+  StoryLeafQARequest,
   EndingRequest,
   ItemState,
   BatchState,
@@ -436,6 +437,30 @@ app.post('/generate/dialogueQA', (req, res) => {
   logger.log(`[POST /generate/dialogueQA] batch=${batchId} bracket=${body.bracket}`);
 
   processDialogueQA(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/storyLeafQA', (req, res) => {
+  const body = req.body as StoryLeafQARequest;
+
+  const batchId = randomUUID();
+  const itemId = 'storyLeafQA';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/storyLeafQA] batch=${batchId} leaf="${body.leafLabel}"`);
+
+  processStoryLeafQA(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

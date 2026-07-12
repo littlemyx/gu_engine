@@ -37,10 +37,15 @@ import {
   type StoryOutlinePlan,
   type PoseRegenEntry,
   type PoseRegenStatus,
+  useStoryQA,
   type Brief,
   type Calendar,
   type CharacterSchedule,
   type SpinePlan,
+  type SegmentIssue,
+  type StoryQAStatus,
+  type PolicyReport,
+  type BulkCalendarRunOptions,
 } from '@/narrative';
 import { deriveCalendarMontage } from '@/narrative/calendarSliceModel';
 import { deriveLegacyOutline } from '@/narrative/deriveLegacyOutline';
@@ -101,6 +106,7 @@ const Playground = () => {
   const poseRegen = useRegeneratePoses();
   const audioGen = useBulkAudioGeneration();
   const calendarGen = useBulkCalendarGeneration();
+  const storyQA = useStoryQA();
 
   const isBlocked = errorCount > 0;
 
@@ -355,12 +361,20 @@ const Playground = () => {
           <div className={styles.sectionScroll}>
             {activeOutline ? (
               <PlaygroundErrorBoundary>
+                <QAPanel
+                  qa={storyQA}
+                  brief={brief}
+                  hasCalendarStack={Boolean(spine && calendar && schedule)}
+                  onRegenerateWithFeedback={options => void calendarGen.run(brief, options)}
+                  regenRunning={calendarGen.phase !== 'idle' && calendarGen.phase !== 'done' && !calendarGen.error}
+                />
                 <ExportBar
                   outline={activeOutline}
                   anchorLocations={usingDerivedOutline ? derivedLegacy?.anchorLocations ?? null : null}
                   spine={spine}
                   calendar={calendar}
                   schedule={schedule}
+                  qaStatus={storyQA.status}
                 />
               </PlaygroundErrorBoundary>
             ) : (
@@ -1319,6 +1333,147 @@ const AudioGenBar: React.FC<{
   );
 };
 
+// ────────────────────────────────────────────────────────────────────────────
+// STORY QA PANEL (D2 структурный + D3 симуляция + D4 критик листьев)
+// ────────────────────────────────────────────────────────────────────────────
+
+/** Порядок групп в отчёте; неизвестные префиксы уходят в конец. */
+const QA_GROUP_ORDER = ['spine', 'calendar', 'schedule', 'units', 'dialogue', 'qa', 'sim', 'leaf'];
+
+const qaGroupOf = (issue: SegmentIssue): string => issue.scope.split('/')[0] || '?';
+
+/** Затравки регенерации: spine-issues списком, dialogue-issues по unitId. */
+function buildSeedIssues(issues: SegmentIssue[]): BulkCalendarRunOptions['seedIssues'] {
+  const spine = issues.filter(i => qaGroupOf(i) === 'spine').map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+  const dialogue: Record<string, string[]> = {};
+  for (const i of issues) {
+    if (qaGroupOf(i) !== 'dialogue') continue;
+    const unitId = i.scope.split('/')[1];
+    if (!unitId) continue;
+    (dialogue[unitId] ??= []).push(`[${i.severity}] ${i.scope}: ${i.message}`);
+  }
+  const seeds: NonNullable<BulkCalendarRunOptions['seedIssues']> = {};
+  if (spine.length > 0) seeds.spine = spine;
+  if (Object.keys(dialogue).length > 0) seeds.dialogue = dialogue;
+  return Object.keys(seeds).length > 0 ? seeds : undefined;
+}
+
+const PolicyTable: React.FC<{ reports: PolicyReport[] }> = ({ reports }) => {
+  if (reports.length === 0) return null;
+  return (
+    <table className={styles.qaPolicyTable}>
+      <thead>
+        <tr>
+          <th>политика</th>
+          <th>финал</th>
+          <th>концовка</th>
+          <th>мёртвые слоты</th>
+        </tr>
+      </thead>
+      <tbody>
+        {reports.map(r => (
+          <tr key={r.policy}>
+            <td className={styles.qaPolicyName}>{r.policy}</td>
+            <td>{r.reachedFinale ? '✓' : '✗'}</td>
+            <td>{r.endingSatisfied ?? '—'}</td>
+            <td>
+              {r.deadSlots.length} / {r.slotCount}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+};
+
+const QAPanel: React.FC<{
+  qa: ReturnType<typeof useStoryQA>;
+  brief: Brief;
+  hasCalendarStack: boolean;
+  onRegenerateWithFeedback: (options: BulkCalendarRunOptions) => void;
+  regenRunning: boolean;
+}> = ({ qa, brief, hasCalendarStack, onRegenerateWithFeedback, regenRunning }) => {
+  const { state, issues, policyReports } = qa.status;
+  const errorCount = issues.filter(i => i.severity === 'error').length;
+  const warningCount = issues.length - errorCount;
+
+  const groups = useMemo(() => {
+    const map = new Map<string, SegmentIssue[]>();
+    for (const i of issues) {
+      const g = qaGroupOf(i);
+      (map.get(g) ?? map.set(g, []).get(g)!).push(i);
+    }
+    return [...map.entries()].sort(([a], [b]) => {
+      const ia = QA_GROUP_ORDER.indexOf(a);
+      const ib = QA_GROUP_ORDER.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib) || (a < b ? -1 : 1);
+    });
+  }, [issues]);
+
+  const seedIssues = useMemo(() => (state === 'done' ? buildSeedIssues(issues) : undefined), [state, issues]);
+
+  return (
+    <div className={styles.qaPanel}>
+      <div className={styles.qaHeader}>
+        <div className={styles.bulkLeft}>
+          <span className={styles.bulkTitle}>
+            Story QA
+            {state === 'running' && ' · проверяется...'}
+            {state === 'done' &&
+              (issues.length === 0 ? ' · чисто ✓' : ` · ✗ ${errorCount} ошибок · ⚠ ${warningCount} предупреждений`)}
+          </span>
+          <span className={styles.bulkMeta}>
+            структурный отчёт + симуляция политик по evaluateSlice + LLM-критик листьев (text_gen)
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {state === 'done' && seedIssues && (
+            <button
+              type="button"
+              className={styles.secondaryBtn}
+              onClick={() => onRegenerateWithFeedback({ seedIssues })}
+              disabled={regenRunning}
+              title="issues групп spine/dialogue уходят previousIssues-фидбеком соответствующих стадий"
+            >
+              {regenRunning ? 'Регенерация...' : 'Перегенерировать с фидбеком'}
+            </button>
+          )}
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            onClick={() => void qa.run(brief)}
+            disabled={state === 'running' || !hasCalendarStack}
+            title={hasCalendarStack ? undefined : 'нужен календарный стек (calendar + spine + schedule)'}
+          >
+            {state === 'running' ? 'Проверка...' : 'Проверить историю'}
+          </button>
+        </div>
+      </div>
+
+      {state === 'done' && <PolicyTable reports={policyReports} />}
+
+      {state === 'done' &&
+        groups.map(([group, groupIssues]) => (
+          <div key={group} className={styles.qaGroup}>
+            <div className={styles.qaGroupTitle}>
+              <span className={styles.issuePath}>{group}/</span>
+              <span className={styles.qaBadgeError}>{groupIssues.filter(i => i.severity === 'error').length} err</span>
+              <span className={styles.qaBadgeWarning}>
+                {groupIssues.filter(i => i.severity === 'warning').length} warn
+              </span>
+            </div>
+            {groupIssues.map((issue, idx) => (
+              <div key={idx} className={issue.severity === 'error' ? styles.issueError : styles.issueWarning}>
+                <span className={styles.issuePath}>{issue.scope}</span>
+                {issue.message}
+              </div>
+            ))}
+          </div>
+        ))}
+    </div>
+  );
+};
+
 const ExportBar: React.FC<{
   outline: StoryOutlinePlan;
   /** Маппинг anchor→loc от адаптера deriveLegacyOutline (легаси-фолбэк). */
@@ -1327,7 +1482,9 @@ const ExportBar: React.FC<{
   spine?: SpinePlan | null;
   calendar?: Calendar | null;
   schedule?: CharacterSchedule | null;
-}> = ({ outline, anchorLocations, spine, calendar, schedule }) => {
+  /** Последний прогон story QA — гейт экспорта при error-severity issues. */
+  qaStatus?: StoryQAStatus;
+}> = ({ outline, anchorLocations, spine, calendar, schedule, qaStatus }) => {
   const brief = useBriefStore(s => s.brief);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
@@ -1343,6 +1500,13 @@ const ExportBar: React.FC<{
   const audioSpecialBeds = useNarrativeStore(s => s.audioSpecialBeds);
   const audioByLi = useNarrativeStore(s => s.audioByLi);
   const audioSfx = useNarrativeStore(s => s.audioSfx);
+  // Гейт экспорта: error-severity issues последнего QA-прогона блокируют
+  // кнопку (обходимо явным чекбоксом); не запускавшийся QA — только подсказка.
+  const [overrideQaErrors, setOverrideQaErrors] = useState(false);
+  const qaRan = qaStatus?.state === 'done';
+  const qaErrorCount = qaRan ? qaStatus.issues.filter(i => i.severity === 'error').length : 0;
+  const qaBlocked = qaErrorCount > 0 && !overrideQaErrors;
+
   const beatCount = Object.keys(anchorBeats).length;
   const variantCount = Object.keys(dialogueVariants).length;
   // При наличии модели мира фоны ключуются по loc:<id> — считаем только их.
@@ -1423,9 +1587,23 @@ const ExportBar: React.FC<{
             : worldForExport
             ? ' · world-компилятор'
             : ' · легаси-конвертер'}
+          {!qaRan && ' · story QA не запускался'}
+          {qaRan && qaErrorCount > 0 && ` · ✗ story QA: ${qaErrorCount} ошибок`}
         </span>
+        {qaRan && qaErrorCount > 0 && (
+          <label className={styles.qaOverrideRow}>
+            <input type="checkbox" checked={overrideQaErrors} onChange={e => setOverrideQaErrors(e.target.checked)} />
+            экспортировать несмотря на ошибки
+          </label>
+        )}
       </div>
-      <button type="button" className={styles.primaryBtn} onClick={onExport}>
+      <button
+        type="button"
+        className={styles.primaryBtn}
+        onClick={onExport}
+        disabled={qaBlocked}
+        title={qaBlocked ? 'story QA нашёл ошибки — исправьте или включите чекбокс обхода' : undefined}
+      >
         Скачать .gu.json + scenes.json
       </button>
     </div>

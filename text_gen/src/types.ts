@@ -367,6 +367,22 @@ export interface DialogueQARequest {
 }
 
 /**
+ * Запрос стадии storyLeafQA (D4): LLM-критик сюжета одного листа ветвления.
+ * Вход — лента summary битов листа в хронологии + концовки + тон брифа;
+ * выход — строгий JSON {"issues": [{severity, scope, message}]}.
+ */
+export interface StoryLeafQARequest {
+  /** «bp1=o1, bp2=o2» — какая комбинация исходов образует лист. */
+  leafLabel: string;
+  /** Биты листа в порядке назначенных слотов. */
+  beatSummariesOrdered: { id: string; summary: string; timeMarker: string }[];
+  /** Концовки хребта (kind: good/normal/bad). */
+  endings: { id: string; kind: string; summary?: string }[];
+  /** Тон мира из брифа (настроение, темы, интенсивность). */
+  briefTone: string;
+}
+
+/**
  * Запрос на генерацию эпилога (одна концовка за вызов).
  * kind=good генерится per-LI; normal/bad — общие.
  */

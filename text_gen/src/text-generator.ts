@@ -19,6 +19,7 @@ import type {
   DialogueVariantRequest,
   DialogueUnitRequest,
   DialogueQARequest,
+  StoryLeafQARequest,
   EndingRequest,
 } from './types.js';
 
@@ -2218,5 +2219,97 @@ export async function processDialogueQA(batch: BatchState, body: DialogueQAReque
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[dialogueQA] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// STORY LEAF QA (D4: LLM-критик сюжета одного листа ветвления)
+// ============================================================================
+
+const STORY_LEAF_QA_SYSTEM_PROMPT = `Ты — критик сюжета романтической визуальной новеллы (romance VN).
+
+Получаешь ОДИН лист ветвления истории:
+  1. leafLabel — какая комбинация исходов развилок образует этот лист.
+  2. beatSummariesOrdered — биты сюжета листа в хронологическом порядке,
+     каждый с timeMarker («день N · часть дня»).
+  3. endings — доступные концовки (kind: good/normal/bad) с требованиями.
+  4. briefTone — тон мира из брифа.
+
+Структуру и достижимость уже проверил код. Твоя задача — проверить СЮЖЕТНУЮ
+СВЯЗНОСТЬ ленты и вернуть список проблем.
+
+Проверяй ровно три вещи:
+  1. ПРОТИВОРЕЧИЯ МЕЖДУ БИТАМИ. Факты, время и мотивации персонажей не должны
+     конфликтовать: событие не может опираться на то, что случится позже
+     (timeMarker!); персонаж не может внезапно сменить цель без причины;
+     заявленный факт не должен опровергаться следующим битом.
+  2. НЕПРЕРЫВНОСТЬ ЗНАНИЙ. Персонажи знают только то, что случилось В ЭТОМ
+     листе до текущего бита. Упоминание событий других веток (исходов, не
+     выбранных в leafLabel) или ещё не случившихся — проблема.
+  3. СОГЛАСОВАННОСТЬ ФИНАЛА. Последние биты листа должны логично подводить
+     к перечисленным концовкам; финал, эмоционально или фактически
+     несовместимый с ними или с briefTone, — проблема.
+
+Severity:
+  - error — противоречие по существу (факт/время/знание ломает сюжет).
+  - warning — шероховатость (мотивация слабо обоснована, тон слегка плывёт).
+
+scope — id бита или id концовки, к которому относится проблема.
+message — 1-2 предложения по-русски: что не так и как исправить.
+Если проблем нет — верни {"issues": []}.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "issues": [
+    { "severity": "error", "scope": "beat_confession", "message": "Кира упоминает ссору на фестивале, но в этом листе героиня выбрала исход без фестиваля." }
+  ]
+}`;
+
+export async function processStoryLeafQA(batch: BatchState, body: StoryLeafQARequest): Promise<void> {
+  const itemId = 'storyLeafQA';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const timeline = body.beatSummariesOrdered
+      .map((b, i) => `${i + 1}. [${b.timeMarker}] (${b.id}) ${b.summary}`)
+      .join('\n');
+    const endings = body.endings
+      .map(e => `- ${e.id} (${e.kind})${e.summary ? `: ${e.summary}` : ''}`)
+      .join('\n');
+
+    const parts: string[] = [
+      `## Лист: ${body.leafLabel}`,
+      `## Лента битов (хронология)\n${timeline}`,
+      `## Концовки\n${endings}`,
+      `## Тон брифа\n${body.briefTone}`,
+      'Проверь лист по трём критериям и верни issues. Только JSON.',
+    ];
+
+    logger.log(`[storyLeafQA] batch=${batch.batchId} — reviewing leaf "${body.leafLabel}"...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: STORY_LEAF_QA_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.issues)) {
+      throw new Error('Invalid response: missing issues array');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[storyLeafQA] batch=${batch.batchId} — completed (${parsed.issues.length} issues)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[storyLeafQA] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }

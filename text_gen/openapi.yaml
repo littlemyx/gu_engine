@@ -314,6 +314,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/storyLeafQA:
+    post:
+      operationId: generateStoryLeafQA
+      summary: LLM-critic pass over one branch leaf of the story (beat contradictions, knowledge continuity, finale consistency)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StoryLeafQARequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -1312,6 +1330,52 @@ components:
         liCardSummary:
           type: string
           description: Short summary of the LI card (name, personality, speech style).
+
+    StoryLeafQARequest:
+      type: object
+      required:
+        - leafLabel
+        - beatSummariesOrdered
+        - endings
+        - briefTone
+      properties:
+        leafLabel:
+          type: string
+          description: Which branch-outcome combination forms this leaf ("bp1=o1, bp2=o2").
+        beatSummariesOrdered:
+          type: array
+          description: Beats of the leaf in assigned-slot order.
+          items:
+            type: object
+            required:
+              - id
+              - summary
+              - timeMarker
+            properties:
+              id:
+                type: string
+              summary:
+                type: string
+              timeMarker:
+                type: string
+        endings:
+          type: array
+          description: Spine endings available to this story.
+          items:
+            type: object
+            required:
+              - id
+              - kind
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              summary:
+                type: string
+        briefTone:
+          type: string
+          description: World tone digest from the brief (mood, themes, intensity).
 
     ErrorResponse:
       type: object
