@@ -15,12 +15,44 @@ import { guardFiredIds, unitEstablishes } from './parseEventPool';
  *
  * Недостижимым юнитам проза не генерируется — pruning заменяет
  * play-time-ленивость при полной прегенерации.
+ *
+ * Ветки (фаза 5): флаги исходов развилок входят в earliestEstablish с
+ * window.fromSlot развилки — оптимистичная union-семантика («юнит достижим,
+ * если ХОТЬ КАКАЯ-ТО ветка ставит его флаг») для генерации прозы. Для
+ * превью конкретного листа — computeReachableUnitsFor с assignment:
+ * флаги НЕвыбранных исходов исключаются.
  */
 export function computeReachableUnits(spine: SpinePlan, calendar: Calendar, units: EventUnit[]): Set<string> {
+  return computeReachable(spine, calendar, units, null);
+}
+
+/**
+ * Per-leaf вариант для селектора веток монтажки: assignment =
+ * branchPointId → выбранный outcomeId. Флаги исходов, не выбранных для
+ * своей развилки, недоступны никогда; развилки вне assignment дают
+ * union по всем своим исходам («—» = все ветки).
+ */
+export function computeReachableUnitsFor(
+  spine: SpinePlan,
+  calendar: Calendar,
+  units: EventUnit[],
+  assignment: Record<string, string>,
+): Set<string> {
+  return computeReachable(spine, calendar, units, assignment);
+}
+
+function computeReachable(
+  spine: SpinePlan,
+  calendar: Calendar,
+  units: EventUnit[],
+  assignment: Record<string, string> | null,
+): Set<string> {
   const unitById = new Map(units.map(u => [u.id, u]));
   const beatSlots = assignBeatSlots(spine, calendar);
 
-  // Базовые установители: биты хребта в свой назначенный слот.
+  // Базовые установители: биты хребта в свой назначенный слот; флаги
+  // исходов — с начала окна развилки (оптимистично: точный слот выбора
+  // зависит от прохождения, fromSlot — самый ранний возможный).
   const beatEstablish = new Map<string, number>();
   const noteFlag = (map: Map<string, number>, flag: string, slot: number) => {
     const prev = map.get(flag);
@@ -28,9 +60,14 @@ export function computeReachableUnits(spine: SpinePlan, calendar: Calendar, unit
   };
   for (const beat of spine.beats) {
     const slot = beatSlots[beat.id];
-    if (slot == null) continue;
-    for (const f of beat.establishes) noteFlag(beatEstablish, f, slot);
-    for (const o of beat.outcomes ?? []) noteFlag(beatEstablish, o.setsFlag, slot);
+    if (slot != null) {
+      for (const f of beat.establishes) noteFlag(beatEstablish, f, slot);
+    }
+    const chosen = assignment?.[beat.id];
+    for (const o of beat.outcomes ?? []) {
+      if (chosen != null && o.id !== chosen) continue;
+      noteFlag(beatEstablish, o.setsFlag, Math.max(0, beat.window.fromSlot));
+    }
   }
 
   const reachable = new Set<string>();

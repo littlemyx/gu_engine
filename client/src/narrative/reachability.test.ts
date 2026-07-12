@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeReachableUnits } from './reachability';
+import { computeReachableUnits, computeReachableUnitsFor } from './reachability';
 import { guardFromRequires } from './calendarTypes';
 import type { Calendar, EventUnit, SlotWindow, SpineBeat, SpinePlan } from './calendarTypes';
 import type { Guard } from './events';
@@ -92,5 +92,54 @@ describe('computeReachableUnits', () => {
       unit('early_user', { fromSlot: 0, toSlot: 4 }, { all: [{ fired: 'late_dep' }] }),
     ];
     expect(computeReachableUnits(spine, cal, units)).toEqual(new Set(['late_dep']));
+  });
+});
+
+describe('ветки (фаза 5)', () => {
+  /** Развилка в акте 2 (окно 3-5): исход cover → flag_cover, truth → flag_truth. */
+  const branchSpine: SpinePlan = {
+    title: 'Ветки',
+    logline: '',
+    beats: [
+      beat({ id: 'b1', establishes: ['met_all'] }),
+      // Конкурент за слот 3: assignBeatSlots отдаст bp слот 4 (> fromSlot 3).
+      beat({ id: 'b2', act: 2, window: { fromSlot: 3, toSlot: 5 } }),
+      beat({
+        id: 'bp',
+        kind: 'branchPoint',
+        act: 2,
+        window: { fromSlot: 3, toSlot: 5 },
+        outcomes: [
+          { id: 'cover', label: 'Скрыть', setsFlag: 'flag_cover', summary: '' },
+          { id: 'truth', label: 'Рассказать', setsFlag: 'flag_truth', summary: '' },
+        ],
+      }),
+    ],
+    endings: [],
+  };
+  const uCover = unit('needs_cover', { fromSlot: 6, toSlot: 11 }, guardFromRequires(['flag_cover']));
+  const uTruth = unit('needs_truth', { fromSlot: 6, toSlot: 11 }, guardFromRequires(['flag_truth']));
+
+  it('union-семантика: юнит достижим, если ХОТЬ КАКАЯ-ТО ветка ставит его флаг', () => {
+    expect(computeReachableUnits(branchSpine, cal, [uCover, uTruth])).toEqual(new Set(['needs_cover', 'needs_truth']));
+  });
+
+  it('флаг исхода доступен с window.fromSlot развилки, а не с назначенного слота', () => {
+    // Юнит с окном, кончающимся ровно на fromSlot развилки, — достижим.
+    const early = unit('early_branch', { fromSlot: 0, toSlot: 3 }, guardFromRequires(['flag_cover']));
+    expect(computeReachableUnits(branchSpine, cal, [early])).toEqual(new Set(['early_branch']));
+  });
+
+  it('computeReachableUnitsFor: флаги невыбранных исходов исключаются', () => {
+    expect(computeReachableUnitsFor(branchSpine, cal, [uCover, uTruth], { bp: 'cover' })).toEqual(
+      new Set(['needs_cover']),
+    );
+    expect(computeReachableUnitsFor(branchSpine, cal, [uCover, uTruth], { bp: 'truth' })).toEqual(
+      new Set(['needs_truth']),
+    );
+    // Пустой assignment = все ветки (эквивалент computeReachableUnits).
+    expect(computeReachableUnitsFor(branchSpine, cal, [uCover, uTruth], {})).toEqual(
+      new Set(['needs_cover', 'needs_truth']),
+    );
   });
 });

@@ -206,7 +206,10 @@ function boardFromCalendar(model: CalendarMontageModel): BoardModel {
 export const MontageBoard: React.FC<{
   outline: StoryOutlinePlan;
   calendarModel?: CalendarMontageModel | null;
-}> = ({ outline, calendarModel }) => {
+  /** Селектор веток (календарь): branchPointId → outcomeId; нет ключа = все ветки. */
+  branchAssignment?: Record<string, string>;
+  onBranchAssignmentChange?: (next: Record<string, string>) => void;
+}> = ({ outline, calendarModel, branchAssignment = {}, onBranchAssignmentChange }) => {
   const brief = useBriefStore(s => s.brief);
   const worldModel = useNarrativeStore(s => s.worldModel);
   const beatPlan = useNarrativeStore(s => s.beatPlan);
@@ -410,8 +413,46 @@ export const MontageBoard: React.FC<{
     return { x, y: box.neutralY };
   };
 
+  const branchPoints = calendarModel?.branchPoints ?? [];
+
   return (
     <div className={styles.board}>
+      {/* ── селектор веток (фаза 5): «—» = все ветки, сегмент = лист ── */}
+      {isCal && branchPoints.length > 0 && (
+        <div className={styles.branchRow}>
+          <span className={styles.legendLabel}>ветки</span>
+          {branchPoints.map(bp => (
+            <span key={bp.id} className={styles.branchGroup} title={bp.summary}>
+              <span className={styles.branchName}>{bp.id}</span>
+              <span className={styles.branchSegs}>
+                <button
+                  type="button"
+                  className={`${styles.branchSeg} ${!branchAssignment[bp.id] ? styles.branchSegActive : ''}`}
+                  title="все ветки"
+                  onClick={() => {
+                    const next = { ...branchAssignment };
+                    delete next[bp.id];
+                    onBranchAssignmentChange?.(next);
+                  }}
+                >
+                  —
+                </button>
+                {bp.outcomes.map(o => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    className={`${styles.branchSeg} ${branchAssignment[bp.id] === o.id ? styles.branchSegActive : ''}`}
+                    onClick={() => onBranchAssignmentChange?.({ ...branchAssignment, [bp.id]: o.id })}
+                  >
+                    {o.label}
+                  </button>
+                ))}
+              </span>
+            </span>
+          ))}
+        </div>
+      )}
+
       {/* ── легенда (интеракция 2) ── */}
       <div className={styles.legendRow}>
         <span className={styles.legendLabel}>персонажи</span>
@@ -585,7 +626,7 @@ export const MontageBoard: React.FC<{
                   return (
                     <g
                       key={ev.n}
-                      className={styles.eventDiamond}
+                      className={`${styles.eventDiamond} ${ev.dimmed ? styles.eventDimmed : ''}`}
                       opacity={dimmed && !hi ? 0.2 : 1}
                       onMouseEnter={() => setHoverEventN(ev.n)}
                       onMouseLeave={() => setHoverEventN(null)}
@@ -691,7 +732,7 @@ export const MontageBoard: React.FC<{
             return (
               <div
                 key={ev.n}
-                className={styles.eventCard}
+                className={`${styles.eventCard} ${ev.dimmed ? styles.eventDimmed : ''}`}
                 style={{
                   left: PAD + (frame.z - windowStart) * STEP + col * 182,
                   top: 26 + row * 52,

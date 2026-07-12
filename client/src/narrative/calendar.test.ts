@@ -198,6 +198,95 @@ describe('validateSpine', () => {
   });
 });
 
+describe('validateSpine: feasibility листьев веток', () => {
+  /**
+   * 1 развилка × 2 исхода (акт 2), по ветвовому биту акта 3 на исход,
+   * концовки гейтятся флагами веток (+ безусловный fallback bad).
+   */
+  const branchedSpine = (): SpinePlan => ({
+    title: 't',
+    logline: 'l',
+    beats: [
+      beat({ id: 'b1', act: 1, window: { fromSlot: 0, toSlot: 2 }, establishes: ['met_all'] }),
+      beat({
+        id: 'bp',
+        kind: 'branchPoint',
+        act: 2,
+        window: { fromSlot: 3, toSlot: 5 },
+        guard: guardFromRequires(['met_all']),
+        outcomes: [
+          { id: 'cover', label: 'Скрыть', setsFlag: 'chose_cover', summary: 'ложь растёт' },
+          { id: 'truth', label: 'Рассказать', setsFlag: 'chose_truth', summary: 'честный путь' },
+        ],
+      }),
+      beat({
+        id: 'br_cover',
+        act: 3,
+        window: { fromSlot: 6, toSlot: 8 },
+        guard: guardFromRequires(['chose_cover']),
+        establishes: ['lie_strained'],
+      }),
+      beat({
+        id: 'br_truth',
+        act: 3,
+        window: { fromSlot: 6, toSlot: 8 },
+        guard: guardFromRequires(['chose_truth']),
+        establishes: ['club_reborn'],
+      }),
+      beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, establishes: ['story_resolved'] }),
+    ],
+    endings: [
+      { id: 'e_good', kind: 'good', liId: 'kira', guard: guardFromRequires(['story_resolved', 'club_reborn']) },
+      { id: 'e_normal', kind: 'normal', liId: null, guard: guardFromRequires(['story_resolved', 'lie_strained']) },
+      { id: 'e_bad', kind: 'bad', liId: null, guard: { all: [] } },
+    ],
+  });
+
+  it('валидные ветки: каждый лист достигает финала и концовки — без ошибок', () => {
+    expect(errors(validateSpine(branchedSpine(), cal, brief, null))).toEqual([]);
+  });
+
+  it('лист без выполнимой концовки → error с адресом листа', () => {
+    const spine = branchedSpine();
+    // Все концовки требуют цепочку ветки cover — у листа truth ни одной.
+    spine.endings = [
+      { id: 'e_good', kind: 'good', liId: 'kira', guard: guardFromRequires(['lie_strained']) },
+      { id: 'e_normal', kind: 'normal', liId: null, guard: guardFromRequires(['chose_cover']) },
+    ];
+    const issues = errors(validateSpine(spine, cal, brief, null));
+    expect(issues.some(i => i.message.includes('не имеет достижимой концовки') && i.message.includes('bp=truth'))).toBe(
+      true,
+    );
+    // Лист cover при этом жив — ошибка ровно одна.
+    expect(issues.filter(i => i.message.includes('не имеет достижимой концовки'))).toHaveLength(1);
+  });
+
+  it('финал, запертый флагом одной ветки → error недостижимости на другом листе', () => {
+    const spine = branchedSpine();
+    spine.beats[4].guard = guardFromRequires(['chose_cover']);
+    const issues = errors(validateSpine(spine, cal, brief, null));
+    expect(issues.some(i => i.message.includes('не достигает финала') && i.message.includes('bp=truth'))).toBe(true);
+    expect(issues.some(i => i.message.includes('не достигает финала') && i.message.includes('bp=cover'))).toBe(false);
+  });
+
+  it('ветвовой бит, недостижимый на каждом листе → warning о мёртвом контенте', () => {
+    const spine = branchedSpine();
+    // Требует флаги ОБОИХ исходов одной развилки — невозможно ни на одном листе.
+    spine.beats.splice(
+      4,
+      0,
+      beat({
+        id: 'impossible',
+        act: 3,
+        window: { fromSlot: 6, toSlot: 8 },
+        guard: guardFromRequires(['chose_cover', 'chose_truth']),
+      }),
+    );
+    const issues = validateSpine(spine, cal, brief, null);
+    expect(issues.some(i => i.severity === 'warning' && i.scope === 'beats/impossible/reachability')).toBe(true);
+  });
+});
+
 describe('validateCalendar', () => {
   it('валидный календарь проходит', () => {
     expect(errors(validateCalendar(cal, brief, null, null, null))).toEqual([]);

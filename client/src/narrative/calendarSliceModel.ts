@@ -2,6 +2,7 @@ import type { AnchorBeat, Brief, WorldModel } from './types';
 import type { Calendar, CharacterSchedule, SpineBeat, SpineBeatKind, SpinePlan } from './calendarTypes';
 import { actOfSlot, actSlotWindow, slotLabel } from './calendarTypes';
 import { assignBeatSlots } from './beatSchedule';
+import { guardFlags } from './validateSpine';
 import { formatGuard } from './events';
 import type { EventDef } from './events';
 import {
@@ -50,6 +51,12 @@ export type CalendarMove = {
   toLoc: string;
 };
 
+export type MontageBranchPoint = {
+  id: string;
+  summary: string;
+  outcomes: Array<{ id: string; label: string }>;
+};
+
 export type CalendarMontageModel = {
   slices: CalendarSlice[];
   characters: MontageCharacter[];
@@ -59,6 +66,8 @@ export type CalendarMontageModel = {
   locations: MontageLocation[];
   adjacency: Array<[string, string]>;
   acts: Array<{ act: number; fromZ: number; toZ: number }>;
+  /** Развилки хребта — для селектора веток над доской. */
+  branchPoints: MontageBranchPoint[];
 };
 
 export type CalendarMontageInputs = {
@@ -68,7 +77,42 @@ export type CalendarMontageInputs = {
   schedule: CharacterSchedule;
   worldModel: WorldModel | null;
   spineBeatProse: Record<string, AnchorBeat>;
+  /**
+   * Селектор веток: branchPointId → выбранный outcomeId. События, чей guard
+   * требует флаг, неустановимый при таком выборе, получают dimmed: true.
+   * Отсутствие развилки в записи = «все ветки» (union исходов).
+   */
+  branchAssignment?: Record<string, string>;
 };
+
+/**
+ * Флаги, установимые при данном выборе веток: фикспойнт по битам —
+ * бит «играется», когда все его guard-флаги уже установимы; сыгранный бит
+ * даёт establishes + флаги разрешённых исходов. Тайминг слотов здесь не
+ * важен (окна проверяет validateSpine) — монтажке нужна только гашение
+ * контента чужих веток.
+ */
+function establishableFlags(spine: SpinePlan, branchAssignment: Record<string, string>): Set<string> {
+  const flags = new Set<string>();
+  const played = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const beat of spine.beats) {
+      if (played.has(beat.id)) continue;
+      if (!guardFlags(beat.guard).every(f => flags.has(f))) continue;
+      played.add(beat.id);
+      changed = true;
+      for (const f of beat.establishes) flags.add(f);
+      const chosen = branchAssignment[beat.id];
+      for (const o of beat.outcomes ?? []) {
+        if (chosen != null && o.id !== chosen) continue;
+        flags.add(o.setsFlag);
+      }
+    }
+  }
+  return flags;
+}
 
 const BEAT_KIND_ICON: Record<SpineBeatKind, string> = {
   beat: '⚑',
@@ -78,7 +122,13 @@ const BEAT_KIND_ICON: Record<SpineBeatKind, string> = {
 };
 
 export function deriveCalendarMontage(inputs: CalendarMontageInputs): CalendarMontageModel {
-  const { brief, calendar, spine, schedule, worldModel, spineBeatProse } = inputs;
+  const { brief, calendar, spine, schedule, worldModel, spineBeatProse, branchAssignment = {} } = inputs;
+
+  // Гашение чужих веток: guard бита требует флаг, неустановимый при текущем
+  // выборе. Сам branchPoint от собственного выбора не гаснет — его guard
+  // не содержит его же исходов.
+  const reachableFlags = establishableFlags(spine, branchAssignment);
+  const isDimmed = (beat: SpineBeat): boolean => !guardFlags(beat.guard).every(f => reachableFlags.has(f));
 
   const characters = deriveMontageCharacters(brief);
   const charIds = new Set(characters.map(c => c.id));
@@ -124,6 +174,7 @@ export function deriveCalendarMontage(inputs: CalendarMontageInputs): CalendarMo
       hasScene: Boolean(prose),
       sceneStatus: prose ? { done: 1, total: 1 } : null,
       kindIcon: BEAT_KIND_ICON[beat.kind],
+      dimmed: isDimmed(beat),
     };
   };
 
@@ -242,5 +293,14 @@ export function deriveCalendarMontage(inputs: CalendarMontageInputs): CalendarMo
     if (fromZ <= toZ) acts.push({ act, fromZ, toZ });
   }
 
-  return { slices, characters, moves, presence, locations, adjacency, acts };
+  // ── Развилки для селектора веток ─────────────────────────────────────────
+  const branchPoints: MontageBranchPoint[] = spine.beats
+    .filter(b => b.kind === 'branchPoint' && (b.outcomes?.length ?? 0) > 0)
+    .map(b => ({
+      id: b.id,
+      summary: b.summary,
+      outcomes: (b.outcomes ?? []).map(o => ({ id: o.id, label: o.label || o.id })),
+    }));
+
+  return { slices, characters, moves, presence, locations, adjacency, acts, branchPoints };
 }

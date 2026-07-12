@@ -1279,13 +1279,32 @@ const SPINE_SYSTEM_PROMPT = `Ты — архитектор сюжетного х
 Твоя задача — хребет истории: биты (beats) с окнами слотов и концовки (endings).
 
 Жёсткие правила:
-  1. Число битов — ровно targets.beatCount (допустимо ±1).
-  2. kind каждого бита: "beat" (рядовое событие), "actGate" (переход акта,
-     ставит ключевой флаг) или "finale" (кульминация). Kind "branchPoint"
-     ЗАПРЕЩЁН в этой версии — targets.branchPointBudget = 0; развилки появятся
-     в следующей итерации формата.
+  1. Число битов — ровно targets.beatCount (допустимо ±1), ВКЛЮЧАЯ развилки
+     и ветвовые биты.
+  2. kind каждого бита: "beat" (рядовое событие), "branchPoint" (глобальная
+     развилка сюжета), "actGate" (переход акта, ставит ключевой флаг) или
+     "finale" (кульминация).
+  2a. Развилки: ровно targets.branchPointBudget битов kind="branchPoint"
+      (при 0 — ни одного). У каждой развилки поле outcomes — 2-3 исхода:
+      [{id, label, setsFlag, summary}], где label — текст ВЫБОРА ИГРОКА в
+      сцене развилки, setsFlag — snake_case спайн-флаг ветки (уникален среди
+      всех флагов), summary — 1 предложение о последствиях исхода.
+      У branchPoint поле establishes — общие флаги (ставятся при ЛЮБОМ
+      исходе); ветвовые флаги живут только в outcomes.
+  2b. Развилка НЕ может быть в последнем акте и НЕ может быть финалом —
+      игрок должен успеть увидеть последствия выбора.
+  2c. Ветвовые биты: бит МОЖЕТ требовать (requires) флаг исхода развилки —
+      такой бит играется только на этой ветке. Биты, не требующие ни одного
+      флага исходов, общие для всех веток. На каждый исход дай 1-3 ветвовых
+      бита в последующих актах — ветки обязаны ощущаться по-разному.
+  2d. Концовки ДОЛЖНЫ различаться по веткам: где это осмысленно сюжетно,
+      дай минимум по одной концовке, требующей (requires) флаги конкретной
+      терминальной комбинации веток. КАЖДАЯ комбинация исходов обязана иметь
+      хотя бы одну выполнимую концовку (флаги которой достижимы на этой ветке).
   3. Ровно ОДИН бит kind="finale": в последнем акте, window.toSlot = последний
-     слот календаря (кульминация закрывает историю).
+     слот календаря (кульминация закрывает историю). Финал ОБЩИЙ: его requires
+     не должны содержать флаги исходов развилок — иначе часть веток не дойдёт
+     до финала.
   4. Окно каждого бита обязано ЦЕЛИКОМ лежать в диапазоне слотов его акта
      (границы актов в слотах даны в сообщении). fromSlot ≤ toSlot.
   5. Окна не должны быть пережаты: каждому биту должен доставаться свой слот
@@ -1320,6 +1339,42 @@ const SPINE_SYSTEM_PROMPT = `Ты — архитектор сюжетного х
       "requires": []
     },
     {
+      "id": "festival_dilemma",
+      "kind": "branchPoint",
+      "act": 2,
+      "window": { "fromSlot": 3, "toSlot": 5 },
+      "locationId": "campus_alley",
+      "participants": ["kira"],
+      "summary": "Кира просит помочь скрыть провал клуба — или рассказать всё совету.",
+      "establishes": ["dilemma_faced"],
+      "requires": ["met_kira"],
+      "outcomes": [
+        {
+          "id": "cover_up",
+          "label": "Помочь Кире скрыть провал",
+          "setsFlag": "chose_cover_up",
+          "summary": "Секрет объединяет вас, но ложь начинает расти."
+        },
+        {
+          "id": "tell_truth",
+          "label": "Убедить её рассказать правду",
+          "setsFlag": "chose_truth",
+          "summary": "Кира обижена, но клуб получает шанс на честный перезапуск."
+        }
+      ]
+    },
+    {
+      "id": "secret_meeting",
+      "kind": "beat",
+      "act": 3,
+      "window": { "fromSlot": 6, "toSlot": 8 },
+      "locationId": "library",
+      "participants": ["kira"],
+      "summary": "Тайная встреча: ложь почти раскрыта, Кира на грани.",
+      "establishes": ["lie_strained"],
+      "requires": ["chose_cover_up"]
+    },
+    {
       "id": "final_confession",
       "kind": "finale",
       "act": 4,
@@ -1332,8 +1387,8 @@ const SPINE_SYSTEM_PROMPT = `Ты — архитектор сюжетного х
     }
   ],
   "endings": [
-    { "id": "ending_good_kira", "kind": "good", "liId": "kira", "requires": ["story_resolved"] },
-    { "id": "ending_normal", "kind": "normal", "liId": null, "requires": ["story_resolved"] },
+    { "id": "ending_good_kira", "kind": "good", "liId": "kira", "requires": ["story_resolved", "chose_truth"] },
+    { "id": "ending_normal", "kind": "normal", "liId": null, "requires": ["story_resolved", "chose_cover_up"] },
     { "id": "ending_bad", "kind": "bad", "liId": null, "requires": [] }
   ]
 }`;
@@ -1367,7 +1422,7 @@ export async function processSpine(batch: BatchState, body: SpineRequest): Promi
       `## Календарь\n${JSON.stringify(body.calendar, null, 2)}`,
       `## Маппинг агендных тегов\n${body.tagMap ? JSON.stringify(body.tagMap, null, 2) : 'null'}`,
       `## Слоты актов (окна битов обязаны лежать внутри своего акта)\nslot = day × ${perDay} + daypartIndex; последний слот календаря = ${lastSlot}\n${actRanges.join('\n')}`,
-      `## Целевые бюджеты\nbeatCount: ${body.targets.beatCount} (допустимо ±1)\nbranchPointBudget: ${body.targets.branchPointBudget} (kind="branchPoint" запрещён)`,
+      `## Целевые бюджеты\nbeatCount: ${body.targets.beatCount} (допустимо ±1)\nbranchPointBudget: ${body.targets.branchPointBudget} (ровно столько битов kind="branchPoint"${body.targets.branchPointBudget === 0 ? ' — то есть ни одного' : ', не в последнем акте'})`,
     ];
 
     const hasFeedback =

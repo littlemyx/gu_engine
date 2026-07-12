@@ -94,6 +94,20 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
               <option value="high">high</option>
             </select>
           </Field>
+          <Field label="развилки сюжета (0-3)">
+            <input
+              type="number"
+              className={styles.input}
+              value={brief.scale.branchPointBudget}
+              min={0}
+              max={3}
+              onChange={e =>
+                store.patchScale({
+                  branchPointBudget: Math.max(0, Math.min(3, Math.trunc(Number(e.target.value) || 0))),
+                })
+              }
+            />
+          </Field>
           <Field label="common-route share">
             <input
               type="number"

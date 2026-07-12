@@ -58,6 +58,14 @@ export type CalendarCompileStats = WorldCompileStats & {
   slotCount: number;
   /** Битов хребта, доведённых до узлов (locationId найден в мире). */
   beatsWired: number;
+  /** Развилок хребта (kind=branchPoint). */
+  branchPoints: number;
+  /**
+   * Ветвовых битов: guard требует флаг исхода развилки — контент одной
+   * ветки. Инвариант линейного роста: ветка добавляет ровно эти биты,
+   * а не копии графа (ассерт в тестах).
+   */
+  branchExclusiveBeats: number;
 };
 
 export type CalendarCompileResult = {
@@ -223,9 +231,14 @@ export function compileCalendarGameProject(
   // Флаги guard-ов ОБЯЗАНЫ быть численными 0/1-переменными: engine.ts
   // getActiveEdges оценивает условия только по state, не по flags.
   const allFlags = new Set<string>();
+  // Флаги исходов развилок — для подсчёта ветвовых битов в статистике.
+  const outcomeFlags = new Set<string>();
   for (const beat of spine.beats) {
     for (const f of beat.establishes) allFlags.add(f);
-    for (const o of beat.outcomes ?? []) allFlags.add(o.setsFlag);
+    for (const o of beat.outcomes ?? []) {
+      allFlags.add(o.setsFlag);
+      outcomeFlags.add(o.setsFlag);
+    }
     for (const f of guardFlags(beat.guard)) allFlags.add(f);
   }
   for (const e of spine.endings) for (const f of guardFlags(e.guard)) allFlags.add(f);
@@ -783,6 +796,8 @@ export function compileCalendarGameProject(
       totalEdges: edges.length,
       slotCount: calendar.slotCount,
       beatsWired,
+      branchPoints: spine.beats.filter(b => b.kind === 'branchPoint').length,
+      branchExclusiveBeats: spine.beats.filter(b => guardFlags(b.guard).some(f => outcomeFlags.has(f))).length,
     },
   };
 }

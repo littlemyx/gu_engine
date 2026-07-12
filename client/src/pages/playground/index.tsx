@@ -120,12 +120,14 @@ const Playground = () => {
   const spine = useNarrativeStore(s => s.spine);
   const schedule = useNarrativeStore(s => s.schedule);
   const spineBeatProse = useNarrativeStore(s => s.spineBeatProse);
+  // Селектор веток монтажки: branchPointId → outcomeId (нет ключа = все ветки).
+  const [branchAssignment, setBranchAssignment] = useState<Record<string, string>>({});
   const calendarModel = useMemo(
     () =>
       calendar && spine && schedule
-        ? deriveCalendarMontage({ brief, calendar, spine, schedule, worldModel, spineBeatProse })
+        ? deriveCalendarMontage({ brief, calendar, spine, schedule, worldModel, spineBeatProse, branchAssignment })
         : null,
-    [brief, calendar, spine, schedule, worldModel, spineBeatProse],
+    [brief, calendar, spine, schedule, worldModel, spineBeatProse, branchAssignment],
   );
 
   // Адаптер совместимости: пока компилятор/страницы живут на StoryOutlinePlan,
@@ -260,7 +262,14 @@ const Playground = () => {
                       </button>
                     ))}
                   </div>
-                  {graphView === 'montage' && <MontageBoard outline={activeOutline} calendarModel={calendarModel} />}
+                  {graphView === 'montage' && (
+                    <MontageBoard
+                      outline={activeOutline}
+                      calendarModel={calendarModel}
+                      branchAssignment={branchAssignment}
+                      onBranchAssignmentChange={setBranchAssignment}
+                    />
+                  )}
                 </div>
                 {graphView === 'flow' && <OutlineGraph outline={activeOutline} />}
                 {graphView === 'list' && <OutlineResult outline={activeOutline} />}

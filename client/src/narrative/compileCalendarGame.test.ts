@@ -439,3 +439,75 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
     expect(hasCond(edge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
   });
 });
+
+// ── Фаза 5: истинные ветки — рост контента линейный, не умноженный ─────────
+
+describe('compileCalendarGameProject: ветки (фаза 5)', () => {
+  /** База (spine выше) + развилка в акте 2 + по ветвовому биту акта 3 на исход. */
+  const branchBeats: SpineBeat[] = [
+    beat({
+      id: 'bp',
+      kind: 'branchPoint',
+      act: 2,
+      window: { fromSlot: 3, toSlot: 5 },
+      locationId: 'loc_b',
+      outcomes: [
+        { id: 'cover', label: 'Скрыть провал', setsFlag: 'chose_cover', summary: 'ложь растёт' },
+        { id: 'truth', label: 'Рассказать правду', setsFlag: 'chose_truth', summary: 'честный путь' },
+      ],
+    }),
+    beat({
+      id: 'br_cover',
+      act: 3,
+      window: { fromSlot: 6, toSlot: 8 },
+      locationId: 'loc_a',
+      guard: guardFromRequires(['chose_cover']),
+    }),
+    beat({
+      id: 'br_truth',
+      act: 3,
+      window: { fromSlot: 6, toSlot: 8 },
+      locationId: 'loc_c',
+      guard: guardFromRequires(['chose_truth']),
+    }),
+  ];
+  const branchSpine: SpinePlan = { ...spine, beats: [...spine.beats, ...branchBeats] };
+  const compileSpine = (s: SpinePlan) =>
+    compileCalendarGameProject(brief, s, cal, schedule, worldModel, {}, {}, {}, endings);
+
+  it('stats считает развилки и ветвовые биты', () => {
+    const base = compileSpine(spine).stats;
+    expect(base.branchPoints).toBe(0);
+    expect(base.branchExclusiveBeats).toBe(0);
+
+    const withBranch = compileSpine(branchSpine).stats;
+    expect(withBranch.branchPoints).toBe(1);
+    expect(withBranch.branchExclusiveBeats).toBe(2);
+  });
+
+  it('линейный рост: 3 добавленных бита = ровно 3 новых узла графа', () => {
+    const base = compileSpine(spine).stats;
+    const withBranch = compileSpine(branchSpine).stats;
+    // Развилка + 2 ветвовых бита добавляют по одному узлу сцены каждый —
+    // guard-ы вместо рёбер: ветка добавляет флаги, а не копии контента.
+    expect(withBranch.totalNodes - base.totalNodes).toBe(branchBeats.length);
+    expect(withBranch.beatsWired - base.beatsWired).toBe(branchBeats.length);
+  });
+
+  it('branchPoint — сцена-выбор: каждый исход ставит свой спайн-флаг и двигает slot', () => {
+    const { scenes } = compileSpine(branchSpine);
+    const bp = scenes.nodes.find(n => n.id === 'bp')!;
+    expect(bp.data.sceneType).toBe('branch');
+    expect(bp.data.outputs).toHaveLength(2);
+    const byLabel = new Map(bp.data.outputs.map(o => [o.text, o]));
+    expect(byLabel.get('Скрыть провал')!.effects?.stateDeltas?.['flag[chose_cover]']).toBe(1);
+    expect(byLabel.get('Рассказать правду')!.effects?.stateDeltas?.['flag[chose_truth]']).toBe(1);
+    for (const o of bp.data.outputs) {
+      expect(o.effects?.stateDeltas?.slot).toBe(1);
+      expect(o.effects?.stateDeltas?.['beat[bp]']).toBe(1);
+    }
+    // Ветвовой бит гейтится флагом исхода в enter-роутере своей локации.
+    const edge = scenes.edges.find(e => e.source === 'enter_loc_a' && e.target === 'br_cover')!;
+    expect(hasCond(edge.condition, { path: 'flag[chose_cover]', gte: 1 })).toBe(true);
+  });
+});

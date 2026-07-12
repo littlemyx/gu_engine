@@ -51,6 +51,8 @@ export type SliceEventView = {
   hasScene: boolean;
   sceneStatus: { done: number; total: number } | null;
   kindIcon: string;
+  /** Погашено селектором веток: guard требует флаг чужой ветки (календарь). */
+  dimmed?: boolean;
 };
 
 export type MontageSlice = {

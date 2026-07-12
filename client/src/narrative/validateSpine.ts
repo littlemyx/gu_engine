@@ -1,15 +1,18 @@
 import type { Brief, SegmentIssue, WorldModel } from './types';
-import type { Calendar, SpineBeat, SpinePlan } from './calendarTypes';
+import type { Calendar, SpineBeat, SpineBeatOutcome, SpinePlan } from './calendarTypes';
 import { actSlotWindow } from './calendarTypes';
+import { assignBeatSlots } from './beatSchedule';
 import type { Guard } from './events';
 
 /**
- * Структурная валидация хребта (SpinePlan) против календаря и мира.
+ * Валидация хребта (SpinePlan) против календаря и мира.
  *
- * Фаза 1 — только структура: id, окна, акты, флаговые зависимости,
- * назначаемость обязательных битов на слоты. Семантическая feasibility
- * (достижимость листьев веток, выполнимость концовок по состоянию) —
- * этап story QA; ужесточается вместе с развилками в фазе 5.
+ * Структура (фаза 1): id, окна, акты, флаговые зависимости, назначаемость
+ * обязательных битов на слоты. Feasibility листьев (фаза 5): при наличии
+ * развилок перебираются ВСЕ комбинации исходов (≤3 развилки × ≤3 исхода =
+ * ≤27 листьев) — каждый лист обязан достигать финала и иметь хотя бы одну
+ * выполнимую концовку; ветвовой бит, недостижимый на каждом листе, —
+ * мёртвый контент (warning).
  *
  * Ошибки блокируют использование (retry-with-feedback previousIssues),
  * warnings показываются автору.
@@ -289,6 +292,107 @@ export function validateSpine(
         severity: 'warning',
         scope: 'endings',
         message: `в профиле брифа есть концовка "${kind}", но хребет её не предлагает`,
+      });
+    }
+  }
+
+  // ── Feasibility листьев веток (фаза 5) ─────────────────────────────────
+  // Перебор всех комбинаций исходов развилок (лист = по одному исходу на
+  // развилку; ≤3 × ≤3 = ≤27). Симуляция установления флагов: флаг доступен
+  // со слота установителя (бит — в назначенный assignBeatSlots слот); флаги
+  // НЕвыбранных исходов недоступны никогда; бит играется, если каждый его
+  // guard-флаг доступен не позже конца окна бита; итерация до фикспойнта.
+  const enumerableBps = branchPoints.filter(bp => {
+    const n = bp.outcomes?.length ?? 0;
+    return n >= 2 && n <= 3;
+  });
+  if (finale && enumerableBps.length > 0 && enumerableBps.length <= 3) {
+    const beatSlots = assignBeatSlots(spine, calendar);
+    const slotOfBeat = (b: SpineBeat): number => beatSlots[b.id] ?? Math.max(0, b.window.fromSlot);
+
+    // Все комбинации исходов (декартово произведение).
+    let assignments: Array<Map<string, SpineBeatOutcome>> = [new Map()];
+    for (const bp of enumerableBps) {
+      assignments = assignments.flatMap(a =>
+        (bp.outcomes ?? []).map(o => {
+          const next = new Map(a);
+          next.set(bp.id, o);
+          return next;
+        }),
+      );
+    }
+
+    const outcomeFlags = new Set<string>();
+    for (const bp of enumerableBps) for (const o of bp.outcomes ?? []) outcomeFlags.add(o.setsFlag);
+    const playedUnion = new Set<string>();
+
+    for (const assignment of assignments) {
+      const leafLabel = enumerableBps.map(bp => `${bp.id}=${assignment.get(bp.id)!.id}`).join(', ');
+
+      const earliest = new Map<string, number>();
+      const played = new Set<string>();
+      const note = (f: string, s: number) => {
+        const prev = earliest.get(f);
+        if (prev == null || s < prev) earliest.set(f, s);
+      };
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const b of beats) {
+          if (played.has(b.id)) continue;
+          const ok = guardFlags(b.guard).every(f => {
+            const e = earliest.get(f);
+            return e != null && e <= b.window.toSlot;
+          });
+          if (!ok) continue;
+          played.add(b.id);
+          changed = true;
+          const s = slotOfBeat(b);
+          for (const f of b.establishes) note(f, s);
+          const chosen = assignment.get(b.id);
+          for (const o of b.outcomes ?? []) {
+            // У перечисляемой развилки доступен ТОЛЬКО выбранный исход.
+            if (!chosen || o.id === chosen.id) note(o.setsFlag, s);
+          }
+        }
+      }
+      for (const id of played) playedUnion.add(id);
+
+      if (!played.has(finale.id)) {
+        issues.push({
+          severity: 'error',
+          scope: `beats/${finale.id}/reachability`,
+          message: `лист [${leafLabel}] не достигает финала "${finale.id}" — его requires невыполнимы на этой ветке`,
+        });
+      }
+
+      const satisfiable = spine.endings.some(e => guardFlags(e.guard).every(f => earliest.has(f)));
+      if (spine.endings.length > 0 && !satisfiable) {
+        const detail = spine.endings
+          .map(
+            e =>
+              `"${e.id}" требует [${guardFlags(e.guard)
+                .filter(f => !earliest.has(f))
+                .join(', ')}]`,
+          )
+          .join('; ');
+        issues.push({
+          severity: 'error',
+          scope: 'endings',
+          message: `лист [${leafLabel}] не имеет достижимой концовки: ${detail}`,
+        });
+      }
+    }
+
+    // Мёртвый контент: ветвовой бит (guard требует флаг исхода), не сыгранный
+    // ни при одной комбинации исходов.
+    for (const b of beats) {
+      if (playedUnion.has(b.id)) continue;
+      if (!guardFlags(b.guard).some(f => outcomeFlags.has(f))) continue;
+      issues.push({
+        severity: 'warning',
+        scope: `beats/${b.id}/reachability`,
+        message: `ветвовой бит "${b.id}" недостижим ни при одной комбинации исходов развилок — мёртвый контент`,
       });
     }
   }

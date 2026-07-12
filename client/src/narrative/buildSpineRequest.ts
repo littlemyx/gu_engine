@@ -8,18 +8,20 @@ export type SpineTargets = {
 
 const MIN_BEATS = 6;
 const MAX_BEATS = 18;
+const MAX_BRANCH_POINTS = 3;
 
 /**
  * Целевые бюджеты хребта: примерно бит на каждый второй слот — остальные
  * слоты живут на агендных встречах и филлерах, иначе хребет задушит
- * свободное исследование. branchPointBudget = 0 в фазе 1: развилки
- * включаются в фазе 5 вместе с их валидацией.
+ * свободное исследование. branchPointBudget берётся из brief.scale
+ * (фаза 5: истинные ветки), клампится в [0, 3] — листьев ≤ 27.
  */
-export function computeSpineTargets(calendar: Calendar): SpineTargets {
+export function computeSpineTargets(calendar: Calendar, brief: Brief): SpineTargets {
   const raw = Math.round(calendar.slotCount * 0.5);
+  const budget = Math.trunc(brief.scale.branchPointBudget ?? 0);
   return {
     beatCount: Math.min(MAX_BEATS, Math.max(MIN_BEATS, raw)),
-    branchPointBudget: 0,
+    branchPointBudget: Math.min(MAX_BRANCH_POINTS, Math.max(0, budget)),
   };
 }
 
@@ -41,5 +43,5 @@ export function buildSpineRequestPayload(
   tagMap?: Record<string, string[]>;
   targets: SpineTargets;
 } {
-  return { brief, worldModel, calendar, tagMap: tagMap ?? undefined, targets: computeSpineTargets(calendar) };
+  return { brief, worldModel, calendar, tagMap: tagMap ?? undefined, targets: computeSpineTargets(calendar, brief) };
 }
