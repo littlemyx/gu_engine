@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { compileCalendarGameProject, lintRouters, scheduleRuns } from './compileCalendarGame';
 import { guardFromRequires } from './calendarTypes';
-import type { Calendar, CharacterSchedule, SpineBeat, SpinePlan } from './calendarTypes';
+import type { Calendar, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
 import { SAMPLE_BRIEF } from './sampleBrief';
 import { DEFAULT_LOCATION_MOOD, endingKey } from './types';
 import type { Brief, EndingVariant, WorldLocation, WorldModel } from './types';
@@ -153,8 +153,8 @@ const endings: Record<string, EndingVariant> = {
   [endingKey('bad')]: endingVariant('bad', null),
 };
 
-const compile = (unitProse: Record<string, DialogueUnit[]> = {}) =>
-  compileCalendarGameProject(brief, spine, cal, schedule, worldModel, {}, unitProse, endings);
+const compile = (unitProse: Record<string, DialogueUnit[]> = {}, eventUnits: Record<string, EventUnit> = {}) =>
+  compileCalendarGameProject(brief, spine, cal, schedule, worldModel, {}, unitProse, eventUnits, endings);
 
 const edgesFrom = (scenes: GameSceneGraph, source: string) => scenes.edges.filter(e => e.source === source);
 const hasCond = (conds: GameStateCondition[] | undefined, c: GameStateCondition) =>
@@ -318,5 +318,124 @@ describe('compileCalendarGameProject', () => {
     expect(stats.beatsWired).toBe(4);
     expect(stats.events).toBe(4);
     expect(stats.locations).toBe(3);
+  });
+});
+
+// ── Фаза 4: встречи PER dialogue-юнит пула событий ─────────────────────────
+
+/** Два юнита Киры с fired-цепочкой: talk (loc_a, 0-2) → deep (loc_b, 6-8). */
+const eventUnit = (patch: Partial<EventUnit> & Pick<EventUnit, 'id'>): EventUnit => ({
+  kind: 'dialogue',
+  at: { slot: { fromSlot: 0, toSlot: 2 }, locationId: 'loc_a' },
+  participants: ['kira'],
+  guard: { all: [] },
+  effects: [],
+  scene: { kind: 'dialogue', anchorId: patch.id, liId: 'kira' },
+  priority: 20,
+  goal: 'цель встречи',
+  arcStage: 1,
+  source: 'agenda',
+  ...patch,
+});
+
+const unitTalk = eventUnit({
+  id: 'evt_kira_talk',
+  guard: guardFromRequires(['met_all']),
+  effects: [{ rel: { char: 'kira', var: 'affection', delta: 0.1 } }, { setFlag: 'likes_books' }],
+});
+
+const unitDeep = eventUnit({
+  id: 'evt_kira_deep',
+  at: { slot: { fromSlot: 6, toSlot: 8 }, locationId: 'loc_b' },
+  guard: { all: [{ fired: 'evt_kira_talk' }] },
+  arcStage: 2,
+});
+
+const eventUnits: Record<string, EventUnit> = {
+  [unitTalk.id]: unitTalk,
+  [unitDeep.id]: unitDeep,
+};
+
+/** Проза обоих юнитов — одна и та же валидная фикстура DialogueUnit. */
+const unitProseByUnit: Record<string, DialogueUnit[]> = {
+  [unitTalk.id]: [dialogueUnit],
+  [unitDeep.id]: [dialogueUnit],
+};
+
+describe('compileCalendarGameProject: юниты пула событий', () => {
+  const compileUnits = () => compile(unitProseByUnit, eventUnits);
+
+  it('кнопка юнита гейтится окном, флагами guard-а и одноразовостью met[unit]', () => {
+    const { scenes, project } = compileUnits();
+    const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
+    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    expect(meet).toBeTruthy();
+    const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
+    expect(hasCond(edge.condition, { path: 'slot', gte: 0 })).toBe(true);
+    expect(hasCond(edge.condition, { path: 'slot', lte: 2 })).toBe(true);
+    expect(hasCond(edge.condition, { path: 'met[evt_kira_talk]', lte: 0 })).toBe(true);
+    expect(hasCond(edge.condition, { path: 'flag[met_all]', gte: 1 })).toBe(true);
+    expect(project.settings.stateSchema?.vars['unit[evt_kira_talk]']).toEqual({ range: [0, 1], default: 0 });
+    expect(project.settings.stateSchema?.vars['flag[likes_books]']).toEqual({ range: [0, 1], default: 0 });
+  });
+
+  it('fired-цепочка компилируется в unit[<dep>] ≥ 1 на кнопке зависимого юнита', () => {
+    const { scenes } = compileUnits();
+    const hubB = scenes.nodes.find(n => n.id === 'hub_loc_b')!;
+    const meet = hubB.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    const edge = scenes.edges.find(e => e.source === 'hub_loc_b' && e.sourceHandle === meet.id)!;
+    expect(hasCond(edge.condition, { path: 'unit[evt_kira_talk]', gte: 1 })).toBe(true);
+    expect(hasCond(edge.condition, { path: 'slot', gte: 6 })).toBe(true);
+    expect(hasCond(edge.condition, { path: 'slot', lte: 8 })).toBe(true);
+  });
+
+  it('closing-переход ставит met[unit] + unit[<id>] + establishes-флаги и двигает slot', () => {
+    const { scenes } = compileUnits();
+    // Closing-сцены (d3) обоих юнитов; talk несёт establishes likes_books.
+    const closings = scenes.nodes.filter(n => n.id.includes('evt_kira_talk') && n.id.endsWith('_d3'));
+    expect(closings.length).toBe(1);
+    const deltas = closings[0].data.outputs[0].effects?.stateDeltas ?? {};
+    expect(deltas).toEqual({
+      'met[evt_kira_talk]': 1,
+      'unit[evt_kira_talk]': 1,
+      'flag[likes_books]': 1,
+      slot: 1,
+    });
+    // Возврат — в хаб локации юнита.
+    const edge = scenes.edges.find(e => e.source === closings[0].id)!;
+    expect(edge.target).toBe('hub_loc_a');
+  });
+
+  it('юнит без прозы пропускается; расписаний-диапазонов при юнитах нет', () => {
+    const { scenes, stats } = compile({ [unitTalk.id]: [dialogueUnit] }, eventUnits);
+    expect(stats.encountersWired).toBe(1); // deep без прозы не проводится
+    const hubB = scenes.nodes.find(n => n.id === 'hub_loc_b')!;
+    expect(hubB.data.outputs.some(o => o.text.startsWith('Поговорить'))).toBe(false);
+  });
+
+  it('регресс полноты: выбор в диалоге юнита не ведёт в хаб; lintRouters чист', () => {
+    const { scenes } = compileUnits();
+    expect(lintRouters(scenes)).toEqual([]);
+    const edgeByHandle = new Map(scenes.edges.map(e => [`${e.source}::${e.sourceHandle}`, e]));
+    let checked = 0;
+    for (const node of scenes.nodes) {
+      if (node.data.sceneType !== 'dialogue') continue;
+      for (const out of node.data.outputs) {
+        if (out.text === '') continue;
+        const edge = edgeByHandle.get(`${node.id}::${out.id}`);
+        expect(edge && !edge.target.startsWith('hub_'), `выбор "${out.text}" (${node.id}) ведёт в хаб`).toBe(true);
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(4); // 2 юнита × ≥2 выбора
+  });
+
+  it('пустой пул → фаза-3 фолбэк: диапазоны расписания с ключом enc_<liId>', () => {
+    const { scenes, stats } = compile({ enc_kira: [dialogueUnit] }, {});
+    expect(stats.encountersWired).toBe(2);
+    const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
+    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
+    expect(hasCond(edge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
   });
 });

@@ -2,8 +2,9 @@ import type { AnchorBeat, Brief, DraftScene, EndingVariant, WorldLocation, World
 import { DEFAULT_LOCATION_MOOD, endingKey, isLocationMood, isSpecialAmbientKind } from './types';
 import type { DialogueUnit, DialogueUnitNode } from './dialogueUnit';
 import type { CharacterGenState, ImageGenState } from './narrativeStore';
-import type { Calendar, CharacterSchedule, SpineBeat, SpinePlan } from './calendarTypes';
+import type { Calendar, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
 import { guardFlags } from './validateSpine';
+import { guardFiredIds, unitEstablishes } from './parseEventPool';
 import type { Guard } from './events';
 import type { WorldAudioInput, WorldCompileStats } from './compileWorldGame';
 import type {
@@ -72,6 +73,10 @@ const beatVar = (beatId: string) => `beat[${beatId}]`;
 const flagVar = (flag: string) => `flag[${flag}]`;
 /** met-переменная per (LI, начало диапазона слотов) — встреча одноразова. */
 const metVar = (liId: string, fromSlot: number) => `met[${liId}].${fromSlot}`;
+/** 0/1-переменная «юнит сыгран» — fired-цепочки битового стиля (beat[...]). */
+const unitVar = (unitId: string) => `unit[${unitId}]`;
+/** met per unit id — одноразовость встречи-юнита. */
+const unitMetVar = (unitId: string) => `met[${unitId}]`;
 
 /** Диегетическая подпись перемещения (копия compileWorldGame). */
 function movementLabel(to: WorldLocation, via: string): string {
@@ -155,6 +160,7 @@ export function compileCalendarGameProject(
   worldModel: WorldModel,
   spineBeatProse: Record<string, AnchorBeat> = {},
   unitProse: Record<string, DialogueUnit[]> = {},
+  eventUnits: Record<string, EventUnit> = {},
   endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
@@ -223,6 +229,20 @@ export function compileCalendarGameProject(
     for (const f of guardFlags(beat.guard)) allFlags.add(f);
   }
   for (const e of spine.endings) for (const f of guardFlags(e.guard)) allFlags.add(f);
+
+  // Юниты пула событий (фаза 4): при их наличии встречи проводятся PER UNIT —
+  // окно юнита + флаговый guard + fired-цепочка через unit[<id>]-переменные.
+  // Пустой пул = фаза-3 поведение (диапазоны расписания, enc_<liId>).
+  const dialogueUnits = Object.values(eventUnits)
+    .filter(u => u.kind === 'dialogue' && u.at.locationId != null && u.at.slot != null)
+    .sort((a, b) => a.at.slot!.fromSlot - b.at.slot!.fromSlot || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const useUnitEncounters = dialogueUnits.length > 0;
+  for (const u of dialogueUnits) {
+    stateVars.set(unitVar(u.id), { range: [0, 1], default: 0 });
+    for (const f of unitEstablishes(u)) allFlags.add(f);
+    for (const f of guardFlags(u.guard)) allFlags.add(f);
+  }
+
   for (const f of allFlags) stateVars.set(flagVar(f), { range: [0, 1], default: 0 });
 
   // Резервируем стабильные id.
@@ -279,12 +299,23 @@ export function compileCalendarGameProject(
   }
 
   // ── 2. Слой перемещения: enter-роутер + hub на локацию ────────────────
-  // Диапазоны встреч по локациям (run-length по расписанию).
+  // Фаза-3 фолбэк: диапазоны встреч по локациям (run-length по расписанию).
   const runsByLoc = new Map<string, ScheduleRun[]>();
-  for (const run of scheduleRuns(schedule, calendar.slotCount)) {
-    if (!locById.has(run.locId)) continue;
-    if (!runsByLoc.has(run.locId)) runsByLoc.set(run.locId, []);
-    runsByLoc.get(run.locId)!.push(run);
+  if (!useUnitEncounters) {
+    for (const run of scheduleRuns(schedule, calendar.slotCount)) {
+      if (!locById.has(run.locId)) continue;
+      if (!runsByLoc.has(run.locId)) runsByLoc.set(run.locId, []);
+      runsByLoc.get(run.locId)!.push(run);
+    }
+  }
+
+  // Фаза 4: юниты пула по локациям (проза обязательна — без неё юнит пропускается).
+  const unitsByLoc = new Map<string, EventUnit[]>();
+  for (const u of dialogueUnits) {
+    const locId = u.at.locationId!;
+    if (!locById.has(locId)) continue;
+    if (!unitsByLoc.has(locId)) unitsByLoc.set(locId, []);
+    unitsByLoc.get(locId)!.push(u);
   }
 
   for (const loc of worldModel.locations) {
@@ -329,10 +360,48 @@ export function compileCalendarGameProject(
     };
     nodes.push(hubNode);
 
-    // 2a. Встречи: диапазон расписания × наличие прозы. Нет прозы — нет
-    // кнопки. unitProse ключуется enc_<liId> и несёт DialogueUnit-графы;
-    // записи без nodes (легаси DialogueVariant-форма из persisted v9)
-    // молча отбрасываются — их структуру компилятор не понимает.
+    // 2a-unit (фаза 4). Встречи PER dialogue-юнит пула: кнопка гейтится
+    // окном юнита, флагами guard-а и fired-цепочкой (unit[<dep>] ≥ 1);
+    // одноразовость — met[<unitId>]. Closing-переход ставит met + unit[<id>]
+    // + establishes-флаги и двигает slot. Юнит без прозы пропускается.
+    for (const unit of unitsByLoc.get(loc.id) ?? []) {
+      const units3 = (unitProse[unit.id] ?? []).filter(u => Array.isArray(u?.nodes));
+      if (units3.length === 0) continue;
+      const liId = unit.participants[0] ?? '';
+
+      const met = unitMetVar(unit.id);
+      stateVars.set(met, { range: [0, 1], default: 0 });
+
+      const outId = uniqueId(`${hubId(loc.id)}__meet_${unit.id}`);
+      hubOutputs.push({ id: outId, text: `Поговорить с ${liNameById.get(liId) ?? liId}` });
+
+      const encRouterId = uniqueId(`enc_${unit.id}`);
+      edges.push({
+        id: `e_${outId}`,
+        source: hubId(loc.id),
+        sourceHandle: outId,
+        target: encRouterId,
+        condition: [
+          { path: SLOT_VAR, gte: unit.at.slot!.fromSlot },
+          { path: SLOT_VAR, lte: unit.at.slot!.toSlot },
+          { path: met, lte: 0 },
+          ...guardConditions(unit.guard),
+          ...guardFiredIds(unit.guard).map(dep => ({ path: unitVar(dep), gte: 1 })),
+        ],
+      });
+
+      // Closing-переход: юнит сыгран, его флаги установлены, время двинулось.
+      const closingExtras: Record<string, number> = { [unitVar(unit.id)]: 1 };
+      for (const f of unitEstablishes(unit)) closingExtras[flagVar(f)] = 1;
+
+      wireEncounter(encRouterId, liId, met, units3, loc.id, closingExtras);
+      encountersWired++;
+    }
+
+    // 2a. Фаза-3 фолбэк (пустой пул): диапазон расписания × наличие прозы.
+    // Нет прозы — нет кнопки. unitProse ключуется enc_<liId> и несёт
+    // DialogueUnit-графы; записи без nodes (легаси DialogueVariant-форма из
+    // persisted v9) молча отбрасываются — их структуру компилятор не понимает.
     for (const run of runsByLoc.get(loc.id) ?? []) {
       const units = (unitProse[`enc_${run.liId}`] ?? []).filter(u => Array.isArray(u?.nodes));
       if (units.length === 0) continue;
@@ -402,6 +471,7 @@ export function compileCalendarGameProject(
     met: string,
     unitsRaw: DialogueUnit[],
     locId: string,
+    extraClosingDeltas: Record<string, number> = {},
   ): void {
     const returnTarget = hubId(locId);
     const routerNode: GameSceneNode = {
@@ -415,8 +485,9 @@ export function compileCalendarGameProject(
     // Безусловный neutral обязан идти последним — роутер берёт первое активное.
     const units = [...unitsRaw].sort((a, b) => BRACKET_WIRE_ORDER[a.bracket] - BRACKET_WIRE_ORDER[b.bracket]);
 
-    // Closing-переход: встреча состоялась, время двинулось.
-    const movementEffects: Record<string, number> = { [met]: 1, [SLOT_VAR]: 1 };
+    // Closing-переход: встреча состоялась, время двинулось (+ unit[<id>] и
+    // establishes-флаги, когда встреча — юнит пула событий).
+    const movementEffects: Record<string, number> = { [met]: 1, [SLOT_VAR]: 1, ...extraClosingDeltas };
 
     const audioProfile = buildSceneAudioProfile(liId, audio.byLi[liId]);
 

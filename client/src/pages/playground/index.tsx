@@ -731,9 +731,12 @@ const CALENDAR_PHASE_LABEL: Record<string, string> = {
   world_calendar: 'Мир и календарь',
   spine: 'Хребет истории',
   schedule: 'Расписание персонажей',
+  event_pool: 'Пул событий',
+  prune: 'Отсев недостижимого',
+  dialogue_units: 'Диалоговые юниты',
 };
 
-/** Бар календарного пайплайна v1: каст-стаб → мир+календарь → хребет → расписание. */
+/** Бар календарного пайплайна: cast → мир+календарь → хребет → расписание → пул событий → pruning → проза юнитов. */
 const CalendarGenBar: React.FC<{
   gen: ReturnType<typeof useBulkCalendarGeneration>;
   brief: Brief;
@@ -1323,6 +1326,7 @@ const ExportBar: React.FC<{
   const worldModel = useNarrativeStore(s => s.worldModel);
   const spineBeatProse = useNarrativeStore(s => s.spineBeatProse);
   const unitProse = useNarrativeStore(s => s.unitProse);
+  const eventUnits = useNarrativeStore(s => s.eventUnits);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const audioBase = useNarrativeStore(s => s.audioBase);
@@ -1372,6 +1376,7 @@ const ExportBar: React.FC<{
           worldModel!,
           spineBeatProse,
           unitProse,
+          eventUnits,
           endings,
           images,
           characters,

@@ -144,7 +144,20 @@ export { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDial
 export { computeBracketRanges } from './buildDialogueVariantRequest';
 export { validateSpine, guardFlags } from './validateSpine';
 export { validateCalendar } from './validateCalendar';
+export { validateCastPlan, REQUIRED_ARC_STAGES } from './validateCastPlan';
+export { buildCastPlanRequestPayload } from './buildCastPlanRequest';
 export { assignBeatSlots, buildScheduleStub } from './beatSchedule';
+export { buildSchedule, validateSchedule } from './buildSchedule';
+export {
+  parseEventPool,
+  validateEventUnits,
+  buildEventPoolRequestPayload,
+  guardFiredIds,
+  unitEstablishes,
+  REL_DELTA_BOUND,
+  EVENT_POOL_UNITS_PER_STAGE,
+} from './parseEventPool';
+export { computeReachableUnits } from './reachability';
 export { buildStubCastPlan } from './castPlanStub';
 export { buildWorldCalendarRequestPayload } from './buildWorldCalendarRequest';
 export { buildSpineRequestPayload, computeSpineTargets } from './buildSpineRequest';

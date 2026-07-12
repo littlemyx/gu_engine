@@ -158,6 +158,52 @@ export interface WorldCalendarRequest {
 }
 
 /**
+ * Запрос стадии castPlan (A1): персоны + цели по стадиям арки +
+ * weekly-паттерны по абстрактным тегам локаций. Бриф и архетипы —
+ * opaque JSON (тот же trimming-паттерн, что у OutlineRequest).
+ */
+export interface CastPlanRequest {
+  brief: unknown;
+  /** Только профили архетипов, использованных LI брифа. */
+  archetypeProfiles: Record<string, unknown>;
+  /**
+   * Previously generated cast plan that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос стадии eventPool (B2): пул событий-storylet-ов ОДНОГО персонажа —
+ * шеллы guard+goal+effects без прозы. Контекст O(1): карточка LI + агенда,
+ * выжимка его расписания, релевантные биты хребта и размеры календаря.
+ */
+export interface EventPoolRequest {
+  brief: unknown;
+  /** Карточка LI из брифа (opaque JSON). */
+  liCard: unknown;
+  /** Агенда этого персонажа из castPlan (goals/weeklyPattern/locationTags). */
+  agenda: unknown;
+  /** Слоты, где персонаж на сцене: только non-null позиции расписания. */
+  scheduleExcerpt: { slot: number; locationId: string }[];
+  /** Биты хребта с участием персонажа: id/summary/window. */
+  spineBeats: { id: string; summary: string; window: { fromSlot: number; toSlot: number } }[];
+  /** Размеры календаря. */
+  calendar: { slotCount: number; dayparts: string[]; actBoundaries: number[] };
+  /** Целевые бюджеты: юнитов на стадию арки. */
+  targets: { unitsPerStage: number };
+  /**
+   * Previously generated pool that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
  * Запрос стадии spine: хребет истории — биты с окнами слотов и
  * guarded-концовки поверх готового мира и календаря.
  */

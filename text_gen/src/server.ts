@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processSpine, processDialogueVariant, processDialogueUnit, processDialogueQA, processEnding } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueVariant, processDialogueUnit, processDialogueQA, processEnding } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
@@ -13,6 +13,8 @@ import type {
   BeatPlanRequest,
   WorldModelRequest,
   WorldCalendarRequest,
+  CastPlanRequest,
+  EventPoolRequest,
   SpineRequest,
   DialogueVariantRequest,
   DialogueUnitRequest,
@@ -235,6 +237,58 @@ app.post('/generate/worldCalendar', (req, res) => {
   logger.log(`[POST /generate/worldCalendar] batch=${batchId} days=${body.targets?.days ?? '?'} acts=${body.targets?.acts ?? '?'}`);
 
   processWorldCalendar(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/castPlan', (req, res) => {
+  const body = req.body as CastPlanRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'castPlan';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const liCount = Array.isArray((body.brief as { loveInterests?: unknown[] })?.loveInterests)
+    ? (body.brief as { loveInterests: unknown[] }).loveInterests.length
+    : 0;
+  logger.log(`[POST /generate/castPlan] batch=${batchId} liCount=${liCount}`);
+
+  processCastPlan(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/eventPool', (req, res) => {
+  const body = req.body as EventPoolRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'eventPool';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const liId = (body.liCard as { id?: string })?.id ?? '?';
+  logger.log(`[POST /generate/eventPool] batch=${batchId} li=${liId} slots=${body.scheduleExcerpt?.length ?? 0}`);
+
+  processEventPool(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

@@ -365,6 +365,96 @@ export type WorldCalendarRequest = {
     previousIssues?: Array<string>;
 };
 
+export type CastPlanRequest = {
+    /**
+     * Procedural narrative brief, embedded into the prompt as-is.
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Map of archetypeId -> ArchetypeProfile, only the archetypes
+     * referenced by the brief's loveInterests.
+     *
+     */
+    archetypeProfiles: {
+        [key: string]: unknown;
+    };
+    /**
+     * Previously generated cast plan that failed validation.
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
+export type EventPoolRequest = {
+    /**
+     * Brief context (world, tone, protagonist).
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * LoveInterestCard of the character (opaque JSON).
+     */
+    liCard: {
+        [key: string]: unknown;
+    };
+    /**
+     * CastAgenda of the character (goals/weeklyPattern/locationTags).
+     */
+    agenda: {
+        [key: string]: unknown;
+    };
+    /**
+     * Slots where the character is on stage (non-null schedule positions only).
+     */
+    scheduleExcerpt: Array<{
+        slot: number;
+        locationId: string;
+    }>;
+    /**
+     * Spine beats the character participates in (id/summary/window).
+     */
+    spineBeats: Array<{
+        id: string;
+        summary: string;
+        window: {
+            fromSlot: number;
+            toSlot: number;
+        };
+    }>;
+    /**
+     * Calendar sizes for window validation context.
+     */
+    calendar: {
+        slotCount: number;
+        dayparts: Array<string>;
+        actBoundaries: Array<number>;
+    };
+    /**
+     * Budgets — target units per arc stage.
+     */
+    targets: {
+        unitsPerStage: number;
+    };
+    /**
+     * Previously generated pool that failed validation.
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
 export type SpineRequest = {
     brief: {
         [key: string]: unknown;
@@ -820,6 +910,38 @@ export type GenerateWorldCalendarResponses = {
 };
 
 export type GenerateWorldCalendarResponse = GenerateWorldCalendarResponses[keyof GenerateWorldCalendarResponses];
+
+export type GenerateCastPlanData = {
+    body: CastPlanRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/castPlan';
+};
+
+export type GenerateCastPlanResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateCastPlanResponse = GenerateCastPlanResponses[keyof GenerateCastPlanResponses];
+
+export type GenerateEventPoolData = {
+    body: EventPoolRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/eventPool';
+};
+
+export type GenerateEventPoolResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateEventPoolResponse = GenerateEventPoolResponses[keyof GenerateEventPoolResponses];
 
 export type GenerateSpineData = {
     body: SpineRequest;

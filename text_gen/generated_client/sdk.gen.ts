@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -107,6 +107,30 @@ export const generateWorldModel = <ThrowOnError extends boolean = false>(options
  */
 export const generateWorldCalendar = <ThrowOnError extends boolean = false>(options: Options<GenerateWorldCalendarData, ThrowOnError>) => (options.client ?? client).post<GenerateWorldCalendarResponses, unknown, ThrowOnError>({
     url: '/generate/worldCalendar',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate the cast plan (per-LI agendas with arc-stage goals and weekly location-tag patterns)
+ */
+export const generateCastPlan = <ThrowOnError extends boolean = false>(options: Options<GenerateCastPlanData, ThrowOnError>) => (options.client ?? client).post<GenerateCastPlanResponses, unknown, ThrowOnError>({
+    url: '/generate/castPlan',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate a per-character event pool (storylet shells with guards, goals and effects, no prose)
+ */
+export const generateEventPool = <ThrowOnError extends boolean = false>(options: Options<GenerateEventPoolData, ThrowOnError>) => (options.client ?? client).post<GenerateEventPoolResponses, unknown, ThrowOnError>({
+    url: '/generate/eventPool',
     ...options,
     headers: {
         'Content-Type': 'application/json',

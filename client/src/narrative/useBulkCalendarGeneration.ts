@@ -1,7 +1,9 @@
 import { useCallback, useRef, useState } from 'react';
 import {
+  generateCastPlan,
   generateDialogueQa,
   generateDialogueUnit,
+  generateEventPool,
   generateSpine,
   generateWorldCalendar,
   getBatchStatus,
@@ -9,23 +11,29 @@ import {
 } from '@root/text_gen/generated_client';
 import type { Brief, DialogueVariantBracket, LoveInterestCard, SegmentIssue, WorldLocation, WorldModel } from './types';
 import { parseWorldModel } from './types';
-import type { Calendar, CastPlan, SpinePlan } from './calendarTypes';
-import { parseCalendar, parseSpinePlan } from './calendarTypes';
+import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
+import { parseCalendar, parseCastPlan, parseSpinePlan } from './calendarTypes';
 import type { DialogueUnit } from './dialogueUnit';
 import { parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
 import { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
 import { validateCalendar } from './validateCalendar';
+import { validateCastPlan } from './validateCastPlan';
 import { validateSpine, guardFlags } from './validateSpine';
-import { buildScheduleStub } from './beatSchedule';
+import { buildSchedule, validateSchedule } from './buildSchedule';
 import { buildStubCastPlan } from './castPlanStub';
+import { buildCastPlanRequestPayload } from './buildCastPlanRequest';
 import { buildWorldCalendarRequestPayload } from './buildWorldCalendarRequest';
 import { buildSpineRequestPayload } from './buildSpineRequest';
+import { buildEventPoolRequestPayload, parseEventPool, unitEstablishes, validateEventUnits } from './parseEventPool';
+import { computeReachableUnits } from './reachability';
 import { useNarrativeStore } from './narrativeStore';
 
 /**
- * Оркестрация календарного пайплайна (фазы 1+3 docs/plans/calendar-branching.md):
- * cast (стаб без LLM) → world_calendar (LLM) → spine (LLM) → schedule (стаб)
- * → dialogue_units (LLM: LI × 3 брекета, structural validate + dialogueQA-критик).
+ * Оркестрация календарного пайплайна (фазы 1+3+4 docs/plans/calendar-branching.md):
+ * cast (LLM, фолбэк — стаб) → world_calendar (LLM) → spine (LLM) → schedule
+ * (детерминированный солвер buildSchedule) → event_pool (LLM, per LI) →
+ * prune (reachability, без LLM) → dialogue_units (LLM: достижимый юнит × 3
+ * брекета, structural validate + dialogueQA-критик).
  *
  * Механика LLM-стадий скопирована с worldModel-фазы useBulkStoryGeneration:
  * endpoint → polling /status/:batchId, best-of retry ≤3 попыток с фидбеком
@@ -33,18 +41,28 @@ import { useNarrativeStore } from './narrativeStore';
  * артефакты (против ТЕКУЩИХ входов) не регенерируются — деньги уходят только
  * на отсутствующее и невалидное.
  *
- * В отличие от useBulkStoryGeneration стадии не деградируют: без календаря
- * нет хребта, без хребта нет расписания, поэтому фейл стадии останавливает
- * прогон с error + issues (кнопка «повторить» у вызывающего — просто run()).
+ * Деградация: только стадия cast умеет откатиться на детерминированный стаб
+ * (buildStubCastPlan) — расписание и пул событий без агенд всё ещё осмысленны.
+ * Остальные стадии при фейле останавливают прогон с error + issues
+ * (кнопка «повторить» у вызывающего — просто run()).
  */
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000;
 const MAX_ATTEMPTS = 3;
-const TOTAL_STEPS = 5;
+const TOTAL_STEPS = 7;
 const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
-export type BulkCalendarPhase = 'idle' | 'cast' | 'world_calendar' | 'spine' | 'schedule' | 'dialogue_units' | 'done';
+export type BulkCalendarPhase =
+  | 'idle'
+  | 'cast'
+  | 'world_calendar'
+  | 'spine'
+  | 'schedule'
+  | 'event_pool'
+  | 'prune'
+  | 'dialogue_units'
+  | 'done';
 
 export type BulkCalendarProgress = { completed: number; total: number };
 
@@ -54,6 +72,8 @@ type WorldCalendarArtifact = {
   calendar: Calendar;
   tagMap: Record<string, string[]>;
 };
+
+const formatIssue = (i: SegmentIssue) => `[${i.severity}] ${i.scope}: ${i.message}`;
 
 export function useBulkCalendarGeneration() {
   const [phase, setPhase] = useState<BulkCalendarPhase>('idle');
@@ -68,6 +88,10 @@ export function useBulkCalendarGeneration() {
     setError(null);
     setIssues([]);
 
+    // Нефатальные проблемы прогона (фолбэк каста, счётчик pruning-а):
+    // показываются автору и при успехе, и при фейле.
+    const softIssues: string[] = [];
+
     const publish = (p: BulkCalendarPhase, completed: number) => {
       setPhase(p);
       setProgress({ completed, total: TOTAL_STEPS });
@@ -76,21 +100,68 @@ export function useBulkCalendarGeneration() {
     const fail = (p: BulkCalendarPhase, message: string, stageIssues: string[] = []) => {
       setPhase(p);
       setError(message);
-      setIssues(stageIssues);
+      setIssues([...softIssues, ...stageIssues]);
       runningRef.current = false;
     };
 
-    // ── Phase 1: cast — детерминированный стаб, без LLM. ────────────────────
-    // Перегенерация только при отсутствии плана или смене состава LI: setCastPlan
-    // каскадно сбрасывает календарь и всё ниже, зря дёргать её нельзя.
+    // ── Phase 1: cast — LLM-агенды; фолбэк — детерминированный стаб. ────────
+    // Перегенерация только при отсутствии/невалидности плана или смене состава
+    // LI: setCastPlan каскадно сбрасывает календарь и всё ниже.
     publish('cast', 0);
     {
+      const castErrors = (p: CastPlan): string[] =>
+        validateCastPlan(p, brief)
+          .filter(i => i.severity === 'error')
+          .map(formatIssue);
+
       const cached = useNarrativeStore.getState().castPlan;
-      if (!cached || !sameCastMembers(cached, brief)) {
-        useNarrativeStore.getState().setCastPlan(buildStubCastPlan(brief));
+      const cachedUsable = cached != null && sameCastMembers(cached, brief);
+      const cachedErrors = cachedUsable ? castErrors(cached) : [];
+
+      if (!cachedUsable || cachedErrors.length > 0) {
+        const basePayload = buildCastPlanRequestPayload(brief);
+        let best: { plan: CastPlan; errorCount: number; errors: string[] } | null =
+          cachedUsable && cachedErrors.length > 0
+            ? { plan: cached, errorCount: cachedErrors.length, errors: cachedErrors }
+            : null;
+        let lastAttemptError: unknown = null;
+        for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+          try {
+            type CastPayload = typeof basePayload & { previousAttempt?: CastPlan; previousIssues?: string[] };
+            const payload: CastPayload = !best
+              ? basePayload
+              : { ...basePayload, previousAttempt: best.plan, previousIssues: best.errors };
+            const { data, error: reqError } = await generateCastPlan({ body: payload });
+            if (reqError || !data) throw new Error('не удалось запустить генерацию каста');
+            const plan = await pollBatchResult(data.batchId, parseCastPlan);
+            const errors = castErrors(plan);
+            if (!best || errors.length < best.errorCount) {
+              best = { plan, errorCount: errors.length, errors };
+            }
+            if (errors.length === 0) break;
+          } catch (attemptErr) {
+            lastAttemptError = attemptErr;
+          }
+        }
+        if (best && best.errorCount === 0) {
+          useNarrativeStore.getState().setCastPlan(best.plan);
+        } else {
+          // Деградация: стаб-агенды держат пайплайн живым, автор видит причину.
+          const reason = best
+            ? best.errors.slice(0, 2).join('; ')
+            : lastAttemptError instanceof Error
+            ? lastAttemptError.message
+            : String(lastAttemptError ?? 'нет ответа');
+          softIssues.push(`[warning] cast: LLM-стадия не дала валидного плана (${reason}) — использован стаб`);
+          useNarrativeStore.getState().setCastPlan(buildStubCastPlan(brief));
+        }
       }
     }
     const castPlan = useNarrativeStore.getState().castPlan;
+    if (!castPlan) {
+      fail('cast', 'стадия cast не оставила плана в сторе');
+      return;
+    }
 
     // ── Phase 2: world_calendar — мир + календарь + маппинг тегов. ──────────
     publish('world_calendar', 1);
@@ -99,7 +170,7 @@ export function useBulkCalendarGeneration() {
       const artifactErrors = (a: WorldCalendarArtifact): string[] =>
         validateCalendar(a.calendar, brief, a.world, a.tagMap, castPlan)
           .filter(i => i.severity === 'error')
-          .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+          .map(formatIssue);
 
       const cached: WorldCalendarArtifact | null =
         store.worldModel && store.calendar && store.tagMap
@@ -172,7 +243,7 @@ export function useBulkCalendarGeneration() {
       const spineErrors = (s: SpinePlan): string[] =>
         validateSpine(s, calendar, brief, worldModel)
           .filter(i => i.severity === 'error')
-          .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+          .map(formatIssue);
 
       const cachedSpine = useNarrativeStore.getState().spine;
       const cachedSpineErrors = cachedSpine ? spineErrors(cachedSpine) : [];
@@ -226,12 +297,26 @@ export function useBulkCalendarGeneration() {
       return;
     }
 
-    // ── Phase 4: schedule — детерминированный стаб, без LLM. ────────────────
-    // setSchedule сбрасывает eventUnits/unitProse, поэтому существующее
-    // расписание (spine не менялся — иначе setSpine его бы снёс) не трогаем.
+    // ── Phase 4: schedule — детерминированный солвер, без LLM. ──────────────
+    // setSchedule сбрасывает eventUnits/unitProse, поэтому валидное против
+    // текущих входов расписание не трогаем.
     publish('schedule', 3);
-    if (!useNarrativeStore.getState().schedule) {
-      useNarrativeStore.getState().setSchedule(buildScheduleStub(brief, spine, calendar, castPlan, tagMap));
+    {
+      const scheduleErrors = (s: CharacterSchedule) =>
+        validateSchedule(s, spine, calendar, brief)
+          .filter(i => i.severity === 'error')
+          .map(formatIssue);
+
+      const cachedSchedule = useNarrativeStore.getState().schedule;
+      if (!cachedSchedule || scheduleErrors(cachedSchedule).length > 0) {
+        const built = buildSchedule(brief, spine, calendar, castPlan, tagMap);
+        const errors = scheduleErrors(built);
+        if (errors.length > 0) {
+          fail('schedule', `расписание не прошло валидацию (${errors.length} ошибок)`, errors);
+          return;
+        }
+        useNarrativeStore.getState().setSchedule(built);
+      }
     }
     const schedule = useNarrativeStore.getState().schedule;
     if (!schedule) {
@@ -239,23 +324,113 @@ export function useBulkCalendarGeneration() {
       return;
     }
 
-    // ── Phase 5: dialogue_units — LI × 3 брекета (фаза 3 плана). ────────────
+    // ── Phase 5: event_pool — пул событий-шеллов per LI (B2). ───────────────
+    // Валидный кэшированный пул персонажа (против текущих входов) не
+    // регенерируется. Итог пишется полной заменой (replaceEventUnits) —
+    // юниты пере-генерированных персонажей не должны выживать под старыми id.
+    publish('event_pool', 4);
+    {
+      const stageIssues: string[] = [];
+      const finalUnits: EventUnit[] = [];
+      const cachedAll = Object.values(useNarrativeStore.getState().eventUnits);
+
+      const poolErrors = (units: EventUnit[]): string[] =>
+        validateEventUnits(units, brief, calendar, spine, schedule)
+          .filter(i => i.severity === 'error')
+          .map(formatIssue);
+
+      for (const li of brief.loveInterests) {
+        const cachedPool = cachedAll.filter(u => u.participants[0] === li.id);
+        const cachedPoolErrors = cachedPool.length > 0 ? poolErrors(cachedPool) : [];
+        if (cachedPool.length > 0 && cachedPoolErrors.length === 0) {
+          finalUnits.push(...cachedPool);
+          continue;
+        }
+
+        try {
+          const basePayload = buildEventPoolRequestPayload(brief, li, castPlan, schedule, spine, calendar);
+          let best: { units: EventUnit[]; errorCount: number; errors: string[] } | null =
+            cachedPool.length > 0
+              ? { units: cachedPool, errorCount: cachedPoolErrors.length, errors: cachedPoolErrors }
+              : null;
+          let lastAttemptError: unknown = null;
+          for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            try {
+              type PoolPayload = typeof basePayload & {
+                previousAttempt?: ReturnType<typeof eventPoolToAttempt>;
+                previousIssues?: string[];
+              };
+              const payload: PoolPayload = !best
+                ? basePayload
+                : { ...basePayload, previousAttempt: eventPoolToAttempt(best.units), previousIssues: best.errors };
+              const { data, error: reqError } = await generateEventPool({ body: payload });
+              if (reqError || !data) throw new Error(`не удалось запустить генерацию пула событий ${li.id}`);
+              const units = await pollBatchResult(data.batchId, raw => parseEventPool(raw, li.id));
+              const errors = poolErrors(units);
+              if (!best || errors.length < best.errorCount) {
+                best = { units, errorCount: errors.length, errors };
+              }
+              if (errors.length === 0) break;
+            } catch (attemptErr) {
+              lastAttemptError = attemptErr;
+            }
+          }
+          if (best && best.errorCount === 0) {
+            finalUnits.push(...best.units);
+          } else if (best) {
+            stageIssues.push(`${li.id}: пул не прошёл валидацию: ${best.errors.slice(0, 3).join('; ')}`);
+          } else {
+            throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
+          }
+        } catch (e) {
+          stageIssues.push(`${li.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      if (stageIssues.length > 0) {
+        fail('event_pool', `пул событий не собран полностью (${stageIssues.length} проблем)`, stageIssues);
+        return;
+      }
+      useNarrativeStore.getState().replaceEventUnits(finalUnits);
+    }
+    const eventUnits = Object.values(useNarrativeStore.getState().eventUnits);
+
+    // ── Phase 6: prune — reachability-отсев, без LLM (B3). ──────────────────
+    // Недостижимым юнитам проза не генерируется; множество живёт в локальной
+    // переменной прогона — стор хранит полный пул (монтажка показывает всё).
+    publish('prune', 5);
+    const reachable = computeReachableUnits(spine, calendar, eventUnits);
+    {
+      const pruned = eventUnits.length - reachable.size;
+      if (pruned > 0) {
+        softIssues.push(
+          `[warning] prune: ${pruned} из ${eventUnits.length} юнитов недостижимы — проза для них не генерируется`,
+        );
+      }
+    }
+
+    // ── Phase 7: dialogue_units — проза per ДОСТИЖИМЫЙ юнит × 3 брекета. ────
     // Структурный validateDialogueUnit гейтит best-of retry (≤MAX_ATTEMPTS с
     // previousIssues-фидбеком); поверх структурно валидного юнита — ОДИН
     // dialogueQA-проход (LLM-критик: ответы на ask, тон=брекету, завершённость
     // closing); error-severity QA-issues дают одну дополнительную попытку
-    // регенерации. Кэш: LI с 3 юнитами, валидными против текущих входов,
+    // регенерации. Кэш: юнит с 3 брекетами, валидными против текущих входов,
     // пропускается (деньги — только на отсутствующее и невалидное).
-    publish('dialogue_units', 4);
+    publish('dialogue_units', 6);
     {
       const stageIssues: string[] = [];
+      const liById = new Map(brief.loveInterests.map(li => [li.id, li]));
 
-      for (const li of brief.loveInterests) {
-        const unitKey = `enc_${li.id}`;
+      for (const unit of eventUnits) {
+        if (!reachable.has(unit.id) || unit.kind !== 'dialogue') continue;
+        const li = liById.get(unit.participants[0] ?? '');
+        if (!li) continue;
+
+        const unitKey = unit.id;
         const unitErrors = (u: DialogueUnit): string[] =>
           validateDialogueUnit(u, li.id)
             .filter(i => i.severity === 'error')
-            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+            .map(formatIssue);
 
         const cached = useNarrativeStore.getState().unitProse[unitKey] ?? [];
         const cachedComplete =
@@ -284,6 +459,7 @@ export function useBulkCalendarGeneration() {
               schedule,
               worldModel,
               spine,
+              unit,
             );
             type UnitPayload = typeof basePayload & { previousAttempt?: DialogueUnit; previousIssues?: string[] };
             const generateOnce = async (
@@ -309,12 +485,12 @@ export function useBulkCalendarGeneration() {
             let lastAttemptError: unknown = null;
             for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
               try {
-                const unit = await generateOnce(
+                const generated = await generateOnce(
                   best && best.errorCount > 0 ? { unit: best.unit, errors: best.errors } : null,
                 );
-                const errors = unitErrors(unit);
+                const errors = unitErrors(generated);
                 if (!best || errors.length < best.errorCount) {
-                  best = { unit, errorCount: errors.length, errors };
+                  best = { unit: generated, errorCount: errors.length, errors };
                 }
                 if (errors.length === 0) break;
               } catch (attemptErr) {
@@ -351,10 +527,10 @@ export function useBulkCalendarGeneration() {
 
             units.push(best.unit);
             if (best.errorCount > 0) {
-              stageIssues.push(`${li.id}/${bracket}: сохранён с ошибками: ${best.errors.slice(0, 2).join('; ')}`);
+              stageIssues.push(`${unitKey}/${bracket}: сохранён с ошибками: ${best.errors.slice(0, 2).join('; ')}`);
             }
           } catch (e) {
-            stageIssues.push(`${li.id}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
+            stageIssues.push(`${unitKey}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
           }
         }
 
@@ -369,6 +545,7 @@ export function useBulkCalendarGeneration() {
       }
     }
 
+    setIssues(softIssues);
     publish('done', TOTAL_STEPS);
     runningRef.current = false;
   }, []);
@@ -443,6 +620,26 @@ function spineToAttempt(spine: SpinePlan): Record<string, unknown> {
       kind: e.kind,
       liId: e.liId,
       requires: guardFlags(e.guard),
+    })),
+  };
+}
+
+/**
+ * EventUnit[] → LLM-контракт eventPool (для previousAttempt-фидбека):
+ * guard/effects разворачиваются в плоские requires/establishes/relEffects —
+ * fired-цепочку клиент строит сам и в фидбек её не выносит.
+ */
+function eventPoolToAttempt(units: EventUnit[]): { units: Record<string, unknown>[] } {
+  return {
+    units: units.map(u => ({
+      id: u.id,
+      arcStage: u.arcStage ?? 1,
+      goal: u.goal,
+      locationId: u.at.locationId ?? '',
+      window: u.at.slot ?? { fromSlot: 0, toSlot: 0 },
+      requires: guardFlags(u.guard),
+      establishes: unitEstablishes(u),
+      relEffects: u.effects.flatMap(e => ('rel' in e ? [{ var: e.rel.var, delta: e.rel.delta }] : [])),
     })),
   };
 }

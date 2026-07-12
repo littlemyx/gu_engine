@@ -11,6 +11,8 @@ import type {
   NarrationWebRequest,
   WorldModelRequest,
   WorldCalendarRequest,
+  CastPlanRequest,
+  EventPoolRequest,
   SpineRequest,
   AnchorBeatRequest,
   BeatPlanRequest,
@@ -885,6 +887,237 @@ export async function processWorldModel(batch: BatchState, body: WorldModelReque
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[worldModel] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// CAST PLAN GENERATION (calendar pipeline, stage A1)
+// ============================================================================
+
+const CAST_PLAN_SYSTEM_PROMPT = `Ты — планировщик персонажей романтической визуальной новеллы (romance VN) с календарным временем.
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, каст love interests (LI) с архетипами.
+  2. Профили архетипов (archetypeProfiles) — для каждого использованного archetypeId.
+
+Твоя задача — АГЕНДА каждого LI: цели по стадиям арки отношений + weekly-паттерн
+«где персонаж обычно бывает» по абстрактным тегам локаций. Конкретных локаций
+ещё нет — их создаст следующая стадия по твоим тегам.
+
+Жёсткие правила:
+  1. members — ровно по одной записи на КАЖДОГО LI брифа; id ОБЯЗАН посимвольно
+     совпадать с id LI из брифа. Никаких лишних и никаких пропущенных персонажей.
+  2. isLI: true у всех (стадия описывает только LI).
+  3. goals — 3-6 целей персонажа, КАЖДАЯ с arcStage:
+       1 — знакомство (первое сближение, установление контакта),
+       2 — сближение (доверие, уязвимость, общее дело),
+       3 — кульминация арки (признание, выбор, разрешение конфликта).
+     Стадии 1, 2 и 3 ОБЯЗАНЫ быть покрыты (минимум по одной цели на каждую).
+     description — 1 конкретное предложение по-русски, привязанное к миру брифа
+     и характеру персонажа. id цели — snake_case ("kira_open_up").
+  4. weeklyPattern — объект с ключами-частями дня РОВНО "утро", "день", "вечер".
+     Значение — 1-3 взвешенных тега: [{ "tag": "workplace", "weight": 2 }].
+     weight — целое ≥ 1 (больше = чаще там бывает). Каждая из трёх частей дня
+     ОБЯЗАНА иметь хотя бы одну запись.
+  5. locationTags — 3-5 АБСТРАКТНЫХ тегов на персонажа (snake_case:
+     "workplace", "hangout", "home", "training_ground"...) с описанием
+     по-русски (1 фраза: что это за место для этого персонажа). КАЖДЫЙ тег,
+     использованный в weeklyPattern, обязан быть ключом locationTags.
+     Теги отражают роль персонажа (roleInWorld) и его характер.
+  6. Все тексты — по-русски (кроме id и тегов).
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "members": [
+    {
+      "id": "kira",
+      "isLI": true,
+      "agenda": {
+        "goals": [
+          { "id": "kira_first_contact", "description": "Обменяться колкостями у стеллажей и запомниться.", "arcStage": 1 },
+          { "id": "kira_open_up", "description": "Показать героине черновики своих переводов.", "arcStage": 2 },
+          { "id": "kira_confession", "description": "Решиться на признание на вечернем фестивале.", "arcStage": 3 }
+        ],
+        "weeklyPattern": {
+          "утро": [{ "tag": "workplace", "weight": 2 }],
+          "день": [{ "tag": "workplace", "weight": 1 }, { "tag": "hangout", "weight": 1 }],
+          "вечер": [{ "tag": "hangout", "weight": 2 }, { "tag": "home", "weight": 1 }]
+        },
+        "locationTags": {
+          "workplace": "библиотека, где Кира подрабатывает",
+          "hangout": "кафе и аллеи кампуса, где она отдыхает",
+          "home": "её комната в общежитии"
+        }
+      }
+    }
+  ]
+}`;
+
+export async function processCastPlan(batch: BatchState, body: CastPlanRequest): Promise<void> {
+  const itemId = 'castPlan';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Профили архетипов (для контекста персонажей)\n${JSON.stringify(body.archetypeProfiles, null, 2)}`,
+    ];
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ план каста. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Составь агенды каста (цели по стадиям арки + weekly-паттерны по тегам). Только JSON.');
+    }
+
+    logger.log(`[castPlan] batch=${batch.batchId} — generating...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: CAST_PLAN_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.members)) {
+      throw new Error('Invalid response: missing members');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[castPlan] batch=${batch.batchId} — completed (${parsed.members.length} members)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[castPlan] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// EVENT POOL GENERATION (calendar pipeline, stage B2)
+// ============================================================================
+
+const EVENT_POOL_SYSTEM_PROMPT = `Ты — дизайнер событий-storylet-ов для романтической визуальной новеллы (romance VN) с календарным временем.
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, протагонист.
+  2. liCard — карточка ОДНОГО love interest.
+  3. agenda — агенда персонажа: цели по стадиям арки (goals с arcStage 1..3).
+  4. scheduleExcerpt — слоты, где персонаж на сцене: [{ slot, locationId }].
+  5. spineBeats — биты хребта с его участием (id/summary/window) — НЕ дублируй их.
+  6. calendar — slotCount, dayparts, actBoundaries.
+  7. targets.unitsPerStage — целевое число юнитов на стадию арки.
+
+Твоя задача — ПУЛ СОБЫТИЙ-ШЕЛЛОВ этого персонажа: guard+goal+effects БЕЗ прозы.
+Проза диалога генерируется отдельно; здесь — только каркас: когда, где, зачем
+и что событие меняет.
+
+Модель времени: слот = (день, часть дня), нумерация с 0. window = {fromSlot,
+toSlot} включительно — окно, в котором встреча может произойти.
+
+Жёсткие правила:
+  1. 4-8 юнитов на персонажа, примерно targets.unitsPerStage на каждую стадию
+     арки (arcStage 1, 2, 3). Стадии упорядочены во времени: окна стадии 1
+     раньше окон стадии 3.
+  2. id юнита — короткий snake_case ("kira_book_talk"). Без префиксов evt_ —
+     их добавит клиент.
+  3. arcStage — 1, 2 или 3; goal — 1 конкретное предложение по-русски: что
+     должно произойти между героями (опирайся на goals агенды, не копируя
+     дословно).
+  4. window обязано ЦЕЛИКОМ лежать в календаре [0, slotCount-1], fromSlot ≤ toSlot.
+  5. locationId — ТОЛЬКО локация из scheduleExcerpt, причём персонаж обязан
+     стоять в ней хотя бы в одном слоте окна (событие там, где он бывает).
+  6. requires — флаги-предусловия (snake_case), только те, что устанавливают
+     spineBeats (summary подскажет) или БОЛЕЕ РАННИЕ юниты этого пула через
+     establishes. Обычно пуст. НЕ выдумывай флаги из воздуха.
+  7. establishes — флаги, становящиеся истинными после события (0-2 шт).
+  8. relEffects — 1-2 эффекта отношений: var из affection|trust|tension,
+     delta в диапазоне -0.3..0.3 (типично ±0.05..0.15).
+  9. Цепочку стадий (событие стадии 2 после событий стадии 1) НЕ кодируй
+     в requires — её строит клиент автоматически.
+  10. Все тексты — по-русски (кроме id и флагов).
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "units": [
+    {
+      "id": "kira_book_talk",
+      "arcStage": 1,
+      "goal": "Разговориться с Кирой о редкой книге и узнать её вкусы.",
+      "locationId": "library",
+      "window": { "fromSlot": 0, "toSlot": 4 },
+      "requires": [],
+      "establishes": ["knows_kira_taste"],
+      "relEffects": [{ "var": "affection", "delta": 0.1 }]
+    }
+  ]
+}`;
+
+export async function processEventPool(batch: BatchState, body: EventPoolRequest): Promise<void> {
+  const itemId = 'eventPool';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Карточка LI\n${JSON.stringify(body.liCard, null, 2)}`,
+      `## Агенда персонажа\n${JSON.stringify(body.agenda, null, 2)}`,
+      `## Расписание персонажа (слоты на сцене)\n${JSON.stringify(body.scheduleExcerpt, null, 2)}`,
+      `## Биты хребта с его участием (не дублировать)\n${JSON.stringify(body.spineBeats, null, 2)}`,
+      `## Календарь\n${JSON.stringify(body.calendar, null, 2)}`,
+      `## Целевые бюджеты\nunitsPerStage: ${body.targets.unitsPerStage} (итого 4-8 юнитов)`,
+    ];
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ пул событий. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Сгенерируй пул событий-шеллов этого персонажа. Только JSON.');
+    }
+
+    const liId = (body.liCard as { id?: string })?.id ?? '?';
+    logger.log(`[eventPool] batch=${batch.batchId} — generating li=${liId} (slots=${body.scheduleExcerpt.length})...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: EVENT_POOL_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.units)) {
+      throw new Error('Invalid response: missing units');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[eventPool] batch=${batch.batchId} — completed (${parsed.units.length} units, li=${liId})`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[eventPool] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 

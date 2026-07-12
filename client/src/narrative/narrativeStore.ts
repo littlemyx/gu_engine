@@ -168,6 +168,8 @@ type NarrativeState = {
   setSpine: (spine: SpinePlan | null) => void;
   setSchedule: (schedule: CharacterSchedule | null) => void;
   setEventUnits: (units: EventUnit[]) => void;
+  /** Полная замена пула событий (пере-генерация: старые id не должны выживать). */
+  replaceEventUnits: (units: EventUnit[]) => void;
   setUnitProse: (unitId: string, units: DialogueUnit[]) => void;
   setSpineBeatProse: (beatId: string, beat: AnchorBeat) => void;
 
@@ -357,6 +359,10 @@ export const useNarrativeStore = create<NarrativeState>()(
           for (const u of units) eventUnits[u.id] = u;
           return { eventUnits };
         });
+      },
+
+      replaceEventUnits: units => {
+        set({ eventUnits: Object.fromEntries(units.map(u => [u.id, u])) });
       },
 
       setUnitProse: (unitId, units) => {

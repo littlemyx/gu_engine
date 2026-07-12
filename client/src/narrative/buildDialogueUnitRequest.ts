@@ -7,7 +7,7 @@ import type {
   StateVarPath,
   WorldModel,
 } from './types';
-import type { Calendar, CharacterSchedule, SpinePlan } from './calendarTypes';
+import type { Calendar, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
 import { slotLabel } from './calendarTypes';
 import { ARCHETYPES } from './archetypes';
 import { computeBracketRanges } from './buildDialogueVariantRequest';
@@ -18,6 +18,10 @@ import { computeBracketRanges } from './buildDialogueVariantRequest';
  * приходит из календарного стека — локация и слот первой запланированной
  * встречи LI по расписанию. Это колорит для промпта, не жёсткая привязка:
  * юнит играется во всех слотах диапазона встречи.
+ *
+ * unitGoal (фаза 4): проза ключуется по EventUnit — контекст берётся из
+ * самого юнита (goal + его локация + slotLabel(window.fromSlot)), а не из
+ * первого слота расписания.
  */
 export function buildDialogueUnitRequestPayload(
   brief: Brief,
@@ -27,6 +31,7 @@ export function buildDialogueUnitRequestPayload(
   schedule: CharacterSchedule,
   worldModel: WorldModel,
   spine?: SpinePlan | null,
+  unitGoal?: EventUnit | null,
 ): {
   brief: Brief;
   liCard: LoveInterestCard;
@@ -37,10 +42,11 @@ export function buildDialogueUnitRequestPayload(
 } {
   const archetypeProfile = ARCHETYPES[li.archetype];
 
-  // Первый слот, где LI стоит в расписании → локация и «день N · часть дня».
+  // Приоритет контекста: юнит (goal + его локация + начало окна), иначе
+  // первый слот, где LI стоит в расписании → локация и «день N · часть дня».
   const slots = schedule[li.id] ?? [];
   const firstSlot = slots.findIndex(locId => locId != null);
-  const locId = firstSlot >= 0 ? slots[firstSlot] : null;
+  const locId = unitGoal?.at.locationId ?? (firstSlot >= 0 ? slots[firstSlot] : null);
   const loc = locId ? worldModel.locations.find(l => l.id === locId) : undefined;
 
   const location = loc
@@ -48,7 +54,11 @@ export function buildDialogueUnitRequestPayload(
         loc.pointsOfInterest.length ? ` Ключевые точки: ${loc.pointsOfInterest.join(', ')}.` : ''
       }`
     : brief.world.setting.place;
-  const timeMarker = firstSlot >= 0 ? slotLabel(firstSlot, calendar) : '';
+  const contextSlot = unitGoal?.at.slot?.fromSlot ?? (firstSlot >= 0 ? firstSlot : -1);
+  const timeMarker = contextSlot >= 0 ? slotLabel(contextSlot, calendar) : '';
+
+  // Цель юнита ведёт разговор; logline хребта — фолбэк-колорит.
+  const recentEvents = unitGoal?.goal?.trim() ? `Цель встречи: ${unitGoal.goal.trim()}` : spine?.logline?.trim() || '';
 
   return {
     brief,
@@ -57,7 +67,7 @@ export function buildDialogueUnitRequestPayload(
     storyContext: {
       location,
       timeMarker,
-      recentEvents: spine?.logline?.trim() || '',
+      recentEvents,
     },
     bracket,
     stateRanges: computeBracketRanges(bracket, archetypeProfile),
