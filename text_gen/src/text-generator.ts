@@ -1,6 +1,76 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { logger } from './logger.js';
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tier-раскладка моделей по стадиям (docs/plans/calendar-branching.md, фаза 7).
+// A — ответственные проходы (хребет, каст, критик листьев), B — структурный
+// JSON среднего объёма, C — массовая проза. Провайдер — только OpenAI.
+// Переопределение: TEXTGEN_MODEL_<STAGE> (точечно) или TEXTGEN_MODEL_TIER_<A|B|C>.
+// Дефолты сохраняют текущее поведение (gpt-4.1-mini везде).
+// ────────────────────────────────────────────────────────────────────────────
+
+export type StageId =
+  | 'storyMasterPrompt'
+  | 'sceneText'
+  | 'outline'
+  | 'segment'
+  | 'liCards'
+  | 'narrationWeb'
+  | 'worldModel'
+  | 'castPlan'
+  | 'eventPool'
+  | 'worldCalendar'
+  | 'spine'
+  | 'beatPlan'
+  | 'anchorBeat'
+  | 'ending'
+  | 'dialogueVariant'
+  | 'dialogueUnit'
+  | 'dialogueQA'
+  | 'storyLeafQA';
+
+type Tier = 'A' | 'B' | 'C';
+
+const STAGE_TIER: Record<StageId, Tier> = {
+  storyMasterPrompt: 'C',
+  sceneText: 'C',
+  outline: 'B',
+  segment: 'C',
+  liCards: 'B',
+  narrationWeb: 'C',
+  worldModel: 'B',
+  castPlan: 'A',
+  eventPool: 'B',
+  worldCalendar: 'B',
+  spine: 'A',
+  beatPlan: 'B',
+  anchorBeat: 'B',
+  ending: 'B',
+  dialogueVariant: 'C',
+  dialogueUnit: 'C',
+  dialogueQA: 'B',
+  storyLeafQA: 'A',
+};
+
+const DEFAULT_TIER_MODEL: Record<Tier, string> = {
+  A: 'gpt-4.1-mini',
+  B: 'gpt-4.1-mini',
+  C: 'gpt-4.1-mini',
+};
+
+export function resolveModelId(stage: StageId): string {
+  const explicit = process.env[`TEXTGEN_MODEL_${stage.toUpperCase()}`];
+  const tier = STAGE_TIER[stage];
+  return explicit ?? process.env[`TEXTGEN_MODEL_TIER_${tier}`] ?? DEFAULT_TIER_MODEL[tier];
+}
+
+function resolveModel(stage: StageId) {
+  const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const id = resolveModelId(stage);
+  logger.log(`[model] ${stage} → ${id} (tier ${STAGE_TIER[stage]})`);
+  return openai(id);
+}
 import type {
   BatchState,
   StoryMasterPromptRequest,
@@ -71,7 +141,7 @@ export async function processStoryMasterPrompt(
     logger.log(`[storyMasterPrompt] batch=${batch.batchId} — generating...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('storyMasterPrompt'),
       system: SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -193,7 +263,7 @@ export async function processSceneText(
     logger.log(`[sceneText] batch=${batch.batchId} depth=${body.depth}/${body.maxDepth} chain=${body.sceneChain.length} — generating...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('sceneText'),
       system: SCENE_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -326,7 +396,7 @@ export async function processOutline(
     );
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('outline'),
       system: OUTLINE_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -496,7 +566,7 @@ export async function processSegment(batch: BatchState, body: SegmentRequest): P
     );
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('segment'),
       system: SEGMENT_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -589,7 +659,7 @@ export async function processLiCards(batch: BatchState, body: LiCardsRequest): P
     logger.log(`[liCards] batch=${batch.batchId} — generating ${body.count} cards...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('liCards'),
       system: LI_CARDS_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -755,7 +825,7 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
     logger.log(`[narrationWeb] batch=${batch.batchId} — generating ${fromId} -> ${toId}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('narrationWeb'),
       system: NARRATION_WEB_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -871,7 +941,7 @@ export async function processWorldModel(batch: BatchState, body: WorldModelReque
     logger.log(`[worldModel] batch=${batch.batchId} — mapping world...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('worldModel'),
       system: WORLD_MODEL_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -985,7 +1055,7 @@ export async function processCastPlan(batch: BatchState, body: CastPlanRequest):
     logger.log(`[castPlan] batch=${batch.batchId} — generating...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('castPlan'),
       system: CAST_PLAN_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1102,7 +1172,7 @@ export async function processEventPool(batch: BatchState, body: EventPoolRequest
     logger.log(`[eventPool] batch=${batch.batchId} — generating li=${liId} (slots=${body.scheduleExcerpt.length})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('eventPool'),
       system: EVENT_POOL_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1236,7 +1306,7 @@ export async function processWorldCalendar(batch: BatchState, body: WorldCalenda
     logger.log(`[worldCalendar] batch=${batch.batchId} — mapping world+calendar (days=${body.targets.days}, acts=${body.targets.acts})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('worldCalendar'),
       system: WORLD_CALENDAR_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1441,7 +1511,7 @@ export async function processSpine(batch: BatchState, body: SpineRequest): Promi
     logger.log(`[spine] batch=${batch.batchId} — generating (beatCount=${body.targets.beatCount})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('spine'),
       system: SPINE_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1542,7 +1612,7 @@ export async function processBeatPlan(batch: BatchState, body: BeatPlanRequest):
     logger.log(`[beatPlan] batch=${batch.batchId} — planning (slots=${body.encounterSlots.length})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('beatPlan'),
       system: BEAT_PLAN_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1660,7 +1730,7 @@ export async function processAnchorBeat(batch: BatchState, body: AnchorBeatReque
     logger.log(`[anchorBeat] batch=${batch.batchId} — generating anchor=${anchorId} (${body.outgoingTargets.length} transitions)...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('anchorBeat'),
       system: ANCHOR_BEAT_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1762,7 +1832,7 @@ export async function processEnding(batch: BatchState, body: EndingRequest): Pro
     logger.log(`[ending] batch=${batch.batchId} — generating kind=${body.kind} li=${liId}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('ending'),
       system: ENDING_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1922,7 +1992,7 @@ export async function processDialogueVariant(batch: BatchState, body: DialogueVa
     logger.log(`[dialogueVariant] batch=${batch.batchId} — generating li=${liId} bracket=${body.bracket}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('dialogueVariant'),
       system: DIALOGUE_VARIANT_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -2118,7 +2188,7 @@ export async function processDialogueUnit(batch: BatchState, body: DialogueUnitR
     logger.log(`[dialogueUnit] batch=${batch.batchId} — generating li=${liId} bracket=${body.bracket}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('dialogueUnit'),
       system: DIALOGUE_UNIT_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -2202,7 +2272,7 @@ export async function processDialogueQA(batch: BatchState, body: DialogueQAReque
     logger.log(`[dialogueQA] batch=${batch.batchId} — reviewing bracket=${body.bracket}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('dialogueQA'),
       system: DIALOGUE_QA_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -2294,7 +2364,7 @@ export async function processStoryLeafQA(batch: BatchState, body: StoryLeafQAReq
     logger.log(`[storyLeafQA] batch=${batch.batchId} — reviewing leaf "${body.leafLabel}"...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('storyLeafQA'),
       system: STORY_LEAF_QA_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
