@@ -43,13 +43,48 @@ import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
 import { AudioPreviewPanel } from './AudioPreviewPanel';
 import { BriefEditor } from './BriefEditor';
 import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
+import { MontageBoard } from './MontageBoard';
 import styles from './playground.module.css';
+
+// ────────────────────────────────────────────────────────────────────────────
+// APP SHELL (макет 4a): топ-бар с чипами пайплайна + левый рейл + секции
+// ────────────────────────────────────────────────────────────────────────────
+
+type SectionId = 'brief' | 'graph' | 'heroes' | 'audio' | 'export';
+type GraphView = 'montage' | 'flow' | 'list';
+
+const RAIL_ITEMS: { id: SectionId; label: string; round: boolean }[] = [
+  { id: 'brief', label: 'Бриф', round: false },
+  { id: 'graph', label: 'Граф', round: true },
+  { id: 'heroes', label: 'Герои', round: false },
+  { id: 'audio', label: 'Аудио', round: true },
+  { id: 'export', label: 'Экспорт', round: false },
+];
+
+const CHIP_DONE = '#16a34a';
+const CHIP_PARTIAL = '#f59e0b';
+const CHIP_RUNNING = '#4f46e5';
+const CHIP_IDLE = '#d1d5db';
+
+type ChipSpec = { key: string; label: string; dot: string; target: SectionId };
+
+const progressChip = (
+  key: string,
+  name: string,
+  done: number,
+  total: number,
+  running: boolean,
+  target: SectionId,
+): ChipSpec => ({
+  key,
+  target,
+  label: total > 0 && done >= total ? `${name} ✓` : `${name} ${done}/${total}`,
+  dot: running ? CHIP_RUNNING : total > 0 && done >= total ? CHIP_DONE : done > 0 ? CHIP_PARTIAL : CHIP_IDLE,
+});
 
 const Playground = () => {
   const brief = useBriefStore(s => s.brief);
   const persistedOutline = useNarrativeStore(s => s.storyOutline);
-  const [showRawBrief, setShowRawBrief] = useState(false);
-  const [showAnchorList, setShowAnchorList] = useState(false);
   const issues = useMemo(() => validateBrief(brief), [brief]);
   const errorCount = issues.filter(i => i.severity === 'error').length;
   const outlineGen = useStoryOutlineGeneration();
@@ -60,88 +95,265 @@ const Playground = () => {
   const audioGen = useBulkAudioGeneration();
 
   const isBlocked = errorCount > 0;
-
   const activeOutline = outlineGen.status.state === 'done' ? outlineGen.status.outline : persistedOutline;
 
+  const [activeSection, setActiveSection] = useState<SectionId>(() => (persistedOutline ? 'graph' : 'brief'));
+  const [graphView, setGraphView] = useState<GraphView>('montage');
+
+  // Статусы пайплайна для чипов топ-бара.
+  const anchorBeats = useNarrativeStore(s => s.anchorBeats);
+  const images = useNarrativeStore(s => s.images);
+  const characters = useNarrativeStore(s => s.characters);
+  const worldModel = useNarrativeStore(s => s.worldModel);
+  const audioBase = useNarrativeStore(s => s.audioBase);
+  const audioByLi = useNarrativeStore(s => s.audioByLi);
+
+  const chips = useMemo<ChipSpec[]>(() => {
+    const anchorCount = activeOutline?.anchors.length ?? 0;
+    const liCount = brief.loveInterests.length;
+    const beatsDone = Object.keys(anchorBeats).length;
+    const imagesDone = Object.entries(images).filter(
+      ([k, i]) => i.status === 'done' && (worldModel ? k.startsWith('loc:') : !k.startsWith('loc:')),
+    ).length;
+    const imagesTotal = worldModel ? worldModel.locations.length : anchorCount;
+    const charsDone = Object.values(characters).filter(c => c.status === 'done').length;
+    const audioDone =
+      (audioBase?.status === 'done' ? 1 : 0) +
+      Object.values(audioByLi).reduce(
+        (acc, li) => acc + (li.positive?.status === 'done' ? 1 : 0) + (li.negative?.status === 'done' ? 1 : 0),
+        0,
+      );
+    return [
+      {
+        key: 'outline',
+        target: 'brief',
+        label: activeOutline ? 'Outline ✓' : 'Outline —',
+        dot: outlineGen.status.state === 'generating' ? CHIP_RUNNING : activeOutline ? CHIP_DONE : CHIP_IDLE,
+      },
+      progressChip('scenes', 'Сцены', beatsDone, anchorCount, bulkGen.status.state === 'running', 'graph'),
+      progressChip('images', 'Фоны', imagesDone, imagesTotal, imageGen.status.state === 'running', 'graph'),
+      progressChip('sprites', 'Спрайты', charsDone, liCount, characterGen.status.state === 'running', 'heroes'),
+      progressChip('audio', 'Аудио', audioDone, 1 + liCount * 2, audioGen.status.state === 'running', 'audio'),
+    ];
+  }, [
+    activeOutline,
+    brief.loveInterests.length,
+    anchorBeats,
+    images,
+    characters,
+    worldModel,
+    audioBase,
+    audioByLi,
+    outlineGen.status.state,
+    bulkGen.status.state,
+    imageGen.status.state,
+    characterGen.status.state,
+    audioGen.status.state,
+  ]);
+
   return (
-    <div className={styles.container}>
-      <header className={styles.header}>
-        <div>
-          <span className={styles.headerTitle}>Procedural Narrative Pilot</span>
-          <span className={styles.headerSubtitle}>бриф · архетипы · story pipeline</span>
+    <div className={styles.shell}>
+      <div className={styles.topBar}>
+        <span className={styles.topTitle}>{activeOutline?.title || 'Procedural Narrative Pilot'}</span>
+        <span className={styles.topMeta}>
+          {brief.genre}
+          {activeOutline && ` · ${activeOutline.acts.length} акта · ${activeOutline.anchors.length} срезов`}
+        </span>
+        <div className={styles.topChips}>
+          {chips.map(chip => (
+            <button
+              key={chip.key}
+              type="button"
+              className={styles.pipeChip}
+              onClick={() => setActiveSection(chip.target)}
+            >
+              <span className={styles.pipeDot} style={{ background: chip.dot }} />
+              {chip.label}
+            </button>
+          ))}
+          <button
+            type="button"
+            className={styles.primaryBtn}
+            style={{ marginLeft: 8 }}
+            onClick={() => setActiveSection('export')}
+          >
+            Экспорт
+          </button>
         </div>
-        <nav className={styles.headerNav}>
-          <Link className={styles.navLink} to="/">
-            ← canvas редактор сцен
+      </div>
+
+      <div className={styles.shellBody}>
+        <nav className={styles.rail}>
+          {RAIL_ITEMS.map(item => (
+            <button
+              key={item.id}
+              type="button"
+              className={`${styles.railItem} ${activeSection === item.id ? styles.railItemActive : ''}`}
+              onClick={() => setActiveSection(item.id)}
+            >
+              <span className={`${styles.railIcon} ${item.round ? styles.railIconRound : ''}`} />
+              <span className={styles.railLabel}>{item.label}</span>
+            </button>
+          ))}
+          <span className={styles.railSpacer} />
+          <Link className={styles.railHome} to="/" title="canvas редактор сцен">
+            ↩ canvas
           </Link>
         </nav>
-      </header>
 
-      <OutlineBar
-        status={outlineGen.status}
-        disabled={isBlocked}
-        onGenerate={() => outlineGen.generate(brief)}
-        onReset={outlineGen.reset}
-      />
+        {activeSection === 'brief' && (
+          <BriefSection brief={brief} issues={issues} outlineGen={outlineGen} isBlocked={isBlocked} />
+        )}
 
-      <PlaygroundErrorBoundary>
-        {activeOutline &&
-          (() => {
-            const outline = activeOutline;
-            return (
-              <>
-                <OutlineGraph outline={outline} />
-                <CharacterRelationshipPanel outline={outline} />
+        {activeSection === 'graph' && (
+          <div className={styles.sectionScroll}>
+            {activeOutline ? (
+              <PlaygroundErrorBoundary>
+                <div className={styles.graphInner}>
+                  <div className={styles.viewToggle}>
+                    {(
+                      [
+                        ['montage', 'Монтажный стол'],
+                        ['flow', 'Граф якорей'],
+                        ['list', 'Список якорей'],
+                      ] as [GraphView, string][]
+                    ).map(([view, label]) => (
+                      <button
+                        key={view}
+                        type="button"
+                        className={`${styles.viewToggleBtn} ${graphView === view ? styles.viewToggleActive : ''}`}
+                        onClick={() => setGraphView(view)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  {graphView === 'montage' && <MontageBoard outline={activeOutline} />}
+                </div>
+                {graphView === 'flow' && <OutlineGraph outline={activeOutline} />}
+                {graphView === 'list' && <OutlineResult outline={activeOutline} />}
                 <BulkStoryBar
                   status={bulkGen.status}
-                  onStart={() => bulkGen.start(brief, outline)}
+                  onStart={() => bulkGen.start(brief, activeOutline)}
                   onCancel={bulkGen.cancel}
                   onReset={bulkGen.reset}
                 />
                 <ImageGenBar
                   status={imageGen.status}
-                  onStart={() => imageGen.start(brief, outline)}
+                  onStart={() => imageGen.start(brief, activeOutline)}
                   onCancel={imageGen.cancel}
                   onReset={imageGen.reset}
-                  anchorCount={outline.anchors.length}
+                  anchorCount={activeOutline.anchors.length}
                 />
+              </PlaygroundErrorBoundary>
+            ) : (
+              <div className={styles.graphEmpty}>
+                <span>Монтажный стол строится по story outline — сначала сгенерируйте его из брифа.</span>
+                <button type="button" className={styles.primaryBtn} onClick={() => setActiveSection('brief')}>
+                  Перейти к брифу
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSection === 'heroes' && (
+          <div className={styles.sectionScroll}>
+            {activeOutline ? (
+              <PlaygroundErrorBoundary>
+                <div className={styles.sectionPad}>
+                  <CharacterRelationshipPanel outline={activeOutline} />
+                </div>
                 <CharacterGenBar
                   status={characterGen.status}
-                  onStart={() => characterGen.start(brief, outline)}
-                  onForceStart={() => characterGen.start(brief, outline, { force: true })}
+                  onStart={() => characterGen.start(brief, activeOutline)}
+                  onForceStart={() => characterGen.start(brief, activeOutline, { force: true })}
                   onCancel={characterGen.cancel}
                   onReset={characterGen.reset}
-                  onRegenMissing={entries => poseRegen.start(entries, brief, outline)}
+                  onRegenMissing={entries => poseRegen.start(entries, brief, activeOutline)}
                   liCount={brief.loveInterests.length}
                 />
                 <MissingPosesBar
                   regenStatus={poseRegen.status}
-                  onStart={entries => poseRegen.start(entries, brief, outline)}
+                  onStart={entries => poseRegen.start(entries, brief, activeOutline)}
                   onReset={poseRegen.reset}
                 />
+              </PlaygroundErrorBoundary>
+            ) : (
+              <div className={styles.graphEmpty}>
+                <span>Линии героев появятся после генерации story outline.</span>
+                <button type="button" className={styles.primaryBtn} onClick={() => setActiveSection('brief')}>
+                  Перейти к брифу
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSection === 'audio' && (
+          <div className={styles.sectionScroll}>
+            <PlaygroundErrorBoundary>
+              <div className={styles.sectionPad}>
                 <LocationMoodPanel />
-                <AudioGenBar
-                  status={audioGen.status}
-                  brief={brief}
-                  onStart={style => audioGen.start(brief, style)}
-                  onCancel={audioGen.cancel}
-                  onReset={audioGen.reset}
-                />
-                <AudioPreviewPanel />
-                <ExportBar outline={outline} />
-                <div className={styles.outlineDetailsToggleRow}>
-                  <button type="button" className={styles.secondaryBtn} onClick={() => setShowAnchorList(v => !v)}>
-                    {showAnchorList ? 'Скрыть детальный список' : 'Развернуть детальный список'}
-                  </button>
-                </div>
-                {showAnchorList && <OutlineResult outline={outline} />}
-              </>
-            );
-          })()}
-      </PlaygroundErrorBoundary>
+              </div>
+              <AudioGenBar
+                status={audioGen.status}
+                brief={brief}
+                onStart={style => audioGen.start(brief, style)}
+                onCancel={audioGen.cancel}
+                onReset={audioGen.reset}
+              />
+              <AudioPreviewPanel />
+            </PlaygroundErrorBoundary>
+          </div>
+        )}
+
+        {activeSection === 'export' && (
+          <div className={styles.sectionScroll}>
+            {activeOutline ? (
+              <PlaygroundErrorBoundary>
+                <ExportBar outline={activeOutline} />
+              </PlaygroundErrorBoundary>
+            ) : (
+              <div className={styles.graphEmpty}>
+                <span>Экспортировать пока нечего — нужен story outline.</span>
+                <button type="button" className={styles.primaryBtn} onClick={() => setActiveSection('brief')}>
+                  Перейти к брифу
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// СЕКЦИЯ «БРИФ» (бриф + валидация + архетипы + генерация outline)
+// ────────────────────────────────────────────────────────────────────────────
+
+const BriefSection: React.FC<{
+  brief: Brief;
+  issues: ReturnType<typeof validateBrief>;
+  outlineGen: ReturnType<typeof useStoryOutlineGeneration>;
+  isBlocked: boolean;
+}> = ({ brief, issues, outlineGen, isBlocked }) => {
+  const [showRawBrief, setShowRawBrief] = useState(false);
+
+  return (
+    <div className={styles.sectionScroll}>
+      <div style={{ marginTop: 16 }}>
+        <OutlineBar
+          status={outlineGen.status}
+          disabled={isBlocked}
+          onGenerate={() => outlineGen.generate(brief)}
+          onReset={outlineGen.reset}
+        />
+      </div>
 
       {outlineGen.status.state === 'done' && outlineGen.status.warnings.length > 0 && (
-        <div className={styles.panel}>
+        <div className={styles.sectionPad}>
           <div className={styles.errorBox}>
             {outlineGen.status.warnings.map(w => (
               <div key={w.scope}>
@@ -152,7 +364,7 @@ const Playground = () => {
         </div>
       )}
       {outlineGen.status.state === 'error' && (
-        <div className={styles.outlineResult}>
+        <div className={styles.sectionPad}>
           <div className={styles.errorBox}>Ошибка генерации: {outlineGen.status.message}</div>
         </div>
       )}

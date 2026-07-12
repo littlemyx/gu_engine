@@ -70,6 +70,40 @@ export {
 } from './emotionResolver';
 export { useRegeneratePoses, poseKey } from './useRegeneratePoses';
 export type { PoseRegenEntry, PoseRegenStatus, PoseItemStatus } from './useRegeneratePoses';
+export {
+  evaluateSlice,
+  evalGuard,
+  createSliceState,
+  matchesSlice,
+  bracketOfAffection,
+  formatGuard,
+  formatEffect,
+  DEFAULT_RELATIONSHIP,
+} from './events';
+export type {
+  TimeSlice,
+  RelationshipState,
+  EventHistory,
+  EventContext,
+  EventKind,
+  EventDef,
+  Guard,
+  Effect,
+  SceneRef,
+  SliceState,
+  SliceEvaluation,
+  AffectionBracket,
+} from './events';
+export { deriveMontageModel, liLineColor, LI_LINE_PALETTE } from './sliceModel';
+export type {
+  MontageModel,
+  MontageSlice,
+  MontageCharacter,
+  MontageLocation,
+  SliceEventView,
+  CharacterMove,
+  MontageInputs,
+} from './sliceModel';
 export { useBulkAudioGeneration, buildBaseStyle, buildToneStyle } from './useBulkAudioGeneration';
 export type { AudioBulkStatus, AudioBulkFailure } from './useBulkAudioGeneration';
 export {

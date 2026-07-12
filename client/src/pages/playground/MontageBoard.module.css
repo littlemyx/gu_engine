@@ -1,0 +1,512 @@
+/* «Монтажный стол» (макет 4a): лента кадров-срезов + лента событий + таймлайн. */
+
+.board {
+  display: flex;
+  flex-direction: column;
+  background: #f7f6f2;
+  border: 1px solid #d6d3cd;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── легенда ────────────────────────────────────────────────────────────── */
+
+.legendRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 24px 6px 24px;
+  flex-wrap: wrap;
+}
+
+.legendLabel {
+  font-size: 11px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 4px;
+}
+
+.charChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 3px 12px;
+  background: #fff;
+  cursor: pointer;
+  position: relative;
+  transition: opacity 0.15s ease, box-shadow 0.15s ease;
+}
+
+.charChipDim {
+  opacity: 0.45;
+}
+
+.charChipActive {
+  font-weight: 600;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+.charChipDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.legendDivider {
+  width: 1px;
+  height: 18px;
+  background: #e5e7eb;
+  margin: 0 6px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #374151;
+}
+
+.legendMeta {
+  margin-left: auto;
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+/* ── лента кадров ───────────────────────────────────────────────────────── */
+
+.filmViewport {
+  position: relative;
+  height: 466px;
+  overflow: hidden;
+  background-image: radial-gradient(#e7e4de 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.stripInner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+.frame {
+  position: absolute;
+  top: 44px;
+  height: 396px;
+  border: 1px solid #ddd9d1;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.42);
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.frameSelected {
+  border: 1.5px solid #4f46e5;
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 8px 28px rgba(79, 70, 229, 0.1);
+}
+
+.frameTitle {
+  position: absolute;
+  top: 14px;
+  text-align: center;
+  font-size: 12px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.frameTitleSel {
+  top: 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4f46e5;
+}
+
+.anchorMono {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+.frameTitleSel .anchorMono {
+  color: #8b5cf6;
+}
+
+.locBox {
+  position: absolute;
+  border: 1px solid #e0ddd6;
+  border-radius: 10px;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.locBoxSel {
+  border: 1.5px solid #c7c2f5;
+  border-radius: 12px;
+}
+
+.locBoxTitle {
+  position: absolute;
+  left: 12px;
+  top: 6px;
+  right: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.locBoxSel .locBoxTitle {
+  font-size: 12px;
+  font-weight: 650;
+  color: #1f2937;
+}
+
+.ambientChip {
+  position: absolute;
+  right: 10px;
+  top: 7px;
+  font-size: 9px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.offstageLabel {
+  position: absolute;
+  text-align: center;
+  font-size: 9px;
+  color: #c2beb6;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.threadsSvg {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.threadHit {
+  cursor: pointer;
+}
+
+.eventDiamond {
+  cursor: pointer;
+}
+
+/* ── мини-карта переходов ───────────────────────────────────────────────── */
+
+.minimap {
+  position: absolute;
+  right: 20px;
+  bottom: 12px;
+  width: 284px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(31, 41, 55, 0.07);
+}
+
+.minimapTitle {
+  position: absolute;
+  left: 12px;
+  top: 7px;
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.minimapEdgeHit {
+  cursor: pointer;
+}
+
+/* ── лента событий ──────────────────────────────────────────────────────── */
+
+.eventStrip {
+  position: relative;
+  height: 136px;
+  border-top: 1px solid #eeeae3;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.stripLabel {
+  position: absolute;
+  left: 24px;
+  top: 8px;
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.eventCard {
+  position: absolute;
+  width: 172px;
+  background: #fff;
+  border: 1.5px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 7px 10px;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.eventCard:hover {
+  box-shadow: 0 3px 10px rgba(31, 41, 55, 0.1);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cardN {
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.cardTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #1f2937;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardCond {
+  font-size: 10px;
+  color: #9ca3af;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cardStatus {
+  font-size: 10px;
+  margin-top: 2px;
+}
+
+.moreChip {
+  position: absolute;
+  font-size: 10px;
+  color: #6b7280;
+  background: #f3f1eb;
+  border: 1px solid #e5e2da;
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+
+/* ── таймлайн ───────────────────────────────────────────────────────────── */
+
+.timeline {
+  position: relative;
+  background: #fff;
+  border-top: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.tlLabel {
+  position: absolute;
+  left: 24px;
+  top: 10px;
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.tlCharName {
+  position: absolute;
+  left: 24px;
+  font-size: 11px;
+  color: #6b7280;
+  width: 60px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 0.15s ease;
+}
+
+.frameLabel {
+  position: absolute;
+  text-align: center;
+  font-size: 10px;
+  color: #6b7280;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.frameLabelSel {
+  color: #4f46e5;
+  font-weight: 700;
+}
+
+.tlWindow {
+  cursor: grab;
+}
+
+.tlWindowDragging {
+  cursor: grabbing;
+}
+
+.tlPlayhead {
+  cursor: ew-resize;
+}
+
+/* ── инспектор события ──────────────────────────────────────────────────── */
+
+.inspector {
+  position: absolute;
+  right: 20px;
+  top: 56px;
+  width: 312px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 16px 40px rgba(31, 41, 55, 0.16);
+  padding: 14px 16px;
+  z-index: 20;
+}
+
+.inspHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inspKind {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.inspTitle {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+}
+
+.inspClose {
+  border: none;
+  background: transparent;
+  color: #9ca3af;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.inspClose:hover {
+  color: #374151;
+}
+
+.inspId {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 10px;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+.inspGrid {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 3px 8px;
+  margin-top: 10px;
+}
+
+.inspKey {
+  font-size: 10px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 1px;
+}
+
+.inspVal {
+  font-size: 11px;
+  color: #374151;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  word-break: break-word;
+}
+
+.inspEff {
+  font-size: 11px;
+  color: #166534;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  word-break: break-word;
+}
+
+.inspFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.inspStatus {
+  font-size: 11px;
+}
+
+.inspParticipants {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.inspToken {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 2px 8px;
+}
+
+.inspTokenDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* ── пустое состояние ───────────────────────────────────────────────────── */
+
+.boardEmpty {
+  padding: 48px 24px;
+  text-align: center;
+  font-size: 13px;
+  color: #6b7280;
+}
