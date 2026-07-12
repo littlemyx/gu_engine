@@ -1,5 +1,6 @@
-import type { AnchorBeat, Brief, DialogueVariant, EndingVariant, WorldLocation, WorldModel } from './types';
+import type { AnchorBeat, Brief, DraftScene, EndingVariant, WorldLocation, WorldModel } from './types';
 import { DEFAULT_LOCATION_MOOD, endingKey, isLocationMood, isSpecialAmbientKind } from './types';
+import type { DialogueUnit, DialogueUnitNode } from './dialogueUnit';
 import type { CharacterGenState, ImageGenState } from './narrativeStore';
 import type { Calendar, CharacterSchedule, SpineBeat, SpinePlan } from './calendarTypes';
 import { guardFlags } from './validateSpine';
@@ -153,7 +154,7 @@ export function compileCalendarGameProject(
   schedule: CharacterSchedule,
   worldModel: WorldModel,
   spineBeatProse: Record<string, AnchorBeat> = {},
-  unitProse: Record<string, DialogueVariant[]> = {},
+  unitProse: Record<string, DialogueUnit[]> = {},
   endings: Record<string, EndingVariant> = {},
   images: Record<string, ImageGenState> = {},
   characters: Record<string, CharacterGenState> = {},
@@ -329,10 +330,12 @@ export function compileCalendarGameProject(
     nodes.push(hubNode);
 
     // 2a. Встречи: диапазон расписания × наличие прозы. Нет прозы — нет
-    // кнопки (v1: unitProse ключуется enc_<liId>; фаза 3 привяжет юниты).
+    // кнопки. unitProse ключуется enc_<liId> и несёт DialogueUnit-графы;
+    // записи без nodes (легаси DialogueVariant-форма из persisted v9)
+    // молча отбрасываются — их структуру компилятор не понимает.
     for (const run of runsByLoc.get(loc.id) ?? []) {
-      const variants = unitProse[`enc_${run.liId}`];
-      if (!variants || variants.length === 0) continue;
+      const units = (unitProse[`enc_${run.liId}`] ?? []).filter(u => Array.isArray(u?.nodes));
+      if (units.length === 0) continue;
 
       const met = metVar(run.liId, run.fromSlot);
       stateVars.set(met, { range: [0, 1], default: 0 });
@@ -353,7 +356,7 @@ export function compileCalendarGameProject(
         ],
       });
 
-      wireEncounter(encRouterId, run.liId, met, variants, loc.id);
+      wireEncounter(encRouterId, run.liId, met, units, loc.id);
       encountersWired++;
     }
 
@@ -373,14 +376,31 @@ export function compileCalendarGameProject(
     edges.push({ id: `e_${waitId}`, source: hubId(loc.id), sourceHandle: waitId, target: enterId(loc.id) });
   }
 
-  // Диалоговый encounter: router по брекетам отношений → сцены варианта →
-  // возврат в hub локации. Выход помечает met и двигает slot (копия паттерна
-  // compileWorldGame.wireEncounter, time → slot).
+  // Адаптер узла юнита под DraftScene-хелперы (pickCharacterEmotion и др.).
+  function nodeAsDraftScene(node: DialogueUnitNode): DraftScene {
+    return {
+      id: node.id,
+      location: '',
+      timeMarker: '',
+      charactersPresent: node.charactersPresent,
+      characterEmotions: node.characterEmotions,
+      narration: node.narration,
+      dialogue: node.dialogue,
+      choices: [],
+    };
+  }
+
+  // Диалоговый encounter (фаза 3): router по брекетам отношений →
+  // per-node сцены DialogueUnit-графа. Диалог не знает о перемещении:
+  // choices несут ТОЛЬКО собственные эффекты (rel-дельты/флаги), а
+  // движенческие эффекты {met: 1, slot: +1} живут на единственном
+  // auto-advance выходе closing-узлов — это и есть closing-переход
+  // encounter-обёртки, единственная дорога назад в хаб.
   function wireEncounter(
     encRouterId: string,
     liId: string,
     met: string,
-    variantsRaw: DialogueVariant[],
+    unitsRaw: DialogueUnit[],
     locId: string,
   ): void {
     const returnTarget = hubId(locId);
@@ -393,69 +413,59 @@ export function compileCalendarGameProject(
     nodes.push(routerNode);
 
     // Безусловный neutral обязан идти последним — роутер берёт первое активное.
-    const variants = [...variantsRaw].sort((a, b) => BRACKET_WIRE_ORDER[a.bracket] - BRACKET_WIRE_ORDER[b.bracket]);
+    const units = [...unitsRaw].sort((a, b) => BRACKET_WIRE_ORDER[a.bracket] - BRACKET_WIRE_ORDER[b.bracket]);
 
-    const exitEffects = (extraDeltas: Record<string, number>): Record<string, number> => ({
-      ...extraDeltas,
-      [met]: 1,
-      [SLOT_VAR]: 1,
-    });
+    // Closing-переход: встреча состоялась, время двинулось.
+    const movementEffects: Record<string, number> = { [met]: 1, [SLOT_VAR]: 1 };
 
     const audioProfile = buildSceneAudioProfile(liId, audio.byLi[liId]);
 
-    for (const variant of variants) {
-      const condition = bracketCondition(liId, variant.bracket);
+    for (const unit of units) {
+      const condition = bracketCondition(liId, unit.bracket);
 
-      const sceneIdMap = new Map<string, string>();
-      for (const vs of variant.scenes) {
-        sceneIdMap.set(vs.id, uniqueId(`${encRouterId}_${vs.id}`));
+      const nodeIdMap = new Map<string, string>();
+      for (const un of unit.nodes) {
+        nodeIdMap.set(un.id, uniqueId(`${encRouterId}_${un.id}`));
       }
 
-      const routerOutId = uniqueId(`${encRouterId}__${variant.bracket}`);
+      const routerOutId = uniqueId(`${encRouterId}__${unit.bracket}`);
       routerNode.data.outputs.push({ id: routerOutId, text: '' });
       const condEdge: GameSceneEdge = {
         id: `e_${routerOutId}`,
         source: encRouterId,
         sourceHandle: routerOutId,
-        target: sceneIdMap.get(variant.entrySceneId) ?? variant.entrySceneId,
+        target: nodeIdMap.get(unit.entryNodeId) ?? unit.entryNodeId,
       };
       if (condition.length > 0) condEdge.condition = condition;
       edges.push(condEdge);
 
-      for (const vs of variant.scenes) {
-        const vsId = sceneIdMap.get(vs.id)!;
+      for (const un of unit.nodes) {
+        const unId = nodeIdMap.get(un.id)!;
         dialogueSceneCount++;
 
-        const positions = assignPositions(vs.charactersPresent.length);
+        const draft = nodeAsDraftScene(un);
+        const positions = assignPositions(un.charactersPresent.length);
         const sprites: GameSpriteEntry[] = [];
-        for (let ci = 0; ci < vs.charactersPresent.length; ci++) {
-          const charId = vs.charactersPresent[ci];
-          const emotion = pickCharacterEmotion(vs, charId);
+        for (let ci = 0; ci < un.charactersPresent.length; ci++) {
+          const charId = un.charactersPresent[ci];
+          const emotion = pickCharacterEmotion(draft, charId);
           const { url } = resolveEmotionToSpriteUrl(characters[charId], emotion);
           if (url) sprites.push({ url, position: positions[ci] ?? 'center' });
         }
 
-        const vsOutputs: GameSceneOutput[] = [];
-        if (vs.choices.length === 0) {
-          const autoId = uniqueId(`${vsId}__auto`);
-          const nextVs = variant.scenes[variant.scenes.indexOf(vs) + 1];
-          const isExit = !nextVs;
-          vsOutputs.push(
-            isExit ? { id: autoId, text: '', effects: { stateDeltas: exitEffects({}) } } : { id: autoId, text: '' },
-          );
-          edges.push({
-            id: `e_${autoId}`,
-            source: vsId,
-            sourceHandle: autoId,
-            target: nextVs ? sceneIdMap.get(nextVs.id) ?? nextVs.id : returnTarget,
-          });
+        const unOutputs: GameSceneOutput[] = [];
+        if (un.choices.length === 0) {
+          // Closing-узел (валидатор гарантирует closing===true у листьев;
+          // дефектный лист компилируется так же — обрыв в хаб хуже).
+          // Единственный auto-advance несёт ВСЕ движенческие эффекты.
+          const autoId = uniqueId(`${unId}__auto`);
+          unOutputs.push({ id: autoId, text: '', effects: { stateDeltas: { ...movementEffects } } });
+          edges.push({ id: `e_${autoId}`, source: unId, sourceHandle: autoId, target: returnTarget });
         } else {
-          for (const c of vs.choices) {
+          for (const c of un.choices) {
             const cId = uniqueId(c.id);
-            const isExit = c.nextSceneId === null;
-            const deltas: Record<string, number> = isExit
-              ? exitEffects(c.effects.stateDeltas)
-              : { ...c.effects.stateDeltas };
+            // ТОЛЬКО собственные эффекты выбора: rel-дельты и флаги.
+            const deltas = { ...c.effects.stateDeltas };
             const hasEff =
               Object.keys(deltas).length > 0 || c.effects.flagSet.length > 0 || c.effects.flagClear.length > 0;
             const out: GameSceneOutput = { id: cId, text: c.text };
@@ -466,36 +476,38 @@ export function compileCalendarGameProject(
                 flagClear: c.effects.flagClear.length > 0 ? c.effects.flagClear : undefined,
               };
             }
-            vsOutputs.push(out);
+            unOutputs.push(out);
             edges.push({
               id: `e_${cId}`,
-              source: vsId,
+              source: unId,
               sourceHandle: cId,
-              target: isExit ? returnTarget : sceneIdMap.get(c.nextSceneId!) ?? c.nextSceneId!,
+              // Все переходы выборов — ВНУТРИ юнита (валидатор гарантирует
+              // существование цели; сырой next — детерминированный фолбэк).
+              target: nodeIdMap.get(c.next) ?? c.next,
             });
           }
         }
 
         nodes.push({
-          id: vsId,
+          id: unId,
           type: 'scene',
           position: { x: 0, y: 0 },
           data: {
-            label: renderDraftSceneText(vs.narration, vs.dialogue, id => liNameById.get(id) ?? id),
+            label: renderDraftSceneText(un.narration, un.dialogue, id => liNameById.get(id) ?? id),
             image: bgForLocation(locId),
             sprite: sprites[0]?.url,
             sprites: sprites.length ? sprites : undefined,
-            outputs: vsOutputs,
-            sceneType: vs.choices.length === 0 ? 'narration' : 'dialogue',
+            outputs: unOutputs,
+            sceneType: un.choices.length === 0 ? 'narration' : 'dialogue',
             audioProfile,
-            sfxUrl: resolveSfxUrl(pickCharacterEmotion(vs, liId), audio.sfx),
+            sfxUrl: resolveSfxUrl(pickCharacterEmotion(draft, liId), audio.sfx),
           },
         });
       }
     }
 
-    // Страховка от ROUTER_DEAD_END при отсутствии neutral-варианта.
-    const hasUnconditional = variants.some(v => bracketCondition(liId, v.bracket).length === 0);
+    // Страховка от ROUTER_DEAD_END при отсутствии neutral-юнита.
+    const hasUnconditional = units.some(u => bracketCondition(liId, u.bracket).length === 0);
     if (!hasUnconditional) {
       const fallbackId = uniqueId(`${encRouterId}__fallback`);
       routerNode.data.outputs.push({ id: fallbackId, text: '' });

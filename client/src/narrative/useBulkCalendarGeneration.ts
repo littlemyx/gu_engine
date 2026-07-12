@@ -1,14 +1,19 @@
 import { useCallback, useRef, useState } from 'react';
 import {
+  generateDialogueQa,
+  generateDialogueUnit,
   generateSpine,
   generateWorldCalendar,
   getBatchStatus,
   type BatchStatus,
 } from '@root/text_gen/generated_client';
-import type { Brief, WorldLocation, WorldModel } from './types';
+import type { Brief, DialogueVariantBracket, LoveInterestCard, SegmentIssue, WorldLocation, WorldModel } from './types';
 import { parseWorldModel } from './types';
 import type { Calendar, CastPlan, SpinePlan } from './calendarTypes';
 import { parseCalendar, parseSpinePlan } from './calendarTypes';
+import type { DialogueUnit } from './dialogueUnit';
+import { parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
+import { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
 import { validateCalendar } from './validateCalendar';
 import { validateSpine, guardFlags } from './validateSpine';
 import { buildScheduleStub } from './beatSchedule';
@@ -18,8 +23,9 @@ import { buildSpineRequestPayload } from './buildSpineRequest';
 import { useNarrativeStore } from './narrativeStore';
 
 /**
- * Оркестрация календарного пайплайна (фаза 1 docs/plans/calendar-branching.md):
- * cast (стаб без LLM) → world_calendar (LLM) → spine (LLM) → schedule (стаб).
+ * Оркестрация календарного пайплайна (фазы 1+3 docs/plans/calendar-branching.md):
+ * cast (стаб без LLM) → world_calendar (LLM) → spine (LLM) → schedule (стаб)
+ * → dialogue_units (LLM: LI × 3 брекета, structural validate + dialogueQA-критик).
  *
  * Механика LLM-стадий скопирована с worldModel-фазы useBulkStoryGeneration:
  * endpoint → polling /status/:batchId, best-of retry ≤3 попыток с фидбеком
@@ -35,9 +41,10 @@ import { useNarrativeStore } from './narrativeStore';
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000;
 const MAX_ATTEMPTS = 3;
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
+const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
-export type BulkCalendarPhase = 'idle' | 'cast' | 'world_calendar' | 'spine' | 'schedule' | 'done';
+export type BulkCalendarPhase = 'idle' | 'cast' | 'world_calendar' | 'spine' | 'schedule' | 'dialogue_units' | 'done';
 
 export type BulkCalendarProgress = { completed: number; total: number };
 
@@ -226,6 +233,141 @@ export function useBulkCalendarGeneration() {
     if (!useNarrativeStore.getState().schedule) {
       useNarrativeStore.getState().setSchedule(buildScheduleStub(brief, spine, calendar, castPlan, tagMap));
     }
+    const schedule = useNarrativeStore.getState().schedule;
+    if (!schedule) {
+      fail('schedule', 'стадия schedule не оставила расписания в сторе');
+      return;
+    }
+
+    // ── Phase 5: dialogue_units — LI × 3 брекета (фаза 3 плана). ────────────
+    // Структурный validateDialogueUnit гейтит best-of retry (≤MAX_ATTEMPTS с
+    // previousIssues-фидбеком); поверх структурно валидного юнита — ОДИН
+    // dialogueQA-проход (LLM-критик: ответы на ask, тон=брекету, завершённость
+    // closing); error-severity QA-issues дают одну дополнительную попытку
+    // регенерации. Кэш: LI с 3 юнитами, валидными против текущих входов,
+    // пропускается (деньги — только на отсутствующее и невалидное).
+    publish('dialogue_units', 4);
+    {
+      const stageIssues: string[] = [];
+
+      for (const li of brief.loveInterests) {
+        const unitKey = `enc_${li.id}`;
+        const unitErrors = (u: DialogueUnit): string[] =>
+          validateDialogueUnit(u, li.id)
+            .filter(i => i.severity === 'error')
+            .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+
+        const cached = useNarrativeStore.getState().unitProse[unitKey] ?? [];
+        const cachedComplete =
+          cached.length === 3 &&
+          BRACKETS.every(b => {
+            const u = cached.find(x => x.bracket === b);
+            return u != null && unitErrors(u).length === 0;
+          });
+        if (cachedComplete) continue;
+
+        const units: DialogueUnit[] = [];
+        for (const bracket of BRACKETS) {
+          // Валидный кэшированный брекет не трогаем.
+          const cachedForBracket = cached.find(u => u.bracket === bracket);
+          if (cachedForBracket && unitErrors(cachedForBracket).length === 0) {
+            units.push(cachedForBracket);
+            continue;
+          }
+
+          try {
+            const basePayload = buildDialogueUnitRequestPayload(
+              brief,
+              li,
+              bracket,
+              calendar,
+              schedule,
+              worldModel,
+              spine,
+            );
+            type UnitPayload = typeof basePayload & { previousAttempt?: DialogueUnit; previousIssues?: string[] };
+            const generateOnce = async (
+              prev: { unit: DialogueUnit; errors: string[] } | null,
+            ): Promise<DialogueUnit> => {
+              const payload: UnitPayload = !prev
+                ? basePayload
+                : { ...basePayload, previousAttempt: prev.unit, previousIssues: prev.errors };
+              const { data, error: reqError } = await generateDialogueUnit({ body: payload });
+              if (reqError || !data) throw new Error(`не удалось запустить генерацию юнита bracket=${bracket}`);
+              return pollBatchResult(data.batchId, parseDialogueUnit);
+            };
+
+            // Невалидный кэш сидирует best — его ошибки уходят фидбеком.
+            let best: { unit: DialogueUnit; errorCount: number; errors: string[] } | null =
+              cachedForBracket != null
+                ? {
+                    unit: cachedForBracket,
+                    errorCount: unitErrors(cachedForBracket).length,
+                    errors: unitErrors(cachedForBracket),
+                  }
+                : null;
+            let lastAttemptError: unknown = null;
+            for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+              try {
+                const unit = await generateOnce(
+                  best && best.errorCount > 0 ? { unit: best.unit, errors: best.errors } : null,
+                );
+                const errors = unitErrors(unit);
+                if (!best || errors.length < best.errorCount) {
+                  best = { unit, errorCount: errors.length, errors };
+                }
+                if (errors.length === 0) break;
+              } catch (attemptErr) {
+                lastAttemptError = attemptErr;
+              }
+            }
+            if (!best) {
+              throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
+            }
+
+            // Один QA-проход поверх структурно валидного юнита. Недоступность
+            // критика не блокирует пайплайн — QA best-effort по дизайну D1.
+            if (best.errorCount === 0) {
+              try {
+                const qaErrors = (await runDialogueQA(best.unit, bracket, li))
+                  .filter(i => i.severity === 'error')
+                  .map(i => `[QA] ${i.scope}: ${i.message}`);
+                if (qaErrors.length > 0) {
+                  // Одна дополнительная регенерация с QA-фидбеком; берём
+                  // новый юнит только если он структурно чист.
+                  try {
+                    const regen = await generateOnce({ unit: best.unit, errors: qaErrors });
+                    if (unitErrors(regen).length === 0) {
+                      best = { unit: regen, errorCount: 0, errors: [] };
+                    }
+                  } catch {
+                    // Оставляем исходный структурно валидный юнит.
+                  }
+                }
+              } catch {
+                // QA-критик недоступен — юнит уже структурно валиден.
+              }
+            }
+
+            units.push(best.unit);
+            if (best.errorCount > 0) {
+              stageIssues.push(`${li.id}/${bracket}: сохранён с ошибками: ${best.errors.slice(0, 2).join('; ')}`);
+            }
+          } catch (e) {
+            stageIssues.push(`${li.id}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
+        if (units.length > 0) {
+          useNarrativeStore.getState().setUnitProse(unitKey, units);
+        }
+      }
+
+      if (stageIssues.length > 0) {
+        fail('dialogue_units', `диалоговые юниты не собраны полностью (${stageIssues.length} проблем)`, stageIssues);
+        return;
+      }
+    }
 
     publish('done', TOTAL_STEPS);
     runningRef.current = false;
@@ -303,6 +445,41 @@ function spineToAttempt(spine: SpinePlan): Record<string, unknown> {
       requires: guardFlags(e.guard),
     })),
   };
+}
+
+/**
+ * QA-request builder инлайном: юнит + брекет + выжимка карточки LI →
+ * issues LLM-критика (D1). Ответ — строгий JSON {"issues": [...]}.
+ */
+async function runDialogueQA(
+  unit: DialogueUnit,
+  bracket: DialogueVariantBracket,
+  li: LoveInterestCard,
+): Promise<SegmentIssue[]> {
+  const { data, error } = await generateDialogueQa({
+    body: { unit, bracket, liCardSummary: buildLiCardSummary(li) },
+  });
+  if (error || !data) throw new Error('не удалось запустить dialogueQA');
+  return pollBatchResult(data.batchId, parseDialogueQAIssues);
+}
+
+function parseDialogueQAIssues(raw: string): SegmentIssue[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`dialogueQA JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  const obj = (parsed ?? {}) as Record<string, unknown>;
+  if (!Array.isArray(obj.issues)) throw new Error('dialogueQA response missing issues array');
+  return (obj.issues as unknown[]).map(i => {
+    const issue = i as Record<string, unknown>;
+    return {
+      severity: issue.severity === 'error' ? 'error' : 'warning',
+      scope: String(issue.scope ?? ''),
+      message: String(issue.message ?? ''),
+    };
+  });
 }
 
 async function pollBatchResult<T>(batchId: string, parse: (raw: string) => T): Promise<T> {

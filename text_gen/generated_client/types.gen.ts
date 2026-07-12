@@ -609,6 +609,86 @@ export type DialogueVariantRequest = {
     previousIssues?: Array<string>;
 };
 
+export type DialogueUnitRequest = {
+    /**
+     * Brief context.
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Full LoveInterestCard of the character.
+     */
+    liCard: {
+        [key: string]: unknown;
+    };
+    /**
+     * ArchetypeProfile for the character's archetype.
+     */
+    archetypeProfile: {
+        [key: string]: unknown;
+    };
+    /**
+     * Current story context (where/when the encounter happens).
+     */
+    storyContext: {
+        location: string;
+        timeMarker: string;
+        recentEvents: string;
+    };
+    /**
+     * Relationship bracket determining dialogue tone.
+     */
+    bracket: 'positive' | 'neutral' | 'negative';
+    /**
+     * Expected relationship state ranges at encounter entry.
+     */
+    stateRanges: {
+        [key: string]: [
+            number,
+            number
+        ];
+    };
+    /**
+     * Arc context from the beat plan: encounter index/total, target
+     * beat, per-encounter goal, prior encounter goals, anchor beat text.
+     *
+     */
+    encounterContext?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Previously generated DialogueUnit that failed validation.
+     * When present alongside previousIssues, the LLM is asked to
+     * produce a corrected version.
+     *
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
+export type DialogueQaRequest = {
+    /**
+     * The generated DialogueUnit to review (opaque JSON).
+     */
+    unit: {
+        [key: string]: unknown;
+    };
+    /**
+     * Relationship bracket the unit was generated for.
+     */
+    bracket: 'positive' | 'neutral' | 'negative';
+    /**
+     * Short summary of the LI card (name, personality, speech style).
+     */
+    liCardSummary: string;
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -820,6 +900,38 @@ export type GenerateDialogueVariantResponses = {
 };
 
 export type GenerateDialogueVariantResponse = GenerateDialogueVariantResponses[keyof GenerateDialogueVariantResponses];
+
+export type GenerateDialogueUnitData = {
+    body: DialogueUnitRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/dialogueUnit';
+};
+
+export type GenerateDialogueUnitResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateDialogueUnitResponse = GenerateDialogueUnitResponses[keyof GenerateDialogueUnitResponses];
+
+export type GenerateDialogueQaData = {
+    body: DialogueQaRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/dialogueQA';
+};
+
+export type GenerateDialogueQaResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateDialogueQaResponse = GenerateDialogueQaResponses[keyof GenerateDialogueQaResponses];
 
 export type ListBatchesData = {
     body?: never;

@@ -4,7 +4,9 @@ import { guardFromRequires } from './calendarTypes';
 import type { Calendar, CharacterSchedule, SpineBeat, SpinePlan } from './calendarTypes';
 import { SAMPLE_BRIEF } from './sampleBrief';
 import { DEFAULT_LOCATION_MOOD, endingKey } from './types';
-import type { Brief, DialogueVariant, EndingVariant, WorldLocation, WorldModel } from './types';
+import type { Brief, EndingVariant, WorldLocation, WorldModel } from './types';
+import type { DialogueUnit } from './dialogueUnit';
+import { validateDialogueUnit } from './dialogueUnit';
 import type { GameSceneGraph, GameStateCondition } from './convertToGameProject';
 
 const brief: Brief = SAMPLE_BRIEF;
@@ -77,19 +79,64 @@ const schedule: CharacterSchedule = {
   kira: ['loc_a', 'loc_a', 'loc_a', null, null, null, 'loc_b', 'loc_b', 'loc_b', null, null, null],
 };
 
-const dialogueVariant: DialogueVariant = {
-  bracket: 'neutral',
+/**
+ * DialogueUnit-фикстура (фаза 3): entry с ask/farewell, узел-ответ с
+ * farewell и closing-узел с прощальной репликой Киры. Проходит
+ * validateDialogueUnit (см. ассерт в сьюте).
+ */
+const dialogueUnit: DialogueUnit = {
+  id: 'unit_kira_neutral',
   liId: 'kira',
-  entrySceneId: 'd1',
-  scenes: [
+  bracket: 'neutral',
+  entryNodeId: 'd1',
+  nodes: [
     {
       id: 'd1',
-      location: '',
-      timeMarker: '',
-      charactersPresent: [],
+      charactersPresent: ['kira'],
+      characterEmotions: { kira: 'idle' },
       narration: 'Кира кивает.',
-      dialogue: [],
+      dialogue: [{ speaker: 'kira', emotion: 'idle', line: 'Привет.' }],
+      choices: [
+        {
+          id: 'c_ask',
+          kind: 'ask',
+          text: 'Спросить, как прошёл день',
+          next: 'd2',
+          effects: { stateDeltas: {}, flagSet: [], flagClear: [] },
+        },
+        {
+          id: 'c_bye',
+          kind: 'farewell',
+          text: 'Попрощаться',
+          next: 'd3',
+          effects: { stateDeltas: {}, flagSet: [], flagClear: [] },
+        },
+      ],
+    },
+    {
+      id: 'd2',
+      charactersPresent: ['kira'],
+      characterEmotions: { kira: 'soft' },
+      narration: 'Она пожимает плечами.',
+      dialogue: [{ speaker: 'kira', emotion: 'soft', line: 'День как день, спасибо.' }],
+      choices: [
+        {
+          id: 'c_bye2',
+          kind: 'farewell',
+          text: 'Пожелать хорошего вечера',
+          next: 'd3',
+          effects: { stateDeltas: { 'relationship[kira].affection': 0.05 }, flagSet: [], flagClear: [] },
+        },
+      ],
+    },
+    {
+      id: 'd3',
+      charactersPresent: ['kira'],
+      characterEmotions: { kira: 'happy' },
+      narration: 'Кира машет рукой.',
+      dialogue: [{ speaker: 'kira', emotion: 'happy', line: 'До встречи!' }],
       choices: [],
+      closing: true,
     },
   ],
 };
@@ -106,7 +153,7 @@ const endings: Record<string, EndingVariant> = {
   [endingKey('bad')]: endingVariant('bad', null),
 };
 
-const compile = (unitProse: Record<string, DialogueVariant[]> = {}) =>
+const compile = (unitProse: Record<string, DialogueUnit[]> = {}) =>
   compileCalendarGameProject(brief, spine, cal, schedule, worldModel, {}, unitProse, endings);
 
 const edgesFrom = (scenes: GameSceneGraph, source: string) => scenes.edges.filter(e => e.source === source);
@@ -166,12 +213,12 @@ describe('compileCalendarGameProject', () => {
   });
 
   it('lintRouters: у каждого роутера последнее ребро безусловно', () => {
-    const { scenes } = compile({ enc_kira: [dialogueVariant] });
+    const { scenes } = compile({ enc_kira: [dialogueUnit] });
     expect(lintRouters(scenes)).toEqual([]);
   });
 
   it('граф без висячих целей: каждое ребро ведёт в существующий узел', () => {
-    const { scenes } = compile({ enc_kira: [dialogueVariant] });
+    const { scenes } = compile({ enc_kira: [dialogueUnit] });
     const ids = new Set(scenes.nodes.map(n => n.id));
     for (const e of scenes.edges) {
       expect(ids.has(e.target), `висячее ребро ${e.id} → ${e.target}`).toBe(true);
@@ -185,7 +232,7 @@ describe('compileCalendarGameProject', () => {
       { liId: 'kira', locId: 'loc_b', fromSlot: 6, toSlot: 8 },
     ]);
 
-    const { scenes, project, stats } = compile({ enc_kira: [dialogueVariant] });
+    const { scenes, project, stats } = compile({ enc_kira: [dialogueUnit] });
     expect(stats.encountersWired).toBe(2);
 
     const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
@@ -197,12 +244,65 @@ describe('compileCalendarGameProject', () => {
     expect(hasCond(meetEdge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
     expect(project.settings.stateSchema?.vars['met[kira].0']).toEqual({ range: [0, 1], default: 0 });
 
-    // Выход из диалога: met=1 и slot+1 (терминальная narration-сцена).
-    const dlgScenes = scenes.nodes.filter(n => n.data.label === 'Кира кивает.');
-    expect(dlgScenes.length).toBe(2); // по сцене на каждый диапазон
-    const exitOut = dlgScenes[0].data.outputs[0];
+    // Выход из диалога: met=1 и slot+1 на auto-advance closing-узла
+    // (терминальная narration-сцена с прощальной репликой).
+    const closingScenes = scenes.nodes.filter(n => n.id.endsWith('_d3'));
+    expect(closingScenes.length).toBe(2); // по closing-сцене на каждый диапазон
+    const exitOut = closingScenes[0].data.outputs[0];
+    expect(exitOut.text).toBe('');
     expect(exitOut.effects?.stateDeltas?.slot).toBe(1);
     expect(Object.keys(exitOut.effects?.stateDeltas ?? {}).some(k => k.startsWith('met[kira].'))).toBe(true);
+  });
+
+  it('фикстура юнита структурно валидна (контракт фазы 3)', () => {
+    expect(validateDialogueUnit(dialogueUnit, 'kira').filter(i => i.severity === 'error')).toEqual([]);
+  });
+
+  it('регресс полноты диалога: ask не ведёт в хаб; движение — только на closing-переходе', () => {
+    const { scenes } = compile({ enc_kira: [dialogueUnit] });
+
+    // Индексация: ребро по (source, sourceHandle).
+    const edgeByHandle = new Map(scenes.edges.map(e => [`${e.source}::${e.sourceHandle}`, e]));
+    const nodeById = new Map(scenes.nodes.map(n => [n.id, n]));
+
+    let choiceOutputs = 0;
+    let movementOutputs = 0;
+    for (const node of scenes.nodes) {
+      if (node.data.sceneType !== 'dialogue' && node.data.sceneType !== 'narration') continue;
+      for (const out of node.data.outputs) {
+        const edge = edgeByHandle.get(`${node.id}::${out.id}`);
+        if (!edge) continue;
+
+        // 1. Любой ВЫБОР игрока в диалоге (output с текстом у dialogue-сцены)
+        //    остаётся внутри юнита: ребро НЕ ведёт в hub_*. Единственная
+        //    дорога в хаб — auto-advance closing-узла.
+        if (node.data.sceneType === 'dialogue' && out.text !== '') {
+          choiceOutputs++;
+          expect(edge.target.startsWith('hub_'), `выбор "${out.text}" (${node.id}) ведёт в ${edge.target}`).toBe(false);
+          // Собственные эффекты выбора не трогают движение.
+          const deltas = Object.keys(out.effects?.stateDeltas ?? {});
+          expect(deltas.some(k => k === 'slot' || k.startsWith('met['))).toBe(false);
+        }
+
+        // 2. Эффекты движения (slot/met) — ТОЛЬКО на auto-advance closing-узла:
+        //    narration-сцена с единственным пустым output, ребро в hub_*.
+        const deltas = Object.keys(out.effects?.stateDeltas ?? {});
+        const touchesMovement = deltas.some(k => k === 'slot' || k.startsWith('met['));
+        const isWaitButton = out.text === 'Подождать'; // хаб-кнопка тоже двигает slot
+        const isBeatExit = spine.beats.some(b => b.id === node.id); // биты двигают slot сами
+        if (touchesMovement && !isWaitButton && !isBeatExit) {
+          movementOutputs++;
+          const src = nodeById.get(node.id)!;
+          expect(src.data.sceneType, `движение вне closing-narration: ${node.id}`).toBe('narration');
+          expect(src.data.outputs).toHaveLength(1);
+          expect(out.text).toBe('');
+          expect(edge.target.startsWith('hub_'), `closing-переход ${node.id} ведёт в ${edge.target}`).toBe(true);
+        }
+      }
+    }
+    // Санити: ассерты реально сработали (2 диапазона × (2+1) выбора; 2 closing).
+    expect(choiceOutputs).toBeGreaterThanOrEqual(6);
+    expect(movementOutputs).toBe(2);
   });
 
   it('без прозы встречи не проводятся (нет кнопки)', () => {

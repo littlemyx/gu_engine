@@ -267,6 +267,60 @@ export interface DialogueVariantRequest {
 }
 
 /**
+ * Запрос стадии dialogueUnit (эволюция dialogueVariant, фаза 3
+ * calendar-branching): те же контекстные поля, но выходной контракт —
+ * DialogueUnit с typed choices (kind: ask|say|react|farewell), обязательным
+ * next у каждого выбора и явными closing-узлами. Понятия nextSceneId:null
+ * больше не существует.
+ */
+export interface DialogueUnitRequest {
+  brief: unknown;
+  liCard: unknown;
+  archetypeProfile: unknown;
+  storyContext: {
+    location: string;
+    timeMarker: string;
+    recentEvents: string;
+  };
+  bracket: 'positive' | 'neutral' | 'negative';
+  stateRanges: Record<string, [number, number]>;
+  /**
+   * Контекст встречи из beat-плана: номер встречи, целевой бит арки и
+   * краткая история предыдущих встреч. Отсутствует при генерации без плана.
+   */
+  encounterContext?: {
+    encounterIndex: number;
+    totalPlannedEncounters: number;
+    beatType?: string | null;
+    beatPurpose?: string;
+    goal?: string;
+    liArcSummary?: string;
+    priorEncounters: { anchorId: string; location: string; timeMarker: string; goal: string }[];
+    anchorBeatText?: string;
+  };
+  /**
+   * Previously generated unit that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос стадии dialogueQA (D1): LLM-критик готового диалогового юнита.
+ * Вход — сам юнит + брекет + выжимка карточки LI; выход — строгий JSON
+ * {"issues": [{severity, scope, message}]}.
+ */
+export interface DialogueQARequest {
+  /** Сгенерированный DialogueUnit (opaque JSON). */
+  unit: unknown;
+  bracket: 'positive' | 'neutral' | 'negative';
+  /** Выжимка карточки LI: имя, характер, речевой стиль. */
+  liCardSummary: string;
+}
+
+/**
  * Запрос на генерацию эпилога (одна концовка за вызов).
  * kind=good генерится per-LI; normal/bad — общие.
  */

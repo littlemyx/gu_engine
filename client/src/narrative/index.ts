@@ -133,6 +133,15 @@ export type {
   SpineEnding,
   SpinePlan,
 } from './calendarTypes';
+export {
+  parseDialogueUnit,
+  validateDialogueUnit,
+  DIALOGUE_CHOICE_KINDS,
+  DIALOGUE_UNIT_MAX_DEPTH,
+} from './dialogueUnit';
+export type { DialogueChoiceKind, DialogueUnit, DialogueUnitChoice, DialogueUnitNode } from './dialogueUnit';
+export { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
+export { computeBracketRanges } from './buildDialogueVariantRequest';
 export { validateSpine, guardFlags } from './validateSpine';
 export { validateCalendar } from './validateCalendar';
 export { assignBeatSlots, buildScheduleStub } from './beatSchedule';

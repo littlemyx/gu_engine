@@ -15,6 +15,8 @@ import type {
   AnchorBeatRequest,
   BeatPlanRequest,
   DialogueVariantRequest,
+  DialogueUnitRequest,
+  DialogueQARequest,
   EndingRequest,
 } from './types.js';
 
@@ -1648,5 +1650,285 @@ export async function processDialogueVariant(batch: BatchState, body: DialogueVa
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[dialogueVariant] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// DIALOGUE UNIT GENERATION (первоклассная сущность диалога, фаза 3)
+// ============================================================================
+
+const DIALOGUE_UNIT_SYSTEM_PROMPT = `Ты — сценарист диалогов для романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, протагонист.
+  2. liCard — карточка love interest (имя, характер, речевой стиль, архетип).
+  3. archetypeProfile — профиль архетипа (trajectory, requiredBeats и т.д.).
+  4. storyContext — где и когда происходит встреча (location, timeMarker, recentEvents).
+  5. bracket — уровень отношений: positive, neutral или negative.
+  6. stateRanges — текущие диапазоны state переменных при входе в диалог.
+
+Твоя задача — сгенерировать **диалоговый юнит**: небольшой ГРАФ узлов разговора между протагонистом и LI. Тон и содержание определяются bracket-ом.
+
+Brackets:
+  - positive (affection ≥ 0.3) — тёплый, приветливый. Персонаж рад видеть игрока.
+  - neutral (affection 0–0.3) — вежливый, нейтральный. Обычное знакомство или дежурный разговор.
+  - negative (affection < 0) — холодный, напряжённый. Персонаж недоволен, раздражён или избегает.
+
+Модель юнита:
+  - nodes — 4-8 узлов. Каждый узел: narration + реплики LI + choices протагониста.
+  - Граф узлов ОБЯЗАН быть DAG (без циклов); каждый узел достижим из entryNodeId.
+  - closing-узлы (closing: true, choices: []) — прощальные сцены: LI произносит
+    финальную реплику, разговор ЗАВЕРШАЕТСЯ по смыслу (прощание, закрытая тема).
+    Обязателен хотя бы один closing-узел; каждый путь от entry обязан
+    заканчиваться в closing-узле.
+  - У КАЖДОГО choice обязательны два поля:
+      kind — тип реплики протагониста:
+        ask — вопрос. Следующий узел ОБЯЗАН содержать содержательный ответ LI.
+        say — утверждение/предложение, продолжающее разговор.
+        react — эмоциональная реакция (улыбнуться, промолчать, нахмуриться).
+        farewell — завершение разговора. ЕДИНСТВЕННЫЙ kind, который ведёт в closing-узел.
+      next — id следующего узла ВНУТРИ юнита. null/пропуск ЗАПРЕЩЕНЫ:
+        выхода "в никуда" не существует, диалог заканчивается только через
+        farewell → closing-узел.
+  - ask/say/react НИКОГДА не ведут в closing-узел (замаскированный выход запрещён).
+    Текст-вопрос обязан иметь kind: "ask". Текст farewell-выбора читается как
+    закрытие ("Мне пора", "Спасибо за разговор", прощание).
+
+Жёсткие правила:
+  1. narration — от 2-го лица, 2-3 предложения ("Ты подходишь...", "Она поднимает взгляд...").
+  2. dialogue — реплики ТОЛЬКО LI (не протагониста). Каждая с emotion из канонических: idle, happy, sad, tense, soft, thoughtful, surprised, angry.
+  3. У не-closing узла 2-3 choices. Текст choice — до 12 слов.
+  4. choice.effects.stateDeltas — ТОЛЬКО relationship-переменные:
+     "relationship[<liId>].affection", "relationship[<liId>].trust", "relationship[<liId>].tension".
+     Шаги небольшие: -0.05...+0.1. ЗАПРЕЩЕНЫ ключи slot, met[...], beat[...],
+     evt[...], time — перемещением и временем владеет движок снаружи диалога.
+  5. Тон и стиль речи персонажа должны соответствовать liCard.speechPattern и bracket-у.
+  6. characterEmotions — ОБЯЗАТЕЛЬНОЕ поле узла. Маппинг id персонажа → эмоция.
+  7. Все тексты — по-русски.
+  8. Если задан encounterContext:
+     - Это встреча №(encounterIndex+1) из totalPlannedEncounters с этим персонажем.
+       Первая встреча (index 0) при preExistingRelationship = null — знакомство:
+       никаких «как обычно», «снова» и отсылок к прошлым разговорам.
+       Последняя — пик арки отношений.
+     - goal встречи ОБЯЗАН быть достигнут к концу диалога независимо от
+       bracket-а; bracket меняет тон и «цену» достижения, а не сам факт.
+     - Если заданы beatType/beatPurpose — диалог реализует именно этот бит арки.
+     - anchorBeatText — сцена, которую игрок видел минуту назад: продолжай
+       оттуда, не повторяй и не противоречь.
+     - priorEncounters: считай, что предыдущие встречи произошли, но НЕ
+       пересказывай их сюжетно — опирайся на них степенью близости и тоном,
+       без жёстких отсылок к деталям (игрок мог какую-то встречу пропустить).
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "id": "unit_yuki_positive",
+  "liId": "yuki",
+  "bracket": "positive",
+  "entryNodeId": "n1",
+  "nodes": [
+    {
+      "id": "n1",
+      "charactersPresent": ["yuki"],
+      "characterEmotions": { "yuki": "happy" },
+      "narration": "Юки поднимает глаза от книги и улыбается.",
+      "dialogue": [
+        { "speaker": "yuki", "emotion": "happy", "line": "О, привет! Садись." }
+      ],
+      "choices": [
+        {
+          "id": "c1",
+          "kind": "ask",
+          "text": "Спросить, что она читает",
+          "next": "n2",
+          "effects": { "stateDeltas": { "relationship[yuki].affection": 0.05 }, "flagSet": [], "flagClear": [] }
+        },
+        {
+          "id": "c2",
+          "kind": "farewell",
+          "text": "Извиниться и попрощаться",
+          "next": "n_bye",
+          "effects": { "stateDeltas": { "relationship[yuki].affection": -0.02 }, "flagSet": [], "flagClear": [] }
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "charactersPresent": ["yuki"],
+      "characterEmotions": { "yuki": "soft" },
+      "narration": "Она показывает обложку.",
+      "dialogue": [
+        { "speaker": "yuki", "emotion": "soft", "line": "Сборник старых легенд. Хочешь, почитаю вслух?" }
+      ],
+      "choices": [
+        {
+          "id": "c3",
+          "kind": "farewell",
+          "text": "Поблагодарить и попрощаться до вечера",
+          "next": "n_bye",
+          "effects": { "stateDeltas": { "relationship[yuki].trust": 0.05 }, "flagSet": [], "flagClear": [] }
+        }
+      ]
+    },
+    {
+      "id": "n_bye",
+      "closing": true,
+      "charactersPresent": ["yuki"],
+      "characterEmotions": { "yuki": "happy" },
+      "narration": "Юки машет тебе рукой на прощание.",
+      "dialogue": [
+        { "speaker": "yuki", "emotion": "happy", "line": "До встречи! Забегай ещё." }
+      ],
+      "choices": []
+    }
+  ]
+}`;
+
+export async function processDialogueUnit(batch: BatchState, body: DialogueUnitRequest): Promise<void> {
+  const itemId = 'dialogueUnit';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Карточка LI\n${JSON.stringify(body.liCard, null, 2)}`,
+      `## Профиль архетипа\n${JSON.stringify(body.archetypeProfile, null, 2)}`,
+      `## Контекст встречи\n${JSON.stringify(body.storyContext, null, 2)}`,
+      `## Bracket: ${body.bracket}`,
+      `## Текущие диапазоны state\n${JSON.stringify(body.stateRanges, null, 2)}`,
+    ];
+
+    if (body.encounterContext) {
+      parts.push(`## Контекст арки (encounterContext)\n${JSON.stringify(body.encounterContext, null, 2)}`);
+    }
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
+      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${prevJson}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push(
+        `Сгенерируй ИСПРАВЛЕННЫЙ диалоговый юнит для bracket "${body.bracket}". Те же правила, тот же формат JSON. Только JSON.`,
+      );
+    } else {
+      parts.push(`Сгенерируй диалоговый юнит для bracket "${body.bracket}". Только JSON.`);
+    }
+
+    const userMessage = parts.join('\n\n');
+
+    const liId = (body.liCard as { id?: string })?.id ?? '?';
+    logger.log(`[dialogueUnit] batch=${batch.batchId} — generating li=${liId} bracket=${body.bracket}...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: DIALOGUE_UNIT_SYSTEM_PROMPT,
+      prompt: userMessage,
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.nodes) || !parsed.entryNodeId) {
+      throw new Error('Invalid response: missing nodes or entryNodeId');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(
+      `[dialogueUnit] batch=${batch.batchId} — completed (${parsed.nodes.length} nodes, bracket=${body.bracket})`,
+    );
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[dialogueUnit] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// DIALOGUE QA (D1: LLM-критик готового диалогового юнита)
+// ============================================================================
+
+const DIALOGUE_QA_SYSTEM_PROMPT = `Ты — редактор-критик диалогов романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. unit — готовый диалоговый юнит: граф узлов (narration, реплики LI, choices
+     с kind: ask|say|react|farewell и переходами next), closing-узлы завершают разговор.
+  2. bracket — уровень отношений (positive/neutral/negative), задающий тон.
+  3. liCardSummary — выжимка карточки персонажа (имя, характер, речевой стиль).
+
+Твоя задача — проверить КАЧЕСТВО диалога (структуру уже проверил код) и вернуть список проблем.
+
+Проверяй ровно три вещи:
+  1. ОТВЕТЫ НА ВОПРОСЫ. Для каждого choice с kind "ask": узел, куда он ведёт (next),
+     обязан содержать СОДЕРЖАТЕЛЬНЫЙ ответ LI по смыслу вопроса — не уход от темы,
+     не пустую реплику, не ответ на другой вопрос.
+  2. ТОН = BRACKET. Реплики LI и narration соответствуют bracket-у:
+     positive — тепло и открытость; neutral — вежливая дистанция;
+     negative — холод/напряжение. Реплики, выбивающиеся из тона, — проблема.
+  3. ЗАВЕРШЁННОСТЬ CLOSING. Каждый closing-узел ЗВУЧИТ как завершение разговора
+     (прощание, закрытая тема, естественная точка), а не как обрыв на полуслове
+     или незаконченная мысль.
+
+Severity:
+  - error — нарушение по существу (вопрос без ответа по смыслу, реплика ломает
+    bracket, closing обрывает разговор).
+  - warning — шероховатость (ответ формально есть, но куцый; тон слегка плавает).
+
+scope — id узла или id choice, к которому относится проблема ("n2", "c1").
+message — 1-2 предложения по-русски: что не так и как исправить.
+Если проблем нет — верни {"issues": []}.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "issues": [
+    { "severity": "error", "scope": "n2", "message": "Игрок спросил про книгу, а Юки отвечает про погоду — вопрос остался без ответа." }
+  ]
+}`;
+
+export async function processDialogueQA(batch: BatchState, body: DialogueQARequest): Promise<void> {
+  const itemId = 'dialogueQA';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Диалоговый юнит\n${JSON.stringify(body.unit, null, 2)}`,
+      `## Bracket: ${body.bracket}`,
+      `## Персонаж (выжимка)\n${body.liCardSummary}`,
+      'Проверь юнит по трём критериям и верни issues. Только JSON.',
+    ];
+
+    logger.log(`[dialogueQA] batch=${batch.batchId} — reviewing bracket=${body.bracket}...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: DIALOGUE_QA_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.issues)) {
+      throw new Error('Invalid response: missing issues array');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[dialogueQA] batch=${batch.batchId} — completed (${parsed.issues.length} issues)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[dialogueQA] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }

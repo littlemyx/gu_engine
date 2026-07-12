@@ -242,6 +242,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/dialogueUnit:
+    post:
+      operationId: generateDialogueUnit
+      summary: Generate a first-class dialogue unit (typed choices, closing nodes) for a character encounter at a given relationship bracket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DialogueUnitRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
+  /generate/dialogueQA:
+    post:
+      operationId: generateDialogueQA
+      summary: LLM-critic pass over a generated dialogue unit (answers, tone, closing completeness)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DialogueQARequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -1023,6 +1059,100 @@ components:
           items:
             type: string
           description: Validation issue messages from the previous attempt.
+    DialogueUnitRequest:
+      type: object
+      required:
+        - brief
+        - liCard
+        - archetypeProfile
+        - storyContext
+        - bracket
+        - stateRanges
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+          description: Brief context.
+        liCard:
+          type: object
+          additionalProperties: true
+          description: Full LoveInterestCard of the character.
+        archetypeProfile:
+          type: object
+          additionalProperties: true
+          description: ArchetypeProfile for the character's archetype.
+        storyContext:
+          type: object
+          required:
+            - location
+            - timeMarker
+            - recentEvents
+          properties:
+            location:
+              type: string
+            timeMarker:
+              type: string
+            recentEvents:
+              type: string
+          description: Current story context (where/when the encounter happens).
+        bracket:
+          type: string
+          enum:
+            - positive
+            - neutral
+            - negative
+          description: Relationship bracket determining dialogue tone.
+        stateRanges:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: number
+            minItems: 2
+            maxItems: 2
+          description: Expected relationship state ranges at encounter entry.
+        encounterContext:
+          type: object
+          additionalProperties: true
+          description: |
+            Arc context from the beat plan: encounter index/total, target
+            beat, per-encounter goal, prior encounter goals, anchor beat text.
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            Previously generated DialogueUnit that failed validation.
+            When present alongside previousIssues, the LLM is asked to
+            produce a corrected version.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
+
+    DialogueQARequest:
+      type: object
+      required:
+        - unit
+        - bracket
+        - liCardSummary
+      properties:
+        unit:
+          type: object
+          additionalProperties: true
+          description: The generated DialogueUnit to review (opaque JSON).
+        bracket:
+          type: string
+          enum:
+            - positive
+            - neutral
+            - negative
+          description: Relationship bracket the unit was generated for.
+        liCardSummary:
+          type: string
+          description: Short summary of the LI card (name, personality, speech style).
+
     ErrorResponse:
       type: object
       required:

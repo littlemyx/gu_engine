@@ -14,6 +14,7 @@ import type {
 } from './types';
 import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
 import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
+import type { DialogueUnit } from './dialogueUnit';
 
 /**
  * Стор для procedural-narrative-пилота.
@@ -113,8 +114,8 @@ type NarrativeState = {
   schedule: CharacterSchedule | null;
   /** Пул событий-storylet-ов (шеллы guard+goal+effects). Ключ — unit id. */
   eventUnits: Record<string, EventUnit>;
-  /** Проза encounter-юнитов по брекетам. Ключ — unit id. */
-  unitProse: Record<string, DialogueVariant[]>;
+  /** Проза encounter-юнитов по брекетам (DialogueUnit-графы). Ключ — unit id (enc_<liId>). */
+  unitProse: Record<string, DialogueUnit[]>;
   /** Проза битов хребта. Ключ — beat id. */
   spineBeatProse: Record<string, AnchorBeat>;
 
@@ -167,7 +168,7 @@ type NarrativeState = {
   setSpine: (spine: SpinePlan | null) => void;
   setSchedule: (schedule: CharacterSchedule | null) => void;
   setEventUnits: (units: EventUnit[]) => void;
-  setUnitProse: (unitId: string, variants: DialogueVariant[]) => void;
+  setUnitProse: (unitId: string, units: DialogueUnit[]) => void;
   setSpineBeatProse: (beatId: string, beat: AnchorBeat) => void;
 
   setAudioBase: (state: AudioTrackState | null) => void;
@@ -358,8 +359,8 @@ export const useNarrativeStore = create<NarrativeState>()(
         });
       },
 
-      setUnitProse: (unitId, variants) => {
-        set(s => ({ unitProse: { ...s.unitProse, [unitId]: variants } }));
+      setUnitProse: (unitId, units) => {
+        set(s => ({ unitProse: { ...s.unitProse, [unitId]: units } }));
       },
 
       setSpineBeatProse: (beatId, beat) => {
@@ -524,7 +525,16 @@ export const useNarrativeStore = create<NarrativeState>()(
           spine: prev.spine ?? null,
           schedule: prev.schedule ?? null,
           eventUnits: prev.eventUnits ?? {},
-          unitProse: prev.unitProse ?? {},
+          // Фаза 3: unitProse хранит DialogueUnit[] (узловые графы). Записи
+          // старой DialogueVariant-формы (без nodes) выбрасываются — поле
+          // никогда не наполнялось «в дикой природе», а компилятор формы
+          // без nodes не понимает.
+          unitProse: Object.fromEntries(
+            Object.entries(prev.unitProse ?? {}).filter(
+              ([, units]) =>
+                Array.isArray(units) && units.every(u => Array.isArray((u as Partial<DialogueUnit>)?.nodes)),
+            ),
+          ),
           spineBeatProse: prev.spineBeatProse ?? {},
           audioBase: prev.audioBase ?? null,
           audioMoodBeds: prev.audioMoodBeds ?? {},

@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processSpine, processDialogueVariant, processEnding } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processSpine, processDialogueVariant, processDialogueUnit, processDialogueQA, processEnding } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
@@ -15,6 +15,8 @@ import type {
   WorldCalendarRequest,
   SpineRequest,
   DialogueVariantRequest,
+  DialogueUnitRequest,
+  DialogueQARequest,
   EndingRequest,
   ItemState,
   BatchState,
@@ -331,6 +333,55 @@ app.post('/generate/dialogueVariant', (req, res) => {
   logger.log(`[POST /generate/dialogueVariant] batch=${batchId} li=${liId} bracket=${body.bracket}`);
 
   processDialogueVariant(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/dialogueUnit', (req, res) => {
+  const body = req.body as DialogueUnitRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'dialogueUnit';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  const liId = (body.liCard as { id?: string })?.id ?? '?';
+  logger.log(`[POST /generate/dialogueUnit] batch=${batchId} li=${liId} bracket=${body.bracket}`);
+
+  processDialogueUnit(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/dialogueQA', (req, res) => {
+  const body = req.body as DialogueQARequest;
+
+  const batchId = randomUUID();
+  const itemId = 'dialogueQA';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/dialogueQA] batch=${batchId} bracket=${body.bracket}`);
+
+  processDialogueQA(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

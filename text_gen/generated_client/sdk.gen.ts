@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -167,6 +167,30 @@ export const generateEnding = <ThrowOnError extends boolean = false>(options: Op
  */
 export const generateDialogueVariant = <ThrowOnError extends boolean = false>(options: Options<GenerateDialogueVariantData, ThrowOnError>) => (options.client ?? client).post<GenerateDialogueVariantResponses, unknown, ThrowOnError>({
     url: '/generate/dialogueVariant',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate a first-class dialogue unit (typed choices, closing nodes) for a character encounter at a given relationship bracket
+ */
+export const generateDialogueUnit = <ThrowOnError extends boolean = false>(options: Options<GenerateDialogueUnitData, ThrowOnError>) => (options.client ?? client).post<GenerateDialogueUnitResponses, unknown, ThrowOnError>({
+    url: '/generate/dialogueUnit',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * LLM-critic pass over a generated dialogue unit (answers, tone, closing completeness)
+ */
+export const generateDialogueQa = <ThrowOnError extends boolean = false>(options: Options<GenerateDialogueQaData, ThrowOnError>) => (options.client ?? client).post<GenerateDialogueQaResponses, unknown, ThrowOnError>({
+    url: '/generate/dialogueQA',
     ...options,
     headers: {
         'Content-Type': 'application/json',
