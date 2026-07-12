@@ -38,6 +38,9 @@ import {
   type PoseRegenStatus,
   type Brief,
 } from '@/narrative';
+import { deriveCalendarMontage } from '@/narrative/calendarSliceModel';
+import { deriveLegacyOutline } from '@/narrative/deriveLegacyOutline';
+import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
 import { OutlineGraph } from './OutlineGraph';
 import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
 import { AudioPreviewPanel } from './AudioPreviewPanel';
@@ -93,9 +96,9 @@ const Playground = () => {
   const characterGen = useBulkCharacterGeneration();
   const poseRegen = useRegeneratePoses();
   const audioGen = useBulkAudioGeneration();
+  const calendarGen = useBulkCalendarGeneration();
 
   const isBlocked = errorCount > 0;
-  const activeOutline = outlineGen.status.state === 'done' ? outlineGen.status.outline : persistedOutline;
 
   const [activeSection, setActiveSection] = useState<SectionId>(() => (persistedOutline ? 'graph' : 'brief'));
   const [graphView, setGraphView] = useState<GraphView>('montage');
@@ -107,6 +110,30 @@ const Playground = () => {
   const worldModel = useNarrativeStore(s => s.worldModel);
   const audioBase = useNarrativeStore(s => s.audioBase);
   const audioByLi = useNarrativeStore(s => s.audioByLi);
+
+  // Календарная монтажка: модель деривируется, когда весь стек стадий готов.
+  const calendar = useNarrativeStore(s => s.calendar);
+  const spine = useNarrativeStore(s => s.spine);
+  const schedule = useNarrativeStore(s => s.schedule);
+  const spineBeatProse = useNarrativeStore(s => s.spineBeatProse);
+  const calendarModel = useMemo(
+    () =>
+      calendar && spine && schedule
+        ? deriveCalendarMontage({ brief, calendar, spine, schedule, worldModel, spineBeatProse })
+        : null,
+    [brief, calendar, spine, schedule, worldModel, spineBeatProse],
+  );
+
+  // Адаптер совместимости: пока компилятор/страницы живут на StoryOutlinePlan,
+  // хребет+календарь подменяют outline производным. Явно сгенерированный
+  // story outline имеет приоритет (легаси-путь не регрессирует).
+  const derivedLegacy = useMemo(
+    () => (spine && calendar ? deriveLegacyOutline(spine, calendar, schedule, brief, worldModel) : null),
+    [spine, calendar, schedule, brief, worldModel],
+  );
+  const activeOutline =
+    outlineGen.status.state === 'done' ? outlineGen.status.outline : persistedOutline ?? derivedLegacy?.outline ?? null;
+  const usingDerivedOutline = activeOutline != null && activeOutline === derivedLegacy?.outline;
 
   const chips = useMemo<ChipSpec[]>(() => {
     const anchorCount = activeOutline?.anchors.length ?? 0;
@@ -207,6 +234,7 @@ const Playground = () => {
 
         {activeSection === 'graph' && (
           <div className={styles.sectionScroll}>
+            <CalendarGenBar gen={calendarGen} brief={brief} hasSpine={Boolean(spine)} disabled={isBlocked} />
             {activeOutline ? (
               <PlaygroundErrorBoundary>
                 <div className={styles.graphInner}>
@@ -228,7 +256,7 @@ const Playground = () => {
                       </button>
                     ))}
                   </div>
-                  {graphView === 'montage' && <MontageBoard outline={activeOutline} />}
+                  {graphView === 'montage' && <MontageBoard outline={activeOutline} calendarModel={calendarModel} />}
                 </div>
                 {graphView === 'flow' && <OutlineGraph outline={activeOutline} />}
                 {graphView === 'list' && <OutlineResult outline={activeOutline} />}
@@ -248,7 +276,9 @@ const Playground = () => {
               </PlaygroundErrorBoundary>
             ) : (
               <div className={styles.graphEmpty}>
-                <span>Монтажный стол строится по story outline — сначала сгенерируйте его из брифа.</span>
+                <span>
+                  Монтажный стол строится по календарю+хребту (бар выше) или по легаси story outline из брифа.
+                </span>
                 <button type="button" className={styles.primaryBtn} onClick={() => setActiveSection('brief')}>
                   Перейти к брифу
                 </button>
@@ -312,7 +342,10 @@ const Playground = () => {
           <div className={styles.sectionScroll}>
             {activeOutline ? (
               <PlaygroundErrorBoundary>
-                <ExportBar outline={activeOutline} />
+                <ExportBar
+                  outline={activeOutline}
+                  anchorLocations={usingDerivedOutline ? derivedLegacy?.anchorLocations ?? null : null}
+                />
               </PlaygroundErrorBoundary>
             ) : (
               <div className={styles.graphEmpty}>
@@ -682,6 +715,68 @@ const BulkStoryBar: React.FC<{
       </div>
     );
   }
+
+  return <BulkStoryBarBody status={status} onCancel={onCancel} onReset={onReset} />;
+};
+
+const CALENDAR_PHASE_LABEL: Record<string, string> = {
+  cast: 'Каст и агенды',
+  world_calendar: 'Мир и календарь',
+  spine: 'Хребет истории',
+  schedule: 'Расписание персонажей',
+};
+
+/** Бар календарного пайплайна v1: каст-стаб → мир+календарь → хребет → расписание. */
+const CalendarGenBar: React.FC<{
+  gen: ReturnType<typeof useBulkCalendarGeneration>;
+  brief: Brief;
+  hasSpine: boolean;
+  disabled: boolean;
+}> = ({ gen, brief, hasSpine, disabled }) => {
+  const running = gen.phase !== 'idle' && gen.phase !== 'done' && !gen.error;
+  const pct = gen.progress.total === 0 ? 0 : Math.round((gen.progress.completed / gen.progress.total) * 100);
+  return (
+    <div className={styles.bulkBar}>
+      <div className={styles.bulkLeft}>
+        <span className={styles.bulkTitle}>
+          Календарь + хребет (v1)
+          {running && ` · ${CALENDAR_PHASE_LABEL[gen.phase] ?? gen.phase}`}
+          {gen.phase === 'done' && ' · готово ✓'}
+        </span>
+        {running && (
+          <div className={styles.progressTrack}>
+            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
+          </div>
+        )}
+        <span className={styles.bulkMeta}>
+          {gen.error ? (
+            <>
+              ✗ {gen.error}
+              {gen.issues.length > 0 && ` · ${gen.issues.slice(0, 2).join('; ')}`}
+            </>
+          ) : (
+            'время как ось: слоты (день × часть дня), биты с окнами, расписание LI по локациям'
+          )}
+        </span>
+      </div>
+      <button
+        type="button"
+        className={hasSpine ? styles.secondaryBtn : styles.primaryBtn}
+        onClick={() => void gen.run(brief)}
+        disabled={disabled || running}
+      >
+        {running ? 'Генерация...' : hasSpine ? 'Перегенерировать' : 'Сгенерировать'}
+      </button>
+    </div>
+  );
+};
+
+const BulkStoryBarBody: React.FC<{
+  status: BulkStoryGenStatus;
+  onCancel: () => void;
+  onReset: () => void;
+}> = ({ status, onCancel, onReset }) => {
+  if (status.state === 'idle') return null;
 
   if (status.state === 'running') {
     const pct = status.total === 0 ? 100 : Math.round((status.completed / status.total) * 100);
@@ -1205,7 +1300,11 @@ const AudioGenBar: React.FC<{
   );
 };
 
-const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
+const ExportBar: React.FC<{
+  outline: StoryOutlinePlan;
+  /** Маппинг anchor→loc от адаптера deriveLegacyOutline (календарный путь). */
+  anchorLocations?: Record<string, string> | null;
+}> = ({ outline, anchorLocations }) => {
   const brief = useBriefStore(s => s.brief);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
@@ -1229,15 +1328,22 @@ const ExportBar: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const liCount = brief.loveInterests.length;
   const audioReady = audioBase?.status === 'done';
 
+  // Календарный путь: worldCalendar не знает якорей, маппинг anchor→loc
+  // приносит адаптер производного outline.
+  const worldForExport =
+    worldModel && anchorLocations
+      ? { ...worldModel, anchorLocations: { ...worldModel.anchorLocations, ...anchorLocations } }
+      : worldModel;
+
   const onExport = () => {
     // С моделью мира игра компилируется как стейт-машина по графу локаций
     // (свободное перемещение, события/встречи гейтятся состоянием); без неё —
     // легаси-конвертация (прямые рёбра якорь→якорь, без аудио).
-    const result = worldModel
+    const result = worldForExport
       ? compileWorldGameProject(
           brief,
           outline,
-          worldModel,
+          worldForExport,
           dialogueVariants,
           anchorBeats,
           endings,

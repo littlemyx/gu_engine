@@ -154,6 +154,12 @@ export type BriefScale = {
   branchingDensity: BranchingDensity;
   /** Доля игры на common route, в [0, 1]. */
   commonRouteShare: number;
+  /**
+   * Бюджет глобальных развилок хребта (branchPoint-битов), 0..3.
+   * Ветка добавляет guard-ы по спайн-флагам, а не копии контента,
+   * поэтому листьев ≤ 2^3, а объём растёт линейно.
+   */
+  branchPointBudget: number;
 };
 
 export type WorldSetting = {

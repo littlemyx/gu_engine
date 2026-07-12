@@ -10,6 +10,8 @@ import type {
   LiCardsRequest,
   NarrationWebRequest,
   WorldModelRequest,
+  WorldCalendarRequest,
+  SpineRequest,
   AnchorBeatRequest,
   BeatPlanRequest,
   DialogueVariantRequest,
@@ -881,6 +883,292 @@ export async function processWorldModel(batch: BatchState, body: WorldModelReque
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[worldModel] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// WORLD CALENDAR GENERATION (calendar pipeline, stage A2)
+// ============================================================================
+
+const WORLD_CALENDAR_SYSTEM_PROMPT = `Ты — картограф мира и календаря романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. Бриф (brief) — сеттинг, эпоха, конкретика места, каст LI.
+  2. castPlan — агенды персонажей с абстрактными тегами локаций (workplace/hangout/home и т.п.), или null.
+  3. Целевые размеры календаря (targets) — days, daypartsPerDay, acts.
+
+Твоя задача — построить ТРИ артефакта одним ответом:
+  А. РЕЕСТР ЛОКАЦИЙ мира со связностью (locations).
+  Б. ДИСКРЕТНЫЙ КАЛЕНДАРЬ истории (calendar): дни × части дня, границы актов.
+  В. МАППИНГ агендных тегов на локации (tagMap).
+
+Жёсткие правила для locations:
+  1. 6-10 локаций. Каждая: id (короткий snake_case: "library", "campus_alley"),
+     name (по-русски), description (2-3 предложения, СТАБИЛЬНОЕ описание места —
+     его будут использовать все генераторы сцен), pointsOfInterest (2-4 ключевые
+     точки: "стол у окна", "стеллажи у входа").
+  2. adjacent — физическая связность: из какой локации в какую можно пройти
+     и КАК ("via": "через аллею кампуса", "по коридору второго этажа").
+     Мир должен быть СВЯЗНЫМ: из любой локации в любую существует путь по
+     adjacency. Добавляй промежуточные "транзитные" локации (аллея, коридор,
+     двор), если они нужны для естественных путей.
+  3. mood — доминирующее НАСТРОЕНИЕ локации (для подбора фоновой музыки-эмбиента).
+     Ровно одно значение из фиксированного набора:
+       neutral_calm (нейтральная/спокойная), cheerful_warm (весёлая/тёплая),
+       cozy_tender (уютная/нежная), romantic (романтическая),
+       melancholic_sad (грустная/меланхоличная), wistful_nostalgic (ностальгическая),
+       tense_anxious (тревожная/напряжённая), ominous_mysterious (зловещая/таинственная),
+       tragic_heavy (трагическая/тяжёлая).
+     Выбирай по атмосфере места и его роли в сюжете (дождливый пустой универ → melancholic_sad,
+     тёплое кафе свиданий → cozy_tender). Если сомневаешься — neutral_calm.
+  4. specialKind — ТОЛЬКО для локаций с характерным собственным звуком; одно из:
+     bar_tavern, party_club, sports_stadium, market_street, ceremony. Для обычных
+     локаций поле опусти или поставь null.
+
+Жёсткие правила для calendar:
+  5. days, число элементов dayparts и число элементов actBoundaries обязаны
+     ТОЧНО совпадать с targets (days, daypartsPerDay, acts) из сообщения —
+     не придумывай свои размеры.
+  6. dayparts — названия частей дня по-русски (обычно "утро", "день", "вечер").
+  7. actBoundaries — день начала каждого акта: длина = число актов,
+     первый элемент всегда 0, значения СТРОГО возрастают, каждое < days.
+  8. specialDays (опционально) — 0-2 особых дня (фестиваль, экзамен, гроза):
+     колорит для сцен, day в диапазоне [0, days-1].
+
+Жёсткие правила для tagMap:
+  9. КАЖДЫЙ тег из агенд castPlan (ключи locationTags и теги weeklyPattern)
+     обязан быть ключом tagMap и вести к МИНИМУМ ОДНОЙ локации (массив id из
+     locations). Один тег может вести к нескольким локациям.
+  10. Если castPlan = null — выдай tagMap для базовых тегов workplace/hangout/home.
+  11. Все тексты — по-русски (кроме id).
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "locations": [
+    {
+      "id": "library",
+      "name": "университетская библиотека",
+      "description": "Просторный зал с рядами стеллажей до потолка...",
+      "pointsOfInterest": ["стол у окна", "стеллажи у входа"],
+      "adjacent": [{ "locationId": "campus_alley", "via": "через главные двери на аллею" }],
+      "mood": "melancholic_sad",
+      "specialKind": null
+    }
+  ],
+  "calendar": {
+    "days": 4,
+    "dayparts": ["утро", "день", "вечер"],
+    "actBoundaries": [0, 1, 2, 3],
+    "specialDays": [{ "day": 2, "label": "осенний фестиваль" }]
+  },
+  "tagMap": {
+    "workplace": ["library"],
+    "hangout": ["campus_cafe", "campus_alley"],
+    "home": ["dorm_room"]
+  }
+}`;
+
+export async function processWorldCalendar(batch: BatchState, body: WorldCalendarRequest): Promise<void> {
+  const itemId = 'worldCalendar';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Агенды персонажей (castPlan)\n${body.castPlan ? JSON.stringify(body.castPlan, null, 2) : 'null'}`,
+      `## Целевые размеры календаря (соблюдать ТОЧНО)\ndays: ${body.targets.days}\ndaypartsPerDay (длина dayparts): ${body.targets.daypartsPerDay}\nslotCount (days × daypartsPerDay): ${body.targets.slotCount}\nacts (длина actBoundaries): ${body.targets.acts}`,
+    ];
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЕ мир, календарь и маппинг тегов. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Построй мир, календарь и маппинг тегов. Только JSON.');
+    }
+
+    logger.log(`[worldCalendar] batch=${batch.batchId} — mapping world+calendar (days=${body.targets.days}, acts=${body.targets.acts})...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: WORLD_CALENDAR_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.locations) || !parsed.calendar || !parsed.tagMap) {
+      throw new Error('Invalid response: missing locations, calendar or tagMap');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(
+      `[worldCalendar] batch=${batch.batchId} — completed (${parsed.locations.length} locations, ${parsed.calendar.days} days)`,
+    );
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[worldCalendar] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// SPINE GENERATION (calendar pipeline, stage A3)
+// ============================================================================
+
+const SPINE_SYSTEM_PROMPT = `Ты — архитектор сюжетного хребта романтической визуальной новеллы (romance VN) с календарным временем.
+
+Получаешь:
+  1. Бриф (brief) — мир, тон, каст LI, профиль концовок (endingsProfile).
+  2. Модель мира (worldModel) — реестр локаций с id.
+  3. Календарь (calendar) — дни × части дня, границы актов.
+  4. Маппинг тегов (tagMap) — где персонажи обычно бывают.
+  5. Целевые бюджеты (targets) — число битов, лимит развилок.
+
+Модель времени:
+  - Слот = (день, часть дня): slot = day × daypartsPerDay + daypartIndex.
+    Нумерация с 0: день 0 утро = слот 0, день 0 день = слот 1, и т.д.
+  - Бит НЕ пришпилен к слоту — он несёт ОКНО {fromSlot, toSlot} (включительно),
+    внутри которого может произойти. Точный слот назначит планировщик.
+
+Твоя задача — хребет истории: биты (beats) с окнами слотов и концовки (endings).
+
+Жёсткие правила:
+  1. Число битов — ровно targets.beatCount (допустимо ±1).
+  2. kind каждого бита: "beat" (рядовое событие), "actGate" (переход акта,
+     ставит ключевой флаг) или "finale" (кульминация). Kind "branchPoint"
+     ЗАПРЕЩЁН в этой версии — targets.branchPointBudget = 0; развилки появятся
+     в следующей итерации формата.
+  3. Ровно ОДИН бит kind="finale": в последнем акте, window.toSlot = последний
+     слот календаря (кульминация закрывает историю).
+  4. Окно каждого бита обязано ЦЕЛИКОМ лежать в диапазоне слотов его акта
+     (границы актов в слотах даны в сообщении). fromSlot ≤ toSlot.
+  5. Окна не должны быть пережаты: каждому биту должен доставаться свой слот
+     (не назначай десяти битам одно и то же окно из двух слотов).
+  6. Флаговая логика: establishes — флаги, становящиеся истинными ПОСЛЕ бита
+     (snake_case: "met_kira", "secret_revealed"); requires — флаги, обязательные
+     для допуска бита. КАЖДЫЙ флаг из requires обязан устанавливаться битом
+     с БОЛЕЕ РАННИМ окном (никаких требований в будущее, никаких циклов).
+  7. participants — ТОЛЬКО реальные id LI из брифа. Пустой массив = чисто
+     сюжетный бит без LI. Каждый LI должен участвовать минимум в 2 битах.
+  8. locationId каждого бита — ТОЛЬКО id из worldModel.locations.
+  9. endings обязаны покрывать endingsProfile брифа: для "good" — по концовке
+     на каждого LI (liId = id этого LI); для "normal"/"bad" — liId: null.
+     requires концовки — флаги, устанавливаемые битами (обычно финалом/актгейтами).
+  10. summary бита — 1-2 конкретных предложения: что происходит и что меняется.
+  11. Все тексты — по-русски (кроме id и флагов).
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "title": "...",
+  "logline": "...",
+  "beats": [
+    {
+      "id": "meet_kira",
+      "kind": "beat",
+      "act": 1,
+      "window": { "fromSlot": 0, "toSlot": 2 },
+      "locationId": "library",
+      "participants": ["kira"],
+      "summary": "Первая встреча с Кирой среди стеллажей: столкновение из-за одной книги.",
+      "establishes": ["met_kira"],
+      "requires": []
+    },
+    {
+      "id": "final_confession",
+      "kind": "finale",
+      "act": 4,
+      "window": { "fromSlot": 9, "toSlot": 11 },
+      "locationId": "campus_alley",
+      "participants": ["kira", "yuki"],
+      "summary": "Вечер фестиваля: время признаний и решений.",
+      "establishes": ["story_resolved"],
+      "requires": ["met_kira"]
+    }
+  ],
+  "endings": [
+    { "id": "ending_good_kira", "kind": "good", "liId": "kira", "requires": ["story_resolved"] },
+    { "id": "ending_normal", "kind": "normal", "liId": null, "requires": ["story_resolved"] },
+    { "id": "ending_bad", "kind": "bad", "liId": null, "requires": [] }
+  ]
+}`;
+
+export async function processSpine(batch: BatchState, body: SpineRequest): Promise<void> {
+  const itemId = 'spine';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    // Диапазоны слотов актов считаем здесь и отдаём LLM готовыми — модель
+    // стабильно ошибается в арифметике day*daypartsPerDay при пересчёте сама.
+    const cal = body.calendar as { days?: number; dayparts?: string[]; actBoundaries?: number[] };
+    const perDay = Array.isArray(cal?.dayparts) ? cal.dayparts.length : 0;
+    const days = typeof cal?.days === 'number' ? cal.days : 0;
+    const boundaries = Array.isArray(cal?.actBoundaries) ? cal.actBoundaries : [];
+    const lastSlot = days * perDay - 1;
+    const actRanges = boundaries.map((fromDay, i) => {
+      const toDay = i + 1 < boundaries.length ? boundaries[i + 1] - 1 : days - 1;
+      return `акт ${i + 1}: слоты ${fromDay * perDay}..${toDay * perDay + perDay - 1} (дни ${fromDay}..${toDay})`;
+    });
+
+    const parts: string[] = [
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Модель мира (locations)\n${JSON.stringify(body.worldModel, null, 2)}`,
+      `## Календарь\n${JSON.stringify(body.calendar, null, 2)}`,
+      `## Маппинг агендных тегов\n${body.tagMap ? JSON.stringify(body.tagMap, null, 2) : 'null'}`,
+      `## Слоты актов (окна битов обязаны лежать внутри своего акта)\nslot = day × ${perDay} + daypartIndex; последний слот календаря = ${lastSlot}\n${actRanges.join('\n')}`,
+      `## Целевые бюджеты\nbeatCount: ${body.targets.beatCount} (допустимо ±1)\nbranchPointBudget: ${body.targets.branchPointBudget} (kind="branchPoint" запрещён)`,
+    ];
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ хребет. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Сгенерируй хребет истории (биты с окнами + концовки). Только JSON.');
+    }
+
+    logger.log(`[spine] batch=${batch.batchId} — generating (beatCount=${body.targets.beatCount})...`);
+
+    const { text } = await generateText({
+      model: openai('gpt-4.1-mini'),
+      system: SPINE_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.beats) || !Array.isArray(parsed.endings)) {
+      throw new Error('Invalid response: missing beats or endings');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(
+      `[spine] batch=${batch.batchId} — completed (${parsed.beats.length} beats, ${parsed.endings.length} endings)`,
+    );
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[spine] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 

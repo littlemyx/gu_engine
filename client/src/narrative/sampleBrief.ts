@@ -15,6 +15,7 @@ export const SAMPLE_BRIEF: Brief = {
     targetDurationMinutes: 30,
     branchingDensity: 'medium',
     commonRouteShare: 0.3,
+    branchPointBudget: 2,
   },
   endingsProfile: ['good', 'normal', 'bad'],
   world: {

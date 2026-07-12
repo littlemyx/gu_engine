@@ -326,6 +326,88 @@ export type WorldModelRequest = {
     previousIssues?: Array<string>;
 };
 
+export type WorldCalendarRequest = {
+    /**
+     * Procedural narrative brief, embedded into the prompt as-is.
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * CastPlan with per-LI agenda location tags (workplace/hangout/home...);
+     * every tag must be mapped to at least one location. Null when agendas
+     * are stubbed client-side.
+     *
+     */
+    castPlan?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Calendar sizes computed from brief.scale (computeCalendarTargets):
+     * the generated calendar must match them exactly.
+     *
+     */
+    targets: {
+        days: number;
+        daypartsPerDay: number;
+        slotCount: number;
+        acts: number;
+    };
+    /**
+     * Previously generated world+calendar that failed validation.
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
+export type SpineRequest = {
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * World model (locations registry) the beats reference by id.
+     */
+    worldModel: {
+        [key: string]: unknown;
+    };
+    /**
+     * Discrete calendar (days, dayparts, actBoundaries).
+     */
+    calendar: {
+        [key: string]: unknown;
+    };
+    /**
+     * Agenda-tag to location-ids mapping, or null.
+     */
+    tagMap?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Budgets: number of beats (±1) and branch point limit
+     * (0 in the current format version — branchPoint kind forbidden).
+     *
+     */
+    targets: {
+        beatCount: number;
+        branchPointBudget: number;
+    };
+    /**
+     * Previously generated spine that failed validation.
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
 export type BeatPlanRequest = {
     /**
      * Brief context (world, tone, LI cast).
@@ -642,6 +724,38 @@ export type GenerateWorldModelResponses = {
 };
 
 export type GenerateWorldModelResponse = GenerateWorldModelResponses[keyof GenerateWorldModelResponses];
+
+export type GenerateWorldCalendarData = {
+    body: WorldCalendarRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/worldCalendar';
+};
+
+export type GenerateWorldCalendarResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateWorldCalendarResponse = GenerateWorldCalendarResponses[keyof GenerateWorldCalendarResponses];
+
+export type GenerateSpineData = {
+    body: SpineRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/spine';
+};
+
+export type GenerateSpineResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateSpineResponse = GenerateSpineResponses[keyof GenerateSpineResponses];
 
 export type GenerateBeatPlanData = {
     body: BeatPlanRequest;

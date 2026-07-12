@@ -7,10 +7,12 @@ import {
   formatEffect,
   type StoryOutlinePlan,
   type MontageModel,
-  type MontageSlice,
+  type MontageCharacter,
+  type MontageLocation,
   type SliceEventView,
   type CharacterMove,
 } from '@/narrative';
+import type { CalendarMontageModel } from '@/narrative/calendarSliceModel';
 import { actColor } from './outlineLayout';
 import styles from './MontageBoard.module.css';
 
@@ -19,6 +21,11 @@ import styles from './MontageBoard.module.css';
  * сквозь кадры; события — ромбы на линиях с карточками на отдельной ленте;
  * внизу шкала времени с дорожками персонажей, скользящим окном и плейхедом.
  *
+ * Два источника модели:
+ *   - легаси: deriveMontageModel (срез = якорь outline, одна локация-бокс);
+ *   - календарь (prop calendarModel): срез = слот, 1-3 локации-бокса в кадре.
+ * Оба нормализуются в BoardFrame/BoardBox — рендер и интеракции общие.
+ *
  * Интеракции макета:
  *   1/2 — hover на линию или чип персонажа подсвечивает её на всю длину;
  *   3   — drag окна/плейхеда или колесо мыши плавно скользит ленту кадров;
@@ -26,43 +33,205 @@ import styles from './MontageBoard.module.css';
  *   5   — клик по ромбу/карточке открывает инспектор события (guard/effects/сцена).
  */
 
-const FRAME_W = 360;
-const GAP = 64;
-const STEP = FRAME_W + GAP;
 const PAD = 24;
 const FILM_H = 466;
-const LOC_X = 32;
-const LOC_W = FRAME_W - LOC_X * 2;
-const LOC_TOP = 120;
+const FRAME_TOP = 44;
 const OFFSTAGE_Y = 424;
-const WINDOW = 3;
 const TL_X0 = 90;
+
+// Легаси-кадр (один бокс) — геометрия макета 4a.
+const LEG_FRAME_W = 360;
+const LEG_GAP = 64;
+const LEG_WINDOW = 3;
+const LOC_X = 32;
+const LOC_TOP = 120;
+
+// Календарный кадр: уже (слотов много), боксы стопкой.
+const CAL_FRAME_W = 232;
+const CAL_GAP = 36;
+const CAL_WINDOW = 4;
+const CAL_BOX_X = 18;
+const CAL_BOX_TOP = 104;
+const CAL_BOX_GAP = 10;
+const CAL_BOX_BASE_H = 38;
+const CAL_ROW = 22;
+const CAL_MAX_BOXES = 3;
 
 const NEUTRAL_EVENT_COLOR = '#8b5cf6';
 
 type Emphasis = 'base' | 'hi' | 'dim';
 
-const frameLeft = (z: number) => PAD + z * STEP;
-const xCenter = (z: number) => frameLeft(z) + FRAME_W / 2;
-
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 const diamondPoints = (x: number, y: number, r: number) => `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}`;
 
-export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
+// ── Унифицированная view-модель доски ───────────────────────────────────────
+
+type BoardBox = {
+  locationId: string | null;
+  locationName: string;
+  ambientLabel: string | null;
+  presentCharIds: string[];
+  events: SliceEventView[];
+  /** Геометрия: left/width — относительно кадра, top/rowStart/neutralY — абсолютные. */
+  left: number;
+  width: number;
+  top: number;
+  height: number;
+  rowStart: number;
+  rowStep: number;
+  neutralY: number;
+};
+
+type BoardFrame = {
+  z: number;
+  key: string;
+  title: string;
+  /** Моно-подпись (id якоря) — только у легаси. */
+  mono: string | null;
+  dayStart: boolean;
+  boxes: BoardBox[];
+  hiddenLocCount: number;
+  /** Все события кадра в порядке нумерации (лента карточек). */
+  events: SliceEventView[];
+  presentCharIds: string[];
+  tlLabel: string;
+  tlTitle: string;
+};
+
+type BoardModel = {
+  frames: BoardFrame[];
+  characters: MontageCharacter[];
+  moves: CharacterMove[];
+  presence: Record<string, Array<[number, number]>>;
+  locations: MontageLocation[];
+  adjacency: Array<[string, string]>;
+  acts: Array<{ act: number; fromZ: number; toZ: number }>;
+};
+
+function boardFromLegacy(model: MontageModel): BoardModel {
+  const frames: BoardFrame[] = model.slices.map(slice => ({
+    z: slice.z,
+    key: slice.anchor.id,
+    title: slice.anchor.timeMarker || `срез ${slice.z + 1}`,
+    mono: slice.anchor.id,
+    dayStart: false,
+    boxes: [
+      {
+        locationId: slice.locationId,
+        locationName: slice.locationName,
+        ambientLabel: slice.ambientLabel,
+        presentCharIds: slice.presentCharIds,
+        events: slice.events,
+        left: LOC_X,
+        width: LEG_FRAME_W - LOC_X * 2,
+        top: LOC_TOP,
+        height: Math.max(70, 50 + slice.presentCharIds.length * 26),
+        rowStart: LOC_TOP + 42,
+        rowStep: 26,
+        neutralY: LOC_TOP - 22,
+      },
+    ],
+    hiddenLocCount: 0,
+    events: slice.events,
+    presentCharIds: slice.presentCharIds,
+    tlLabel: slice.anchor.timeMarker || slice.anchor.id,
+    tlTitle: `${slice.anchor.timeMarker || ''} · ${slice.anchor.id}`,
+  }));
+  return {
+    frames,
+    characters: model.characters,
+    moves: model.moves,
+    presence: model.presence,
+    locations: model.locations,
+    adjacency: model.adjacency,
+    acts: model.acts,
+  };
+}
+
+function boardFromCalendar(model: CalendarMontageModel): BoardModel {
+  const frames: BoardFrame[] = model.slices.map(slice => {
+    const shown = slice.locations.slice(0, CAL_MAX_BOXES);
+    let top = CAL_BOX_TOP;
+    const boxes: BoardBox[] = shown.map(loc => {
+      const height = CAL_BOX_BASE_H + loc.presentCharIds.length * CAL_ROW;
+      const box: BoardBox = {
+        locationId: loc.locationId,
+        locationName: loc.locationName,
+        ambientLabel: loc.ambientLabel,
+        presentCharIds: loc.presentCharIds,
+        events: loc.events,
+        left: CAL_BOX_X,
+        width: CAL_FRAME_W - CAL_BOX_X * 2,
+        top,
+        height,
+        rowStart: top + 32,
+        rowStep: CAL_ROW,
+        neutralY: top + 14,
+      };
+      top += height + CAL_BOX_GAP;
+      return box;
+    });
+    return {
+      z: slice.slot,
+      key: `slot-${slice.slot}`,
+      title: slice.label,
+      mono: null,
+      dayStart: slice.dayStart,
+      boxes,
+      hiddenLocCount: slice.locations.length - shown.length,
+      events: slice.locations.flatMap(l => l.events),
+      presentCharIds: boxes.flatMap(b => b.presentCharIds),
+      tlLabel: slice.label,
+      tlTitle: slice.label,
+    };
+  });
+  return {
+    frames,
+    characters: model.characters,
+    moves: model.moves.map(m => ({
+      charId: m.charId,
+      fromZ: m.fromSlot,
+      toZ: m.toSlot,
+      fromLoc: m.fromLoc,
+      toLoc: m.toLoc,
+    })),
+    presence: model.presence,
+    locations: model.locations,
+    adjacency: model.adjacency,
+    acts: model.acts,
+  };
+}
+
+export const MontageBoard: React.FC<{
+  outline: StoryOutlinePlan;
+  calendarModel?: CalendarMontageModel | null;
+}> = ({ outline, calendarModel }) => {
   const brief = useBriefStore(s => s.brief);
   const worldModel = useNarrativeStore(s => s.worldModel);
   const beatPlan = useNarrativeStore(s => s.beatPlan);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
 
-  const model: MontageModel = useMemo(
+  const legacyModel: MontageModel = useMemo(
     () => deriveMontageModel({ brief, outline, worldModel, beatPlan, dialogueVariants, anchorBeats }),
     [brief, outline, worldModel, beatPlan, dialogueVariants, anchorBeats],
   );
 
-  const N = model.slices.length;
-  const W = Math.min(WINDOW, Math.max(N, 1));
+  const isCal = Boolean(calendarModel);
+  const board: BoardModel = useMemo(
+    () => (calendarModel ? boardFromCalendar(calendarModel) : boardFromLegacy(legacyModel)),
+    [calendarModel, legacyModel],
+  );
+
+  const FRAME_W = isCal ? CAL_FRAME_W : LEG_FRAME_W;
+  const GAP = isCal ? CAL_GAP : LEG_GAP;
+  const STEP = FRAME_W + GAP;
+  const frameLeft = (z: number) => PAD + z * STEP;
+  const xCenter = (z: number) => frameLeft(z) + FRAME_W / 2;
+
+  const N = board.frames.length;
+  const W = Math.min(isCal ? CAL_WINDOW : LEG_WINDOW, Math.max(N, 1));
   const maxStart = Math.max(0, N - W);
 
   const [selectedZ, setSelectedZ] = useState(() => clamp(Math.floor(N / 2), 0, Math.max(N - 1, 0)));
@@ -72,17 +241,17 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
   const [hoverEventN, setHoverEventN] = useState<string | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<SliceEventView | null>(null);
 
-  // Смена outline (другие якоря) — сбрасываем навигацию.
-  const anchorsKey = model.slices.map(s => s.anchor.id).join(',');
-  const prevAnchorsKey = useRef(anchorsKey);
+  // Смена набора кадров (другие якоря / другой календарь) — сбрасываем навигацию.
+  const framesKey = board.frames.map(f => f.key).join(',');
+  const prevFramesKey = useRef(framesKey);
   useEffect(() => {
-    if (prevAnchorsKey.current !== anchorsKey) {
-      prevAnchorsKey.current = anchorsKey;
+    if (prevFramesKey.current !== framesKey) {
+      prevFramesKey.current = framesKey;
       setSelectedZ(clamp(Math.floor(N / 2), 0, Math.max(N - 1, 0)));
       setWindowStart(clamp(Math.floor(N / 2) - 1, 0, maxStart));
       setSelectedEvent(null);
     }
-  }, [anchorsKey, N, maxStart]);
+  }, [framesKey, N, maxStart]);
 
   const selectSlice = useCallback(
     (z: number) => {
@@ -118,14 +287,14 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
     return () => el.removeEventListener('wheel', onWheel);
   }, [maxStart]);
 
-  // ── Геометрия линий ──────────────────────────────────────────────────────
-  const charYIn = useCallback((slice: MontageSlice, charId: string): number => {
-    const idx = slice.presentCharIds.indexOf(charId);
-    if (idx === -1) return OFFSTAGE_Y;
-    return LOC_TOP + 42 + idx * 26;
+  // ── Геометрия линий: y персонажа = центр строки его бокса в кадре ────────
+  const charYIn = useCallback((frame: BoardFrame, charId: string): number => {
+    for (const box of frame.boxes) {
+      const idx = box.presentCharIds.indexOf(charId);
+      if (idx !== -1) return box.rowStart + idx * box.rowStep;
+    }
+    return OFFSTAGE_Y;
   }, []);
-
-  const locBoxHeight = (slice: MontageSlice) => Math.max(70, 50 + slice.presentCharIds.length * 26);
 
   const emphasisFor = useCallback(
     (charId: string, segFromZ?: number): Emphasis => {
@@ -154,7 +323,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
 
   const FW = N > 0 ? (tlWidth - TL_X0 - 24) / N : 1;
   const trackTop = 40;
-  const svgH = Math.max(82, trackTop + model.characters.length * 18 + 10);
+  const svgH = Math.max(82, trackTop + board.characters.length * 18 + 10);
   const tlHeight = 24 + svgH + 28;
 
   const drag = useRef<{ mode: 'window' | 'playhead'; grabDx: number } | null>(null);
@@ -190,32 +359,37 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
   };
 
   const charColor = (charId: string | null) =>
-    charId ? model.characters.find(c => c.id === charId)?.color ?? NEUTRAL_EVENT_COLOR : NEUTRAL_EVENT_COLOR;
+    charId ? board.characters.find(c => c.id === charId)?.color ?? NEUTRAL_EVENT_COLOR : NEUTRAL_EVENT_COLOR;
 
   // ── Мини-карта: раскладка узлов ──────────────────────────────────────────
   const mapPos = useMemo(() => {
     const pos = new Map<string, { x: number; y: number }>();
-    model.locations.forEach((loc, i) => {
+    board.locations.forEach((loc, i) => {
       const col = i % 4;
       const row = Math.floor(i / 4);
       pos.set(loc.id, { x: 30 + col * 58 + (row % 2) * 29, y: 26 + row * 40 });
     });
     return pos;
-  }, [model.locations]);
-  const mapRows = Math.max(1, Math.ceil(model.locations.length / 4));
+  }, [board.locations]);
+  const mapRows = Math.max(1, Math.ceil(board.locations.length / 4));
   const mapH = Math.max(108, 26 + mapRows * 40 + 22);
 
-  const visibleMoves = model.moves.filter(m => m.fromZ >= windowStart && m.toZ <= windowStart + W - 1);
+  const visibleMoves = board.moves.filter(m => m.fromZ >= windowStart && m.toZ <= windowStart + W - 1);
 
   if (N === 0) {
     return (
       <div className={styles.board}>
-        <div className={styles.boardEmpty}>В outline нет якорей — монтажному столу нечего показывать.</div>
+        <div className={styles.boardEmpty}>
+          {isCal
+            ? 'Календарь пуст — монтажному столу нечего показывать.'
+            : 'В outline нет якорей — монтажному столу нечего показывать.'}
+        </div>
       </div>
     );
   }
 
-  const visibleSlices = model.slices.slice(windowStart, windowStart + W);
+  const visibleFrames = board.frames.slice(windowStart, windowStart + W);
+  const maxCards = isCal ? 2 : 4;
 
   const eventStatus = (ev: SliceEventView): { text: string; color: string } => {
     if (!ev.hasScene) return { text: 'триггер · без сцены', color: '#9ca3af' };
@@ -227,11 +401,13 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
     return { text: 'сцена ✓', color: '#16a34a' };
   };
 
-  const eventAnchor = (slice: MontageSlice, ev: SliceEventView, occ: number): { x: number; y: number } => {
-    if (ev.charId && slice.presentCharIds.includes(ev.charId)) {
-      return { x: xCenter(slice.z) + occ * 28, y: charYIn(slice, ev.charId) };
+  const eventAnchor = (frame: BoardFrame, box: BoardBox, ev: SliceEventView, occ: number): { x: number; y: number } => {
+    const x = xCenter(frame.z) + occ * 28;
+    if (ev.charId) {
+      const idx = box.presentCharIds.indexOf(ev.charId);
+      if (idx !== -1) return { x, y: box.rowStart + idx * box.rowStep };
     }
-    return { x: xCenter(slice.z) + occ * 28, y: LOC_TOP - 22 };
+    return { x, y: box.neutralY };
   };
 
   return (
@@ -239,7 +415,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
       {/* ── легенда (интеракция 2) ── */}
       <div className={styles.legendRow}>
         <span className={styles.legendLabel}>персонажи</span>
-        {model.characters.map(c => {
+        {board.characters.map(c => {
           const active = hoverChar === c.id;
           const dim = (hoverChar !== null && !active) || (hoverMove !== null && hoverMove.charId !== c.id);
           return (
@@ -269,39 +445,60 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
           за кадром
         </span>
         <span className={styles.legendMeta}>
-          {N} срезов · {model.slices.reduce((acc, s) => acc + s.events.length, 0)} событий
+          {N} {isCal ? 'слотов' : 'срезов'} · {board.frames.reduce((acc, f) => acc + f.events.length, 0)} событий
         </span>
       </div>
 
       {/* ── лента кадров ── */}
       <div ref={viewportRef} className={styles.filmViewport}>
         <div className={styles.stripInner} style={{ width: stripW, transform: `translateX(${-windowStart * STEP}px)` }}>
-          {model.slices.map(slice => {
-            const sel = slice.z === selectedZ;
-            const boxH = locBoxHeight(slice);
+          {board.frames.map(frame => {
+            const sel = frame.z === selectedZ;
+            const lastBox = frame.boxes[frame.boxes.length - 1];
+            const showEmpty = isCal ? frame.boxes.length === 0 : frame.presentCharIds.length === 0;
             return (
-              <React.Fragment key={slice.anchor.id}>
+              <React.Fragment key={frame.key}>
                 <div
-                  className={`${styles.frameTitle} ${sel ? styles.frameTitleSel : ''}`}
-                  style={{ left: frameLeft(slice.z), width: FRAME_W }}
-                  onClick={() => selectSlice(slice.z)}
+                  className={`${styles.frameTitle} ${sel ? styles.frameTitleSel : ''} ${
+                    frame.dayStart ? styles.frameTitleDay : ''
+                  }`}
+                  style={{ left: frameLeft(frame.z), width: FRAME_W }}
+                  onClick={() => selectSlice(frame.z)}
                 >
-                  {slice.anchor.timeMarker || `срез ${slice.z + 1}`}{' '}
-                  <span className={styles.anchorMono}>{slice.anchor.id}</span>
+                  {frame.title}
+                  {frame.mono && (
+                    <>
+                      {' '}
+                      <span className={styles.anchorMono}>{frame.mono}</span>
+                    </>
+                  )}
                 </div>
                 <div
-                  className={`${styles.frame} ${sel ? styles.frameSelected : ''}`}
-                  style={{ left: frameLeft(slice.z), width: FRAME_W }}
-                  onClick={() => selectSlice(slice.z)}
+                  className={`${styles.frame} ${sel ? styles.frameSelected : ''} ${
+                    frame.dayStart ? styles.frameDayStart : ''
+                  }`}
+                  style={{ left: frameLeft(frame.z), width: FRAME_W }}
+                  onClick={() => selectSlice(frame.z)}
                 >
-                  <div
-                    className={`${styles.locBox} ${sel ? styles.locBoxSel : ''}`}
-                    style={{ left: LOC_X, top: LOC_TOP - 44, width: LOC_W, height: boxH }}
-                  >
-                    <span className={styles.locBoxTitle}>{slice.locationName}</span>
-                    {slice.ambientLabel && <span className={styles.ambientChip}>♪ {slice.ambientLabel}</span>}
-                  </div>
-                  {slice.presentCharIds.length === 0 && (
+                  {frame.boxes.map(box => (
+                    <div
+                      key={`${frame.key}:${box.locationId ?? '—'}`}
+                      className={`${styles.locBox} ${sel ? styles.locBoxSel : ''}`}
+                      style={{ left: box.left, top: box.top - FRAME_TOP, width: box.width, height: box.height }}
+                    >
+                      <span className={styles.locBoxTitle}>{box.locationName}</span>
+                      {box.ambientLabel && <span className={styles.ambientChip}>♪ {box.ambientLabel}</span>}
+                    </div>
+                  ))}
+                  {frame.hiddenLocCount > 0 && lastBox && (
+                    <div
+                      className={styles.moreLocsRow}
+                      style={{ left: lastBox.left, top: lastBox.top + lastBox.height - FRAME_TOP + 6 }}
+                    >
+                      +{frame.hiddenLocCount} ещё
+                    </div>
+                  )}
+                  {showEmpty && (
                     <div className={styles.offstageLabel} style={{ left: 0, width: FRAME_W, top: LOC_TOP - 8 }}>
                       пустой срез
                     </div>
@@ -316,11 +513,11 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
 
           {/* нити + ромбы */}
           <svg className={styles.threadsSvg} width={stripW} height={FILM_H}>
-            {model.characters.map(c => (
+            {board.characters.map(c => (
               <g key={c.id}>
-                {model.slices.slice(0, -1).map((slice, z) => {
-                  const next = model.slices[z + 1];
-                  const y0 = charYIn(slice, c.id);
+                {board.frames.slice(0, -1).map((frame, z) => {
+                  const next = board.frames[z + 1];
+                  const y0 = charYIn(frame, c.id);
                   const y1 = charYIn(next, c.id);
                   const x0 = xCenter(z);
                   const x1 = xCenter(z + 1);
@@ -352,14 +549,14 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
                     </g>
                   );
                 })}
-                {model.slices.map(slice => {
-                  if (!slice.presentCharIds.includes(c.id)) return null;
+                {board.frames.map(frame => {
+                  if (!frame.presentCharIds.includes(c.id)) return null;
                   const emph = emphasisFor(c.id);
                   return (
                     <circle
-                      key={slice.z}
-                      cx={xCenter(slice.z)}
-                      cy={charYIn(slice, c.id)}
+                      key={frame.key}
+                      cx={xCenter(frame.z)}
+                      cy={charYIn(frame, c.id)}
                       r={5.5}
                       fill={c.color}
                       stroke="#ffffff"
@@ -372,60 +569,62 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
             ))}
 
             {/* ромбы событий (интеракция 5) */}
-            {model.slices.map(slice => {
-              const occByChar = new Map<string, number>();
-              return slice.events.map(ev => {
-                const key = ev.charId ?? '__anchor__';
-                const occ = occByChar.get(key) ?? 0;
-                occByChar.set(key, occ + 1);
-                const { x, y } = eventAnchor(slice, ev, occ);
-                const color = charColor(ev.charId);
-                const hi = hoverEventN === ev.n || selectedEvent?.n === ev.n;
-                const dimmed =
-                  (hoverChar !== null && ev.charId !== hoverChar) ||
-                  (hoverMove !== null && ev.charId !== hoverMove.charId);
-                return (
-                  <g
-                    key={ev.n}
-                    className={styles.eventDiamond}
-                    opacity={dimmed && !hi ? 0.2 : 1}
-                    onMouseEnter={() => setHoverEventN(ev.n)}
-                    onMouseLeave={() => setHoverEventN(null)}
-                    onClick={e => {
-                      e.stopPropagation();
-                      setSelectedEvent(ev);
-                    }}
-                  >
-                    <polygon
-                      points={diamondPoints(x, y, hi ? 13 : 11)}
-                      fill={ev.hasScene ? color : '#ffffff'}
-                      stroke={color}
-                      strokeWidth={2}
-                    />
-                    <text
-                      x={x}
-                      y={y}
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                      fontSize={9}
-                      fontWeight={700}
-                      fill={ev.hasScene ? '#fff' : color}
+            {board.frames.map(frame =>
+              frame.boxes.map(box => {
+                const occByChar = new Map<string, number>();
+                return box.events.map(ev => {
+                  const key = ev.charId ?? '__anchor__';
+                  const occ = occByChar.get(key) ?? 0;
+                  occByChar.set(key, occ + 1);
+                  const { x, y } = eventAnchor(frame, box, ev, occ);
+                  const color = charColor(ev.charId);
+                  const hi = hoverEventN === ev.n || selectedEvent?.n === ev.n;
+                  const dimmed =
+                    (hoverChar !== null && ev.charId !== hoverChar) ||
+                    (hoverMove !== null && ev.charId !== hoverMove.charId);
+                  return (
+                    <g
+                      key={ev.n}
+                      className={styles.eventDiamond}
+                      opacity={dimmed && !hi ? 0.2 : 1}
+                      onMouseEnter={() => setHoverEventN(ev.n)}
+                      onMouseLeave={() => setHoverEventN(null)}
+                      onClick={e => {
+                        e.stopPropagation();
+                        setSelectedEvent(ev);
+                      }}
                     >
-                      {ev.n}
-                    </text>
-                  </g>
-                );
-              });
-            })}
+                      <polygon
+                        points={diamondPoints(x, y, hi ? 13 : 11)}
+                        fill={ev.hasScene ? color : '#ffffff'}
+                        stroke={color}
+                        strokeWidth={2}
+                      />
+                      <text
+                        x={x}
+                        y={y}
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        fontSize={9}
+                        fontWeight={700}
+                        fill={ev.hasScene ? '#fff' : color}
+                      >
+                        {ev.n}
+                      </text>
+                    </g>
+                  );
+                });
+              }),
+            )}
           </svg>
         </div>
 
         {/* ── мини-карта переходов (интеракция 4) ── */}
-        {model.locations.length > 1 && (
+        {board.locations.length > 1 && (
           <div className={styles.minimap} style={{ height: mapH }}>
             <span className={styles.minimapTitle}>карта переходов</span>
             <svg width={284} height={mapH - 6} style={{ position: 'absolute', left: 0, top: 6 }}>
-              {model.adjacency.map(([a, b]) => {
+              {board.adjacency.map(([a, b]) => {
                 const pa = mapPos.get(a);
                 const pb = mapPos.get(b);
                 if (!pa || !pb) return null;
@@ -462,7 +661,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
                   </g>
                 );
               })}
-              {model.locations.map(loc => {
+              {board.locations.map(loc => {
                 const p = mapPos.get(loc.id)!;
                 return (
                   <g key={loc.id}>
@@ -481,10 +680,10 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
       {/* ── лента событий видимых срезов ── */}
       <div className={styles.eventStrip}>
         <span className={styles.stripLabel}>события видимых срезов</span>
-        {visibleSlices.map(slice =>
-          slice.events.slice(0, 4).map((ev, idx) => {
-            const col = Math.floor(idx / 2);
-            const row = idx % 2;
+        {visibleFrames.map(frame =>
+          frame.events.slice(0, maxCards).map((ev, idx) => {
+            const col = isCal ? 0 : Math.floor(idx / 2);
+            const row = isCal ? idx : idx % 2;
             const color = charColor(ev.charId);
             const status = eventStatus(ev);
             const hi =
@@ -494,7 +693,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
                 key={ev.n}
                 className={styles.eventCard}
                 style={{
-                  left: PAD + (slice.z - windowStart) * STEP + col * 182,
+                  left: PAD + (frame.z - windowStart) * STEP + col * 182,
                   top: 26 + row * 52,
                   borderColor: hi ? color : undefined,
                 }}
@@ -526,15 +725,15 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
             );
           }),
         )}
-        {visibleSlices.map(
-          slice =>
-            slice.events.length > 4 && (
+        {visibleFrames.map(
+          frame =>
+            frame.events.length > maxCards && (
               <span
-                key={slice.anchor.id}
+                key={frame.key}
                 className={styles.moreChip}
-                style={{ left: PAD + (slice.z - windowStart) * STEP + 2 * 182, top: 26 }}
+                style={{ left: PAD + (frame.z - windowStart) * STEP + (isCal ? 182 : 2 * 182), top: 26 }}
               >
-                +{slice.events.length - 4} ещё
+                +{frame.events.length - maxCards} ещё
               </span>
             ),
         )}
@@ -543,7 +742,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
       {/* ── таймлайн (интеракция 3) ── */}
       <div ref={tlRef} className={styles.timeline} style={{ height: tlHeight }}>
         <span className={styles.tlLabel}>шкала времени</span>
-        {model.characters.map((c, i) => (
+        {board.characters.map((c, i) => (
           <span
             key={c.id}
             className={styles.tlCharName}
@@ -560,7 +759,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
           onPointerUp={onTlPointerUp}
         >
           {/* полоса актов */}
-          {model.acts.map(a => (
+          {board.acts.map(a => (
             <rect
               key={a.act}
               x={TL_X0 + a.fromZ * FW}
@@ -571,8 +770,8 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
             />
           ))}
           {/* дорожки присутствия */}
-          {model.characters.map((c, i) =>
-            model.presence[c.id]?.map(([s, e]) => (
+          {board.characters.map((c, i) =>
+            board.presence[c.id]?.map(([s, e]) => (
               <rect
                 key={`${c.id}:${s}`}
                 x={TL_X0 + s * FW + 3}
@@ -638,15 +837,17 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
           />
         </svg>
         {/* подписи кадров */}
-        {model.slices.map(slice => (
+        {board.frames.map(frame => (
           <span
-            key={slice.anchor.id}
-            className={`${styles.frameLabel} ${slice.z === selectedZ ? styles.frameLabelSel : ''}`}
-            style={{ left: TL_X0 + slice.z * FW, width: FW, top: 24 + svgH + 4 }}
-            onClick={() => selectSlice(slice.z)}
-            title={`${slice.anchor.timeMarker || ''} · ${slice.anchor.id}`}
+            key={frame.key}
+            className={`${styles.frameLabel} ${frame.z === selectedZ ? styles.frameLabelSel : ''} ${
+              frame.dayStart ? styles.frameLabelDay : ''
+            }`}
+            style={{ left: TL_X0 + frame.z * FW, width: FW, top: 24 + svgH + 4 }}
+            onClick={() => selectSlice(frame.z)}
+            title={frame.tlTitle}
           >
-            {slice.anchor.timeMarker || slice.anchor.id}
+            {frame.tlLabel}
           </span>
         ))}
       </div>
@@ -683,7 +884,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
               {selectedEvent.def.participants.map(p => (
                 <span key={p} className={styles.inspToken}>
                   <span className={styles.inspTokenDot} style={{ background: charColor(p) }} />
-                  {model.characters.find(c => c.id === p)?.name ?? p}
+                  {board.characters.find(c => c.id === p)?.name ?? p}
                 </span>
               ))}
             </div>
@@ -693,7 +894,7 @@ export const MontageBoard: React.FC<{ outline: StoryOutlinePlan }> = ({ outline 
               {eventStatus(selectedEvent).text}
             </span>
             <span style={{ fontSize: 11, color: '#9ca3af' }}>
-              срез {selectedEvent.z + 1} · {model.slices[selectedEvent.z]?.anchor.id}
+              срез {selectedEvent.z + 1} · {board.frames[selectedEvent.z]?.mono ?? board.frames[selectedEvent.z]?.title}
             </span>
           </div>
         </div>

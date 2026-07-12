@@ -13,6 +13,7 @@ import type {
   DialogueVariant,
 } from './types';
 import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
+import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
 
 /**
  * Стор для procedural-narrative-пилота.
@@ -97,6 +98,26 @@ type NarrativeState = {
   /** Модель мира: реестр локаций со связностью + маппинг якорей. */
   worldModel: WorldModel | null;
 
+  // ── Календарный пайплайн (docs/plans/calendar-branching.md) ──────────────
+  // Каскад инвалидации: castPlan → (calendar, tagMap) → spine → schedule →
+  // eventUnits → unitProse/spineBeatProse → endings.
+  /** Проход A1: персоны + цели + weekly-паттерны по тегам локаций. */
+  castPlan: CastPlan | null;
+  /** Дискретный календарь истории (дни × части дня, границы актов). */
+  calendar: Calendar | null;
+  /** Маппинг агендных тегов на id локаций WorldModel. */
+  tagMap: Record<string, string[]> | null;
+  /** Хребет: биты с окнами слотов, развилки, guarded-концовки. */
+  spine: SpinePlan | null;
+  /** char × slot → locationId|null; детерминированно собирается из агенд. */
+  schedule: CharacterSchedule | null;
+  /** Пул событий-storylet-ов (шеллы guard+goal+effects). Ключ — unit id. */
+  eventUnits: Record<string, EventUnit>;
+  /** Проза encounter-юнитов по брекетам. Ключ — unit id. */
+  unitProse: Record<string, DialogueVariant[]>;
+  /** Проза битов хребта. Ключ — beat id. */
+  spineBeatProse: Record<string, AnchorBeat>;
+
   /** Базовая/фолбэк-подложка проекта (neutral_calm, инструментал). */
   audioBase: AudioTrackState | null;
   /**
@@ -136,6 +157,19 @@ type NarrativeState = {
   /** Гранулярная правка настроения/спец-типа локации (авторский оверрайд). */
   patchLocation: (id: string, patch: Partial<Pick<WorldLocation, 'mood' | 'specialKind'>>) => void;
 
+  setCastPlan: (castPlan: CastPlan | null) => void;
+  /** Стадия worldCalendar: мир + календарь + маппинг тегов одним артефактом. */
+  setWorldCalendar: (
+    world: WorldModel | null,
+    calendar: Calendar | null,
+    tagMap: Record<string, string[]> | null,
+  ) => void;
+  setSpine: (spine: SpinePlan | null) => void;
+  setSchedule: (schedule: CharacterSchedule | null) => void;
+  setEventUnits: (units: EventUnit[]) => void;
+  setUnitProse: (unitId: string, variants: DialogueVariant[]) => void;
+  setSpineBeatProse: (beatId: string, beat: AnchorBeat) => void;
+
   setAudioBase: (state: AudioTrackState | null) => void;
   selectAudioBase: (index: number) => void;
   setAudioMoodBed: (mood: string, state: AudioTrackState) => void;
@@ -167,12 +201,29 @@ type PersistedNarrativeState = Pick<
   | 'beatPlan'
   | 'endings'
   | 'worldModel'
+  | 'castPlan'
+  | 'calendar'
+  | 'tagMap'
+  | 'spine'
+  | 'schedule'
+  | 'eventUnits'
+  | 'unitProse'
+  | 'spineBeatProse'
   | 'audioBase'
   | 'audioMoodBeds'
   | 'audioSpecialBeds'
   | 'audioByLi'
   | 'audioSfx'
 >;
+
+/** Пустое состояние календарного пайплайна от стадии spine и ниже. */
+const CLEARED_FROM_SPINE = {
+  spine: null,
+  schedule: null,
+  eventUnits: {},
+  unitProse: {},
+  spineBeatProse: {},
+} as const;
 
 export const useNarrativeStore = create<NarrativeState>()(
   persist(
@@ -188,6 +239,14 @@ export const useNarrativeStore = create<NarrativeState>()(
       beatPlan: null,
       endings: {},
       worldModel: null,
+      castPlan: null,
+      calendar: null,
+      tagMap: null,
+      spine: null,
+      schedule: null,
+      eventUnits: {},
+      unitProse: {},
+      spineBeatProse: {},
       audioBase: null,
       audioMoodBeds: {},
       audioSpecialBeds: {},
@@ -272,6 +331,40 @@ export const useNarrativeStore = create<NarrativeState>()(
       clearEndings: () => set({ endings: {} }),
 
       setWorldModel: worldModel => set({ worldModel }),
+
+      setCastPlan: castPlan => {
+        // Агенды определяют теги → календарь/маппинг и всё ниже устаревают.
+        set({ castPlan, calendar: null, tagMap: null, endings: {}, ...CLEARED_FROM_SPINE });
+      },
+
+      setWorldCalendar: (worldModel, calendar, tagMap) => {
+        set({ worldModel, calendar, tagMap, endings: {}, ...CLEARED_FROM_SPINE });
+      },
+
+      setSpine: spine => {
+        set({ ...CLEARED_FROM_SPINE, spine, endings: {} });
+      },
+
+      setSchedule: schedule => {
+        // Пул событий генерируется по выжимкам расписания — устаревает вместе с ним.
+        set({ schedule, eventUnits: {}, unitProse: {} });
+      },
+
+      setEventUnits: units => {
+        set(s => {
+          const eventUnits: Record<string, EventUnit> = { ...s.eventUnits };
+          for (const u of units) eventUnits[u.id] = u;
+          return { eventUnits };
+        });
+      },
+
+      setUnitProse: (unitId, variants) => {
+        set(s => ({ unitProse: { ...s.unitProse, [unitId]: variants } }));
+      },
+
+      setSpineBeatProse: (beatId, beat) => {
+        set(s => ({ spineBeatProse: { ...s.spineBeatProse, [beatId]: beat } }));
+      },
 
       patchLocation: (id, patch) => {
         set(s => {
@@ -363,8 +456,9 @@ export const useNarrativeStore = create<NarrativeState>()(
     }),
     {
       name: 'gu-narrative-state',
-      // v8: у локаций появились mood/specialKind (банк эмбиентов) + audioMoodBeds.
-      version: 8,
+      // v9: календарный пайплайн (castPlan/calendar/tagMap/spine/schedule/
+      // eventUnits/unitProse/spineBeatProse). v8: mood/specialKind локаций.
+      version: 9,
       // Персистим только данные, не действия. audioSfxState — транзиентный
       // прогресс, не персистится (batchId протухает при рестарте audio_gen).
       partialize: state => ({
@@ -379,6 +473,14 @@ export const useNarrativeStore = create<NarrativeState>()(
         beatPlan: state.beatPlan,
         endings: state.endings,
         worldModel: state.worldModel,
+        castPlan: state.castPlan,
+        calendar: state.calendar,
+        tagMap: state.tagMap,
+        spine: state.spine,
+        schedule: state.schedule,
+        eventUnits: state.eventUnits,
+        unitProse: state.unitProse,
+        spineBeatProse: state.spineBeatProse,
         audioBase: state.audioBase,
         audioMoodBeds: state.audioMoodBeds,
         audioSpecialBeds: state.audioSpecialBeds,
@@ -415,6 +517,15 @@ export const useNarrativeStore = create<NarrativeState>()(
           beatPlan: prev.beatPlan ?? null,
           endings: prev.endings ?? {},
           worldModel,
+          // v8→v9: календарный пайплайн — новые поля, кэши прежних стадий не трогаем.
+          castPlan: prev.castPlan ?? null,
+          calendar: prev.calendar ?? null,
+          tagMap: prev.tagMap ?? null,
+          spine: prev.spine ?? null,
+          schedule: prev.schedule ?? null,
+          eventUnits: prev.eventUnits ?? {},
+          unitProse: prev.unitProse ?? {},
+          spineBeatProse: prev.spineBeatProse ?? {},
           audioBase: prev.audioBase ?? null,
           audioMoodBeds: prev.audioMoodBeds ?? {},
           audioSpecialBeds: prev.audioSpecialBeds ?? {},

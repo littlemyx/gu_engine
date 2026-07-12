@@ -116,6 +116,30 @@
   box-shadow: 0 8px 28px rgba(79, 70, 229, 0.1);
 }
 
+/* Календарный вариант: начало дня — акцент на кадре и подписях. */
+.frameDayStart {
+  border-left: 3px solid #b3aee8;
+}
+
+.frameTitleDay {
+  font-weight: 700;
+  color: #4b5563;
+}
+
+.frameLabelDay {
+  font-weight: 700;
+}
+
+.moreLocsRow {
+  position: absolute;
+  font-size: 10px;
+  color: #6b7280;
+  background: #f3f1eb;
+  border: 1px solid #e5e2da;
+  border-radius: 8px;
+  padding: 2px 8px;
+}
+
 .frameTitle {
   position: absolute;
   top: 14px;

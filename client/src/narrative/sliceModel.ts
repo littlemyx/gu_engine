@@ -5,6 +5,7 @@ import type {
   AnchorBeat,
   StoryAnchor,
   StoryOutlinePlan,
+  WorldLocation,
   WorldModel,
   LocationMood,
 } from './types';
@@ -99,12 +100,32 @@ export function liLineColor(index: number): string {
   return LI_LINE_PALETTE[index % LI_LINE_PALETTE.length];
 }
 
-const shorten = (name: string, max = 8): string => {
+export const shorten = (name: string, max = 8): string => {
   const first = name.split(/[,«»]/)[0].trim();
   return first.length <= max ? first : `${first.slice(0, max - 1)}.`;
 };
 
-const truncate = (s: string, max: number): string => (s.length <= max ? s : `${s.slice(0, max - 1)}…`);
+export const truncate = (s: string, max: number): string => (s.length <= max ? s : `${s.slice(0, max - 1)}…`);
+
+/** Подпись эмбиента локации («весёлая · клуб») — общая для обеих монтажных моделей. */
+export function locationAmbientLabel(loc: WorldLocation | undefined | null): string | null {
+  if (!loc) return null;
+  const moodLabel = isLocationMood(loc.mood) ? LOCATION_MOOD_LABELS[loc.mood as LocationMood] : null;
+  const specialLabel = loc.specialKind ? SPECIAL_AMBIENT_KIND_LABELS[loc.specialKind] : null;
+  if (moodLabel && specialLabel) return `${moodLabel} · ${specialLabel}`;
+  return specialLabel ?? moodLabel;
+}
+
+/** Персонажи-линии доски: LI брифа с палитрой liLineColor. */
+export function deriveMontageCharacters(brief: Brief): MontageCharacter[] {
+  return brief.loveInterests.map((li, i) => ({
+    id: li.id,
+    name: li.name || li.id,
+    color: liLineColor(i),
+    initial: (li.name || li.id).slice(0, 1).toUpperCase(),
+    archetype: li.archetype,
+  }));
+}
 
 export type MontageInputs = {
   brief: Brief;
@@ -119,13 +140,7 @@ export type MontageInputs = {
 export function deriveMontageModel(inputs: MontageInputs): MontageModel {
   const { brief, outline, worldModel, beatPlan, dialogueVariants, anchorBeats } = inputs;
 
-  const characters: MontageCharacter[] = brief.loveInterests.map((li, i) => ({
-    id: li.id,
-    name: li.name || li.id,
-    color: liLineColor(i),
-    initial: (li.name || li.id).slice(0, 1).toUpperCase(),
-    archetype: li.archetype,
-  }));
+  const characters = deriveMontageCharacters(brief);
 
   const orderedAnchors = topoOrderAnchors(outline);
   const locById = new Map((worldModel?.locations ?? []).map(l => [l.id, l]));
@@ -142,14 +157,8 @@ export function deriveMontageModel(inputs: MontageInputs): MontageModel {
     return a.location || locId || '—';
   };
 
-  const ambientLabel = (locId: string | null): string | null => {
-    const loc = locId ? locById.get(locId) : undefined;
-    if (!loc) return null;
-    const moodLabel = isLocationMood(loc.mood) ? LOCATION_MOOD_LABELS[loc.mood as LocationMood] : null;
-    const specialLabel = loc.specialKind ? SPECIAL_AMBIENT_KIND_LABELS[loc.specialKind] : null;
-    if (moodLabel && specialLabel) return `${moodLabel} · ${specialLabel}`;
-    return specialLabel ?? moodLabel;
-  };
+  const ambientLabel = (locId: string | null): string | null =>
+    locationAmbientLabel(locId ? locById.get(locId) : undefined);
 
   const encountersByAnchor = new Map<string, { liId: string; goal: string; beatType: string | null }[]>();
   for (const e of beatPlan?.encounters ?? []) {

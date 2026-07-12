@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -95,6 +95,30 @@ export const generateNarrationWeb = <ThrowOnError extends boolean = false>(optio
  */
 export const generateWorldModel = <ThrowOnError extends boolean = false>(options: Options<GenerateWorldModelData, ThrowOnError>) => (options.client ?? client).post<GenerateWorldModelResponses, unknown, ThrowOnError>({
     url: '/generate/worldModel',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Build world locations, the discrete story calendar and the agenda-tag-to-location map
+ */
+export const generateWorldCalendar = <ThrowOnError extends boolean = false>(options: Options<GenerateWorldCalendarData, ThrowOnError>) => (options.client ?? client).post<GenerateWorldCalendarResponses, unknown, ThrowOnError>({
+    url: '/generate/worldCalendar',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate the story spine (beats with slot windows and guarded endings) over world and calendar
+ */
+export const generateSpine = <ThrowOnError extends boolean = false>(options: Options<GenerateSpineData, ThrowOnError>) => (options.client ?? client).post<GenerateSpineResponses, unknown, ThrowOnError>({
+    url: '/generate/spine',
     ...options,
     headers: {
         'Content-Type': 'application/json',

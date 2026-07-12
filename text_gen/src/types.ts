@@ -133,6 +133,57 @@ export interface WorldModelRequest {
 }
 
 /**
+ * Запрос стадии worldCalendar: локации мира + дискретный календарь
+ * (дни × части дня, границы актов) + маппинг агендных тегов на локации.
+ * Все вложенные структуры — opaque JSON (text_gen их не интерпретирует).
+ */
+export interface WorldCalendarRequest {
+  brief: unknown;
+  /** CastPlan с агендными тегами LI, или null (стаб-агенды без LLM). */
+  castPlan: unknown | null;
+  /** Целевые размеры календаря (computeCalendarTargets + brief.scale.acts). */
+  targets: {
+    days: number;
+    daypartsPerDay: number;
+    slotCount: number;
+    acts: number;
+  };
+  /**
+   * Previously generated world+calendar that failed validation. Present
+   * together with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос стадии spine: хребет истории — биты с окнами слотов и
+ * guarded-концовки поверх готового мира и календаря.
+ */
+export interface SpineRequest {
+  brief: unknown;
+  /** WorldModel (locations) — биты ссылаются на id локаций. */
+  worldModel: unknown;
+  /** Calendar (days/dayparts/slotCount/actBoundaries). */
+  calendar: unknown;
+  /** Маппинг агендных тегов на локации, или null. */
+  tagMap: unknown | null;
+  /** Целевые бюджеты: число битов и лимит развилок (0 в фазе 1). */
+  targets: {
+    beatCount: number;
+    branchPointBudget: number;
+  };
+  /**
+   * Previously generated spine that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
  * Запрос на планирование битов отношений: раскладка requiredBeats архетипов
  * по encounter-слотам (liId × anchorId) поверх готового outline.
  */

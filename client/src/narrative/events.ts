@@ -18,8 +18,15 @@ export type CharacterId = string;
 export type LocationId = string;
 export type FlagId = string;
 
-/** Дискретный срез времени; соответствует якорю outline. */
-export type TimeSlice = { z: number; anchorId: string; timeMarker: string };
+/**
+ * Дискретный срез времени. Исторически соответствовал якорю outline
+ * (anchorId/timeMarker); в календарной модели z = slot — глобальный индекс
+ * (день × часть дня), а anchorId/timeMarker остаются для легаси-потребителей.
+ */
+export type TimeSlice = { z: number; anchorId?: string; timeMarker?: string; slot?: number };
+
+/** Окно слотов [fromSlot, toSlot] включительно. */
+export type SlotWindow = { fromSlot: number; toSlot: number };
 
 export type RelationshipState = {
   /** Спектр −1..1, как relationship[li].affection в game-компиляторе. */
@@ -62,6 +69,7 @@ export type Guard =
   | { rel: { var: string; op: '<' | '<=' | '>' | '>='; value: number } }
   | { bracket: { of: 'affection'; is: AffectionBracket } }
   | { time: { op: '>=' | '<'; value: string } }
+  | { slot: { op: '>=' | '<='; value: number } }
   | { at: { char: CharacterId; loc: LocationId } };
 
 export type Effect =
@@ -74,7 +82,7 @@ export type EventDef = {
   id: string;
   kind: EventKind;
   /** Маска привязки к y/z: событие рассматривается только в подходящем срезе. */
-  at: { anchorId?: string; locationId?: LocationId };
+  at: { anchorId?: string; locationId?: LocationId; slot?: SlotWindow };
   participants: CharacterId[];
   /** «Если» — чистый предикат над EventContext. */
   guard: Guard;
@@ -164,6 +172,10 @@ export function evalGuard(guard: Guard, ctx: EventContext, state: SliceState): b
     if (Number.isNaN(now) || Number.isNaN(at)) return false;
     return guard.time.op === '>=' ? now >= at : now < at;
   }
+  if ('slot' in guard) {
+    const current = ctx.z.slot ?? ctx.z.z;
+    return guard.slot.op === '>=' ? current >= guard.slot.value : current <= guard.slot.value;
+  }
   if ('at' in guard) return state.positions[guard.at.char] === guard.at.loc;
   return false;
 }
@@ -203,6 +215,10 @@ function applyEffect(effect: Effect, state: SliceState): void {
 /** Событие попадает в срез, если его at-маска совпадает с z (и локацией среза). */
 export function matchesSlice(def: EventDef, slice: TimeSlice, sliceLocationId?: string | null): boolean {
   if (def.at.anchorId && def.at.anchorId !== slice.anchorId) return false;
+  if (def.at.slot) {
+    const current = slice.slot ?? slice.z;
+    if (current < def.at.slot.fromSlot || current > def.at.slot.toSlot) return false;
+  }
   if (def.at.locationId && !def.at.anchorId && def.at.locationId !== sliceLocationId) return false;
   return true;
 }
@@ -288,6 +304,7 @@ export function formatGuard(guard: Guard): string {
   if ('rel' in guard) return `rel(${guard.rel.var} ${GUARD_OP_TEXT[guard.rel.op]} ${guard.rel.value})`;
   if ('bracket' in guard) return `bracket(${guard.bracket.of}) = ${guard.bracket.is}`;
   if ('time' in guard) return `time ${GUARD_OP_TEXT[guard.time.op]} ${guard.time.value}`;
+  if ('slot' in guard) return `slot ${GUARD_OP_TEXT[guard.slot.op]} ${guard.slot.value}`;
   if ('at' in guard) return `at(${guard.at.char}, ${guard.at.loc})`;
   return '?';
 }

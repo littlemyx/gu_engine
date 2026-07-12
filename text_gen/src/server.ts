@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processDialogueVariant, processEnding } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processSpine, processDialogueVariant, processEnding } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
@@ -12,6 +12,8 @@ import type {
   AnchorBeatRequest,
   BeatPlanRequest,
   WorldModelRequest,
+  WorldCalendarRequest,
+  SpineRequest,
   DialogueVariantRequest,
   EndingRequest,
   ItemState,
@@ -207,6 +209,54 @@ app.post('/generate/worldModel', (req, res) => {
   logger.log(`[POST /generate/worldModel] batch=${batchId}`);
 
   processWorldModel(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/worldCalendar', (req, res) => {
+  const body = req.body as WorldCalendarRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'worldCalendar';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/worldCalendar] batch=${batchId} days=${body.targets?.days ?? '?'} acts=${body.targets?.acts ?? '?'}`);
+
+  processWorldCalendar(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/spine', (req, res) => {
+  const body = req.body as SpineRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'spine';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/spine] batch=${batchId} beatCount=${body.targets?.beatCount ?? '?'}`);
+
+  processSpine(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

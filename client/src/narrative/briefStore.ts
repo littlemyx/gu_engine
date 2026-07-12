@@ -210,7 +210,19 @@ export const useBriefStore = create<BriefState>()(
     }),
     {
       name: 'gu-narrative-brief',
-      version: 1,
+      // v2: scale.branchPointBudget (бюджет глобальных развилок хребта).
+      version: 2,
+      migrate: persisted => {
+        const prev = (persisted ?? {}) as Partial<BriefState>;
+        const brief = prev.brief ?? SAMPLE_BRIEF;
+        return {
+          ...prev,
+          brief: {
+            ...brief,
+            scale: { ...brief.scale, branchPointBudget: brief.scale.branchPointBudget ?? 2 },
+          },
+        };
+      },
     },
   ),
 );

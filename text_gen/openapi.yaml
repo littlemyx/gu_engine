@@ -134,6 +134,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/worldCalendar:
+    post:
+      operationId: generateWorldCalendar
+      summary: Build world locations, the discrete story calendar and the agenda-tag-to-location map
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WorldCalendarRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
+  /generate/spine:
+    post:
+      operationId: generateSpine
+      summary: Generate the story spine (beats with slot windows and guarded endings) over world and calendar
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpineRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /generate/beatPlan:
     post:
       operationId: generateBeatPlan
@@ -642,6 +678,102 @@ components:
           additionalProperties: true
           nullable: true
           description: Previously generated world model that failed validation.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
+
+    WorldCalendarRequest:
+      type: object
+      required:
+        - brief
+        - targets
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+          description: Procedural narrative brief, embedded into the prompt as-is.
+        castPlan:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: |
+            CastPlan with per-LI agenda location tags (workplace/hangout/home...);
+            every tag must be mapped to at least one location. Null when agendas
+            are stubbed client-side.
+        targets:
+          type: object
+          required:
+            - days
+            - daypartsPerDay
+            - slotCount
+            - acts
+          properties:
+            days:
+              type: integer
+            daypartsPerDay:
+              type: integer
+            slotCount:
+              type: integer
+            acts:
+              type: integer
+          description: |
+            Calendar sizes computed from brief.scale (computeCalendarTargets):
+            the generated calendar must match them exactly.
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Previously generated world+calendar that failed validation.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
+
+    SpineRequest:
+      type: object
+      required:
+        - brief
+        - worldModel
+        - calendar
+        - targets
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+        worldModel:
+          type: object
+          additionalProperties: true
+          description: World model (locations registry) the beats reference by id.
+        calendar:
+          type: object
+          additionalProperties: true
+          description: Discrete calendar (days, dayparts, actBoundaries).
+        tagMap:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Agenda-tag to location-ids mapping, or null.
+        targets:
+          type: object
+          required:
+            - beatCount
+            - branchPointBudget
+          properties:
+            beatCount:
+              type: integer
+            branchPointBudget:
+              type: integer
+          description: |
+            Budgets: number of beats (±1) and branch point limit
+            (0 in the current format version — branchPoint kind forbidden).
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Previously generated spine that failed validation.
         previousIssues:
           type: array
           items:

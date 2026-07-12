@@ -94,6 +94,49 @@ export type {
   SliceEvaluation,
   AffectionBracket,
 } from './events';
+export {
+  DEFAULT_DAYPARTS,
+  slotOf,
+  dayOfSlot,
+  daypartOfSlot,
+  slotLabel,
+  actOfSlot,
+  actSlotWindow,
+  computeCalendarTargets,
+  guardFromRequires,
+  parseCalendar,
+  parseSpinePlan,
+  parseCastPlan,
+} from './calendarTypes';
+export type {
+  Calendar,
+  CalendarTargets,
+  CastAgenda,
+  CastGoal,
+  CastMember,
+  CastPlan,
+  CharacterSchedule,
+  EventUnit,
+  EventUnitSource,
+  LocationTag,
+  SlotWindow,
+  SpineBeat,
+  SpineBeatKind,
+  SpineBeatOutcome,
+  SpineEnding,
+  SpinePlan,
+} from './calendarTypes';
+export { validateSpine, guardFlags } from './validateSpine';
+export { validateCalendar } from './validateCalendar';
+export { assignBeatSlots, buildScheduleStub } from './beatSchedule';
+export { buildStubCastPlan } from './castPlanStub';
+export { buildWorldCalendarRequestPayload } from './buildWorldCalendarRequest';
+export { buildSpineRequestPayload, computeSpineTargets } from './buildSpineRequest';
+export { useBulkCalendarGeneration } from './useBulkCalendarGeneration';
+export type { BulkCalendarPhase, BulkCalendarProgress } from './useBulkCalendarGeneration';
+export { deriveCalendarMontage } from './calendarSliceModel';
+export type { CalendarMontageModel } from './calendarSliceModel';
+export { deriveLegacyOutline } from './deriveLegacyOutline';
 export { deriveMontageModel, liLineColor, LI_LINE_PALETTE } from './sliceModel';
 export type {
   MontageModel,
