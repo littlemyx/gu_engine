@@ -754,12 +754,13 @@ const CALENDAR_PHASE_LABEL: Record<string, string> = {
   world_calendar: 'Мир и календарь',
   spine: 'Хребет истории',
   schedule: 'Расписание персонажей',
+  beat_prose: 'Проза битов',
   event_pool: 'Пул событий',
   prune: 'Отсев недостижимого',
   dialogue_units: 'Диалоговые юниты',
 };
 
-/** Бар календарного пайплайна: cast → мир+календарь → хребет → расписание → пул событий → pruning → проза юнитов. */
+/** Бар календарного пайплайна: cast → мир+календарь → хребет → расписание → проза битов → пул событий → pruning → проза юнитов. */
 const CalendarGenBar: React.FC<{
   gen: ReturnType<typeof useBulkCalendarGeneration>;
   brief: Brief;

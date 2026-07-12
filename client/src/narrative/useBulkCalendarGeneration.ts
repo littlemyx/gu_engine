@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import {
+  generateAnchorBeat,
   generateCastPlan,
   generateDialogueQa,
   generateDialogueUnit,
@@ -9,8 +10,16 @@ import {
   getBatchStatus,
   type BatchStatus,
 } from '@root/text_gen/generated_client';
-import type { Brief, DialogueVariantBracket, LoveInterestCard, SegmentIssue, WorldLocation, WorldModel } from './types';
-import { parseWorldModel } from './types';
+import type {
+  AnchorBeat,
+  Brief,
+  DialogueVariantBracket,
+  LoveInterestCard,
+  SegmentIssue,
+  WorldLocation,
+  WorldModel,
+} from './types';
+import { parseAnchorBeat, parseWorldModel, validateAnchorBeat } from './types';
 import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
 import { parseCalendar, parseCastPlan, parseSpinePlan } from './calendarTypes';
 import type { DialogueUnit } from './dialogueUnit';
@@ -25,15 +34,19 @@ import { buildCastPlanRequestPayload } from './buildCastPlanRequest';
 import { buildWorldCalendarRequestPayload } from './buildWorldCalendarRequest';
 import { buildSpineRequestPayload } from './buildSpineRequest';
 import { buildEventPoolRequestPayload, parseEventPool, unitEstablishes, validateEventUnits } from './parseEventPool';
+import { deriveLegacyOutline } from './deriveLegacyOutline';
+import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
+import { topoOrderAnchors, outgoingOf } from './anchorOrder';
 import { computeReachableUnits } from './reachability';
 import { useNarrativeStore } from './narrativeStore';
 
 /**
  * Оркестрация календарного пайплайна (фазы 1+3+4 docs/plans/calendar-branching.md):
  * cast (LLM, фолбэк — стаб) → world_calendar (LLM) → spine (LLM) → schedule
- * (детерминированный солвер buildSchedule) → event_pool (LLM, per LI) →
- * prune (reachability, без LLM) → dialogue_units (LLM: достижимый юнит × 3
- * брекета, structural validate + dialogueQA-критик).
+ * (детерминированный солвер buildSchedule) → beat_prose (LLM: проза битов
+ * хребта через легаси-стадию anchorBeat поверх deriveLegacyOutline) →
+ * event_pool (LLM, per LI) → prune (reachability, без LLM) → dialogue_units
+ * (LLM: достижимый юнит × 3 брекета, structural validate + dialogueQA-критик).
  *
  * Механика LLM-стадий скопирована с worldModel-фазы useBulkStoryGeneration:
  * endpoint → polling /status/:batchId, best-of retry ≤3 попыток с фидбеком
@@ -50,7 +63,7 @@ import { useNarrativeStore } from './narrativeStore';
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000;
 const MAX_ATTEMPTS = 3;
-const TOTAL_STEPS = 7;
+const TOTAL_STEPS = 8;
 const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 export type BulkCalendarPhase =
@@ -59,6 +72,7 @@ export type BulkCalendarPhase =
   | 'world_calendar'
   | 'spine'
   | 'schedule'
+  | 'beat_prose'
   | 'event_pool'
   | 'prune'
   | 'dialogue_units'
@@ -342,11 +356,95 @@ export function useBulkCalendarGeneration() {
       return;
     }
 
-    // ── Phase 5: event_pool — пул событий-шеллов per LI (B2). ───────────────
+    // ── Phase 5: beat_prose — проза битов хребта (реюз стадии anchorBeat). ──
+    // deriveLegacyOutline адаптирует хребет к легаси-контракту anchorBeat;
+    // биты идут последовательно в топо-порядке, потому что предшественникам
+    // в payload нужны beatText уже принятых битов. Валидный кэшированный бит
+    // (против ТЕКУЩЕГО производного outline) не регенерируется; невалидный —
+    // сидирует best-of retry как previousAttempt.
+    publish('beat_prose', 4);
+    {
+      const stageIssues: string[] = [];
+      const derived = deriveLegacyOutline(spine, calendar, schedule, brief, worldModel);
+      // buildAnchorBeatRequest читает worldModel.anchorLocations — подмешиваем
+      // производные привязки якорей (тот же трюк, что в ExportBar).
+      const worldForBeats: WorldModel = {
+        ...worldModel,
+        anchorLocations: { ...worldModel.anchorLocations, ...derived.anchorLocations },
+      };
+      const liNames = brief.loveInterests.flatMap(li => [li.name, li.id]).filter(Boolean);
+      // Проза, принятая В ЭТОМ прогоне (кэш + свежая), — контекст предков.
+      const acceptedBeats: Record<string, AnchorBeat> = {};
+
+      for (const anchor of topoOrderAnchors(derived.outline)) {
+        const outgoingIds = outgoingOf(derived.outline, anchor.id);
+        const beatErrors = (b: AnchorBeat): string[] =>
+          validateAnchorBeat(b, anchor.id, outgoingIds, liNames)
+            .filter(i => i.severity === 'error')
+            .map(formatIssue);
+
+        // anchor.id === beat.id по построению адаптера — кэш ищем по нему же.
+        const cached = useNarrativeStore.getState().spineBeatProse[anchor.id];
+        const cachedErrors = cached ? beatErrors(cached) : [];
+        if (cached && cachedErrors.length === 0) {
+          acceptedBeats[anchor.id] = cached;
+          continue;
+        }
+
+        try {
+          const basePayload = buildAnchorBeatRequestPayload(
+            brief,
+            derived.outline,
+            anchor,
+            acceptedBeats,
+            worldForBeats,
+          );
+          type BeatPayload = typeof basePayload & { previousAttempt?: AnchorBeat; previousIssues?: string[] };
+          let best: { beat: AnchorBeat; errorCount: number; errors: string[] } | null = cached
+            ? { beat: cached, errorCount: cachedErrors.length, errors: cachedErrors }
+            : null;
+          let lastAttemptError: unknown = null;
+          for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            try {
+              const payload: BeatPayload = !best
+                ? basePayload
+                : { ...basePayload, previousAttempt: best.beat, previousIssues: best.errors };
+              const { data, error: reqError } = await generateAnchorBeat({ body: payload });
+              if (reqError || !data) throw new Error(`не удалось запустить генерацию прозы бита ${anchor.id}`);
+              const beat = await pollBatchResult(data.batchId, parseAnchorBeat);
+              const errors = beatErrors(beat);
+              if (!best || errors.length < best.errorCount) {
+                best = { beat, errorCount: errors.length, errors };
+              }
+              if (errors.length === 0) break;
+            } catch (attemptErr) {
+              lastAttemptError = attemptErr;
+            }
+          }
+          if (best && best.errorCount === 0) {
+            acceptedBeats[anchor.id] = best.beat;
+            useNarrativeStore.getState().setSpineBeatProse(anchor.id, best.beat);
+          } else if (best) {
+            stageIssues.push(`${anchor.id}: проза бита не прошла валидацию: ${best.errors.slice(0, 2).join('; ')}`);
+          } else {
+            throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
+          }
+        } catch (e) {
+          stageIssues.push(`${anchor.id}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      if (stageIssues.length > 0) {
+        fail('beat_prose', `проза битов не собрана полностью (${stageIssues.length} проблем)`, stageIssues);
+        return;
+      }
+    }
+
+    // ── Phase 6: event_pool — пул событий-шеллов per LI (B2). ───────────────
     // Валидный кэшированный пул персонажа (против текущих входов) не
     // регенерируется. Итог пишется полной заменой (replaceEventUnits) —
     // юниты пере-генерированных персонажей не должны выживать под старыми id.
-    publish('event_pool', 4);
+    publish('event_pool', 5);
     {
       const stageIssues: string[] = [];
       const finalUnits: EventUnit[] = [];
@@ -413,10 +511,10 @@ export function useBulkCalendarGeneration() {
     }
     const eventUnits = Object.values(useNarrativeStore.getState().eventUnits);
 
-    // ── Phase 6: prune — reachability-отсев, без LLM (B3). ──────────────────
+    // ── Phase 7: prune — reachability-отсев, без LLM (B3). ──────────────────
     // Недостижимым юнитам проза не генерируется; множество живёт в локальной
     // переменной прогона — стор хранит полный пул (монтажка показывает всё).
-    publish('prune', 5);
+    publish('prune', 6);
     const reachable = computeReachableUnits(spine, calendar, eventUnits);
     {
       const pruned = eventUnits.length - reachable.size;
@@ -427,14 +525,14 @@ export function useBulkCalendarGeneration() {
       }
     }
 
-    // ── Phase 7: dialogue_units — проза per ДОСТИЖИМЫЙ юнит × 3 брекета. ────
+    // ── Phase 8: dialogue_units — проза per ДОСТИЖИМЫЙ юнит × 3 брекета. ────
     // Структурный validateDialogueUnit гейтит best-of retry (≤MAX_ATTEMPTS с
     // previousIssues-фидбеком); поверх структурно валидного юнита — ОДИН
     // dialogueQA-проход (LLM-критик: ответы на ask, тон=брекету, завершённость
     // closing); error-severity QA-issues дают одну дополнительную попытку
     // регенерации. Кэш: юнит с 3 брекетами, валидными против текущих входов,
     // пропускается (деньги — только на отсутствующее и невалидное).
-    publish('dialogue_units', 6);
+    publish('dialogue_units', 7);
     {
       const stageIssues: string[] = [];
       const liById = new Map(brief.loveInterests.map(li => [li.id, li]));
