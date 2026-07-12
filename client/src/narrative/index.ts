@@ -52,6 +52,13 @@ export {
   type GameProjectFile,
 } from './convertToGameProject';
 export { compileWorldGameProject, type WorldCompileResult, type WorldCompileStats } from './compileWorldGame';
+export {
+  compileCalendarGameProject,
+  lintRouters,
+  scheduleRuns,
+  type CalendarCompileResult,
+  type CalendarCompileStats,
+} from './compileCalendarGame';
 export { useStoryOutlineGeneration } from './useStoryOutlineGeneration';
 export type { StoryOutlineGenStatus } from './useStoryOutlineGeneration';
 export { useBulkStoryGeneration } from './useBulkStoryGeneration';

@@ -22,6 +22,7 @@ import {
   SPECIAL_AMBIENT_KIND_LABELS,
   convertStoryToGameProject,
   compileWorldGameProject,
+  compileCalendarGameProject,
   downloadJson,
   slugify,
   type ArchetypeProfile,
@@ -37,6 +38,9 @@ import {
   type PoseRegenEntry,
   type PoseRegenStatus,
   type Brief,
+  type Calendar,
+  type CharacterSchedule,
+  type SpinePlan,
 } from '@/narrative';
 import { deriveCalendarMontage } from '@/narrative/calendarSliceModel';
 import { deriveLegacyOutline } from '@/narrative/deriveLegacyOutline';
@@ -345,6 +349,9 @@ const Playground = () => {
                 <ExportBar
                   outline={activeOutline}
                   anchorLocations={usingDerivedOutline ? derivedLegacy?.anchorLocations ?? null : null}
+                  spine={spine}
+                  calendar={calendar}
+                  schedule={schedule}
                 />
               </PlaygroundErrorBoundary>
             ) : (
@@ -1302,14 +1309,20 @@ const AudioGenBar: React.FC<{
 
 const ExportBar: React.FC<{
   outline: StoryOutlinePlan;
-  /** Маппинг anchor→loc от адаптера deriveLegacyOutline (календарный путь). */
+  /** Маппинг anchor→loc от адаптера deriveLegacyOutline (легаси-фолбэк). */
   anchorLocations?: Record<string, string> | null;
-}> = ({ outline, anchorLocations }) => {
+  /** Полный календарный стек → компиляция через compileCalendarGameProject. */
+  spine?: SpinePlan | null;
+  calendar?: Calendar | null;
+  schedule?: CharacterSchedule | null;
+}> = ({ outline, anchorLocations, spine, calendar, schedule }) => {
   const brief = useBriefStore(s => s.brief);
   const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
   const anchorBeats = useNarrativeStore(s => s.anchorBeats);
   const endings = useNarrativeStore(s => s.endings);
   const worldModel = useNarrativeStore(s => s.worldModel);
+  const spineBeatProse = useNarrativeStore(s => s.spineBeatProse);
+  const unitProse = useNarrativeStore(s => s.unitProse);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const audioBase = useNarrativeStore(s => s.audioBase);
@@ -1328,18 +1341,43 @@ const ExportBar: React.FC<{
   const liCount = brief.loveInterests.length;
   const audioReady = audioBase?.status === 'done';
 
-  // Календарный путь: worldCalendar не знает якорей, маппинг anchor→loc
-  // приносит адаптер производного outline.
+  // Календарный путь: полный стек spine+calendar+schedule+worldModel →
+  // календарный компилятор (slot-переменная, «Подождать», HUD). Легаси-фолбэк:
+  // worldCalendar не знает якорей, маппинг anchor→loc приносит адаптер.
+  const useCalendarCompiler = Boolean(spine && calendar && schedule && worldModel);
   const worldForExport =
     worldModel && anchorLocations
       ? { ...worldModel, anchorLocations: { ...worldModel.anchorLocations, ...anchorLocations } }
       : worldModel;
 
+  const audioInput = {
+    base: audioBase,
+    moodBeds: audioMoodBeds,
+    specialBeds: audioSpecialBeds,
+    byLi: audioByLi,
+    sfx: audioSfx,
+  };
+
   const onExport = () => {
-    // С моделью мира игра компилируется как стейт-машина по графу локаций
-    // (свободное перемещение, события/встречи гейтятся состоянием); без неё —
-    // легаси-конвертация (прямые рёбра якорь→якорь, без аудио).
-    const result = worldForExport
+    // Приоритет: календарный компилятор → world-компилятор (адаптерный
+    // outline) → легаси-конвертация (прямые рёбра якорь→якорь, без аудио).
+    // dialogueVariants легаси-пайплайна в календарный компилятор НЕ подаются —
+    // его прозу несёт unitProse (в v1 обычно пуст → встречи без кнопок).
+    const result = useCalendarCompiler
+      ? compileCalendarGameProject(
+          brief,
+          spine!,
+          calendar!,
+          schedule!,
+          worldModel!,
+          spineBeatProse,
+          unitProse,
+          endings,
+          images,
+          characters,
+          audioInput,
+        )
+      : worldForExport
       ? compileWorldGameProject(
           brief,
           outline,
@@ -1349,13 +1387,7 @@ const ExportBar: React.FC<{
           endings,
           images,
           characters,
-          {
-            base: audioBase,
-            moodBeds: audioMoodBeds,
-            specialBeds: audioSpecialBeds,
-            byLi: audioByLi,
-            sfx: audioSfx,
-          },
+          audioInput,
         )
       : convertStoryToGameProject(brief, outline, {}, dialogueVariants, anchorBeats, endings, images, characters, null);
     const slug = slugify(result.project.title);
@@ -1372,6 +1404,11 @@ const ExportBar: React.FC<{
           {Object.keys(endings).length} концовок · {imageCount}/{imageTotal} фонов · {characterCount}/{liCount} спрайтов
           {worldModel ? ` · ${worldModel.locations.length} локаций` : ' · без модели мира'}
           {audioReady ? ' · аудио готово' : ' · без аудио'}
+          {useCalendarCompiler
+            ? ` · календарный компилятор (${calendar!.slotCount} слотов)`
+            : worldForExport
+            ? ' · world-компилятор'
+            : ' · легаси-конвертер'}
         </span>
       </div>
       <button type="button" className={styles.primaryBtn} onClick={onExport}>

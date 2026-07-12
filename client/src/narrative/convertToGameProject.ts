@@ -138,6 +138,8 @@ export type GameProjectFile = {
     endFadeInMs?: number;
     stateSchema?: GameStateSchema;
     world?: GameWorldManifest;
+    /** Календарь для HUD рантайма (game/src/calendarState.ts): «День N · часть дня». */
+    calendar?: { slotCount: number; dayparts: string[]; actBoundaries: number[] };
     bgmUrl?: string;
     /** Банк эмбиентов: LocationMood → URL. Рендерер выбирает по mood локации. */
     ambientByMood?: Record<string, string>;

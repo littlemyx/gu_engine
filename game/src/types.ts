@@ -103,6 +103,18 @@ export type WorldManifest = {
   edges: WorldMapEdge[];
 };
 
+/** Календарь игры: слот = (день × часть дня). Эмитится календарным
+ *  компилятором (client/src/narrative/compileCalendarGame.ts) в
+ *  settings.calendar. Отсутствует → HUD календаря скрыт. */
+export type CalendarSettings = {
+  /** Всего слотов; переменная движка slot живёт в [0, slotCount]. */
+  slotCount: number;
+  /** Названия частей дня; длина = слотов в дне. */
+  dayparts: string[];
+  /** День начала каждого акта; actBoundaries[0] === 0. */
+  actBoundaries: number[];
+};
+
 export type ProjectSettings = {
   sceneFadeInMs: number;
   sceneFadeOutMs: number;
@@ -110,6 +122,7 @@ export type ProjectSettings = {
   endFadeInMs: number;
   stateSchema?: StateSchema;
   world?: WorldManifest;
+  calendar?: CalendarSettings;
   /** Базовая мелодия проекта — играет во всех сценах без audioProfile. */
   bgmUrl?: string;
   /**

@@ -1,6 +1,7 @@
 import { GameEngine } from "./engine";
 import { GameRenderer } from "./renderer";
 import { WorldState } from "./worldState";
+import { CalendarState } from "./calendarState";
 import { WorldMap } from "./map";
 import { GameAudio } from "./audio";
 import {
@@ -18,6 +19,10 @@ const app = document.getElementById("app")!;
 const renderer = new GameRenderer(app);
 
 let currentProject: ResolvedProject | null = null;
+
+// Имя переменной времени календарного компилятора (contract с
+// client/src/narrative/compileCalendarGame.ts).
+const SLOT_VAR = "slot";
 
 if (typeof __GU_PROJECT__ !== "undefined") {
   launchGame(__GU_PROJECT__);
@@ -207,10 +212,19 @@ function launchGame(project: ResolvedProject): void {
       ? new WorldState(manifest, project.scenes)
       : null;
 
+  // HUD календаря: слой поверх движка (движок про календарь не знает),
+  // читает переменную slot из state после каждой смены сцены.
+  const calendarSettings = project.settings.calendar;
+  let calendarState: CalendarState | null = null;
+
   const engine = new GameEngine(project.scenes, project.settings, (node, isEnd) => {
     worldState?.onScene(node);
+    calendarState?.onScene();
     renderer.renderScene(node, isEnd);
   });
+  calendarState = calendarSettings
+    ? new CalendarState(calendarSettings, () => engine.getState()[SLOT_VAR] ?? 0)
+    : null;
   engine.setProjectMeta(project.title, project.projectFile, project.scenesFile);
   renderer.bind(engine);
   renderer.bindAudio(audio);
@@ -218,7 +232,8 @@ function launchGame(project: ResolvedProject): void {
 
   renderer.setTopLabel(() => {
     const cur = worldState?.getCurrent();
-    return cur ? worldState!.nameOf(cur) : project.title;
+    const base = cur ? worldState!.nameOf(cur) : project.title;
+    return calendarState ? `${base} · ${calendarState.label()}` : base;
   });
 
   if (worldState) {
