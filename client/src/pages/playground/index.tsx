@@ -758,6 +758,7 @@ const CALENDAR_PHASE_LABEL: Record<string, string> = {
   event_pool: 'Пул событий',
   prune: 'Отсев недостижимого',
   dialogue_units: 'Диалоговые юниты',
+  ending_prose: 'Проза концовок',
 };
 
 /** Бар календарного пайплайна: cast → мир+календарь → хребет → расписание → проза битов → пул событий → pruning → проза юнитов. */

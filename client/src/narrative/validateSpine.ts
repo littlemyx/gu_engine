@@ -1,6 +1,6 @@
 import type { Brief, SegmentIssue, WorldModel } from './types';
 import type { Calendar, SpineBeat, SpinePlan } from './calendarTypes';
-import { actSlotWindow } from './calendarTypes';
+import { actSlotWindow, effectiveBeatWindow } from './calendarTypes';
 import { assignBeatSlots } from './beatSchedule';
 import type { Guard } from './events';
 
@@ -308,29 +308,20 @@ export function validateSpine(
     }
   }
 
-  // Назначаемость: каждому обязательному биту — свой слот внутри окна.
-  // Жадный алгоритм по дедлайну оптимален для интервального матчинга
-  // единичных задач, так что «не назначилось» = реальная коллизия окон.
-  const mandatory = [...beats].sort(
-    (a, b) => a.window.toSlot - b.window.toSlot || a.window.fromSlot - b.window.fromSlot,
-  );
-  const taken = new Set<number>();
-  for (const b of mandatory) {
-    let placed = -1;
-    for (let s = b.window.fromSlot; s <= b.window.toSlot; s++) {
-      if (!taken.has(s)) {
-        placed = s;
-        break;
-      }
-    }
-    if (placed === -1) {
+  // Назначаемость (branch-aware): co-play биты требуют разных слотов, а
+  // взаимоисключающие ветки (разные исходы одной развилки) могут делить слот —
+  // истинные ветки не множат таймлайн. Реюз канонического assignBeatSlots над
+  // ЭФФЕКТИВНЫМИ (расширенными до акта) окнами: бит без назначенного слота = на
+  // каком-то листе одновременных битов больше, чем слотов в акте.
+  const assigned = assignBeatSlots(spine, calendar);
+  for (const b of beats) {
+    if (assigned[b.id] == null) {
+      const win = effectiveBeatWindow(b, calendar);
       issues.push({
         severity: 'error',
         scope: `beats/${b.id}/window`,
-        message: `биту "${b.id}" не хватает свободного слота в окне [${b.window.fromSlot}, ${b.window.toSlot}] — окна битов пережаты`,
+        message: `бит "${b.id}" не удаётся расположить в окне акта [${win.fromSlot}, ${win.toSlot}] — на каком-то листе одновременных битов больше, чем слотов акта`,
       });
-    } else {
-      taken.add(placed);
     }
   }
 

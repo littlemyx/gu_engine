@@ -136,6 +136,71 @@ export function parseDialogueUnit(rawText: string): DialogueUnit {
 }
 
 // ============================================================================
+// NORMALIZER (детерминированный разрыв циклов — LLM-вывод это черновик)
+// ============================================================================
+
+/**
+ * LLM устойчиво пишет «возврат к прошлой теме» (say/ask → более ранний узел),
+ * а контракт требует DAG — retry-фидбек это не лечит. Разрываем детерминированно:
+ * back-edge (ребро в «серый» узел DFS от entry) удаляется ВМЕСТЕ с выбором,
+ * если у узла-источника остаются другие выборы (диалог остаётся полным: узел
+ * не становится обрывом). Узел с единственным выбором-циклом не трогаем —
+ * молча превращать его в обрыв хуже, чем отдать ошибку валидатору.
+ *
+ * Возвращает нормализованный юнит и список разорванных рёбер (warning автору).
+ * Идемпотентен: на DAG возвращает юнит без изменений.
+ */
+export function breakDialogueCycles(unit: DialogueUnit): { unit: DialogueUnit; broken: string[] } {
+  const broken: string[] = [];
+  let current = unit;
+  // Каждый проход рвёт максимум одно ребро; рёбер конечно — цикл ограничен.
+  const maxPasses = unit.nodes.reduce((acc, n) => acc + n.choices.length, 0) + 1;
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const nodeById = new Map(current.nodes.map(n => [n.id, n]));
+    if (!nodeById.has(current.entryNodeId)) return { unit: current, broken };
+
+    // Итеративный DFS (white/gray/black): ищем первое ребро в серый узел.
+    const color = new Map<string, 0 | 1 | 2>();
+    let backEdge: { nodeId: string; choice: DialogueUnitChoice } | null = null;
+    const stack: { id: string; childIdx: number }[] = [{ id: current.entryNodeId, childIdx: 0 }];
+    color.set(current.entryNodeId, 1);
+    while (stack.length > 0 && !backEdge) {
+      const frame = stack[stack.length - 1];
+      const node = nodeById.get(frame.id)!;
+      if (frame.childIdx < node.choices.length) {
+        const choice = node.choices[frame.childIdx++];
+        if (!nodeById.has(choice.next)) continue; // битая ссылка — дело валидатора
+        const c = color.get(choice.next) ?? 0;
+        if (c === 1) {
+          backEdge = { nodeId: node.id, choice };
+        } else if (c === 0) {
+          color.set(choice.next, 1);
+          stack.push({ id: choice.next, childIdx: 0 });
+        }
+      } else {
+        color.set(frame.id, 2);
+        stack.pop();
+      }
+    }
+
+    if (!backEdge) return { unit: current, broken }; // DAG — готово
+    const src = nodeById.get(backEdge.nodeId)!;
+    if (src.choices.length < 2) return { unit: current, broken }; // нечем жертвовать
+
+    const doomed = backEdge.choice;
+    current = {
+      ...current,
+      nodes: current.nodes.map(n =>
+        n.id === backEdge!.nodeId ? { ...n, choices: n.choices.filter(c => c !== doomed) } : n,
+      ),
+    };
+    broken.push(`${backEdge.nodeId}[${doomed.kind}]→${doomed.next}`);
+  }
+  return { unit: current, broken };
+}
+
+// ============================================================================
 // STRUCTURAL VALIDATOR (полнота диалога — структурой, не регэкспом)
 // ============================================================================
 

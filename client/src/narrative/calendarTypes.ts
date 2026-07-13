@@ -65,6 +65,37 @@ export function actSlotWindow(act: number, cal: Calendar): SlotWindow {
   return { fromSlot: fromDay * perDay, toSlot: toDay * perDay + perDay - 1 };
 }
 
+/**
+ * Эффективное окно бита для планирования и рантайма: расширяется до окна его
+ * акта (объединение с исходным окном LLM, клампится к календарю).
+ *
+ * Зачем: потребление бита двигает стрелу времени `slot+1`, а компилятор гейтит
+ * бит прямо по окну (`slot ∈ [from,to]`). Вырожденное однослотовое окно от LLM
+ * ([6,6]) делает НЕСКОЛЬКО одновременных (co-play) битов непроигрываемыми —
+ * сыграв первый, стрела уходит из окна остальных. Окно на весь акт даёт
+ * планировщику/движку свободу расставить co-play биты по разным слотам акта;
+ * порядок внутри акта держат флаговые guard-ы, а не узость окна.
+ */
+export function effectiveBeatWindow(beat: SpineBeat, cal: Calendar): SlotWindow {
+  const lastSlot = cal.slotCount - 1;
+  const actCount = cal.actBoundaries.length;
+  const act = Math.min(Math.max(1, beat.act), Math.max(1, actCount));
+  const aw = actSlotWindow(act, cal);
+  const from = Math.max(0, Math.min(aw.fromSlot, beat.window.fromSlot));
+  const to = Math.min(lastSlot, Math.max(aw.toSlot, beat.window.toSlot));
+  return { fromSlot: Math.min(from, to), toSlot: Math.max(from, to) };
+}
+
+/**
+ * Нормализация хребта: каждому биту — эффективное окно (см. effectiveBeatWindow).
+ * Применяется ПЕРЕД валидацией и сохранением хребта, чтобы компилятор,
+ * reachability, расписание и story QA видели одни и те же проигрываемые окна.
+ * Идемпотентна.
+ */
+export function normalizeSpineWindows(spine: SpinePlan, cal: Calendar): SpinePlan {
+  return { ...spine, beats: spine.beats.map(b => ({ ...b, window: effectiveBeatWindow(b, cal) })) };
+}
+
 const MINUTES_PER_SLOT = 3;
 const MIN_SLOTS = 9;
 const MAX_SLOTS = 36;

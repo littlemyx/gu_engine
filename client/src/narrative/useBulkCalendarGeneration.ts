@@ -4,6 +4,7 @@ import {
   generateCastPlan,
   generateDialogueQa,
   generateDialogueUnit,
+  generateEnding,
   generateEventPool,
   generateSpine,
   generateWorldCalendar,
@@ -14,16 +15,24 @@ import type {
   AnchorBeat,
   Brief,
   DialogueVariantBracket,
+  EndingVariant,
   LoveInterestCard,
   SegmentIssue,
   WorldLocation,
   WorldModel,
 } from './types';
-import { parseAnchorBeat, parseWorldModel, validateAnchorBeat } from './types';
+import {
+  endingKey,
+  parseAnchorBeat,
+  parseEndingVariant,
+  parseWorldModel,
+  validateAnchorBeat,
+  validateEndingVariant,
+} from './types';
 import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
-import { parseCalendar, parseCastPlan, parseSpinePlan } from './calendarTypes';
+import { normalizeSpineWindows, parseCalendar, parseCastPlan, parseSpinePlan } from './calendarTypes';
 import type { DialogueUnit } from './dialogueUnit';
-import { parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
+import { breakDialogueCycles, parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
 import { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
 import { validateCalendar } from './validateCalendar';
 import { validateCastPlan } from './validateCastPlan';
@@ -36,6 +45,7 @@ import { buildSpineRequestPayload } from './buildSpineRequest';
 import { buildEventPoolRequestPayload, parseEventPool, unitEstablishes, validateEventUnits } from './parseEventPool';
 import { deriveLegacyOutline } from './deriveLegacyOutline';
 import { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
+import { buildEndingRequestPayload } from './buildEndingRequest';
 import { topoOrderAnchors, outgoingOf } from './anchorOrder';
 import { computeReachableUnits } from './reachability';
 import { useNarrativeStore } from './narrativeStore';
@@ -63,7 +73,7 @@ import { useNarrativeStore } from './narrativeStore';
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000;
 const MAX_ATTEMPTS = 3;
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 export type BulkCalendarPhase =
@@ -76,6 +86,7 @@ export type BulkCalendarPhase =
   | 'event_pool'
   | 'prune'
   | 'dialogue_units'
+  | 'ending_prose'
   | 'done';
 
 export type BulkCalendarProgress = { completed: number; total: number };
@@ -299,7 +310,10 @@ export function useBulkCalendarGeneration() {
                 : { ...basePayload, previousAttempt: spineToAttempt(best.plan), previousIssues: best.errors };
               const { data, error: reqError } = await generateSpine({ body: payload });
               if (reqError || !data) throw new Error('не удалось запустить генерацию хребта');
-              const plan = await pollBatchResult(data.batchId, parseSpinePlan);
+              const rawPlan = await pollBatchResult(data.batchId, parseSpinePlan);
+              // Нормализуем окна битов ДО валидации и сохранения: компилятор,
+              // reachability и расписание используют сохранённый хребет.
+              const plan = normalizeSpineWindows(rawPlan, calendar);
               const errors = spineErrors(plan);
               if (!best || errors.length < best.errorCount) {
                 best = { plan, errorCount: errors.length, errors };
@@ -536,6 +550,8 @@ export function useBulkCalendarGeneration() {
     {
       const stageIssues: string[] = [];
       const liById = new Map(brief.loveInterests.map(li => [li.id, li]));
+      // Разорванные циклы диалогов — warning один раз на юнит/брекет.
+      const cycleWarned = new Set<string>();
 
       for (const unit of eventUnits) {
         if (!reachable.has(unit.id) || unit.kind !== 'dialogue') continue;
@@ -591,7 +607,17 @@ export function useBulkCalendarGeneration() {
                 : { ...basePayload, previousAttempt: prev.unit, previousIssues: prev.errors };
               const { data, error: reqError } = await generateDialogueUnit({ body: payload });
               if (reqError || !data) throw new Error(`не удалось запустить генерацию юнита bracket=${bracket}`);
-              return pollBatchResult(data.batchId, parseDialogueUnit);
+              const raw = await pollBatchResult(data.batchId, parseDialogueUnit);
+              // Нормализация: LLM устойчиво пишет циклы «возврат к теме» —
+              // рвём детерминированно (см. breakDialogueCycles), автору warning.
+              const { unit: normalized, broken } = breakDialogueCycles(raw);
+              if (broken.length > 0 && !cycleWarned.has(`${unitKey}/${bracket}`)) {
+                cycleWarned.add(`${unitKey}/${bracket}`);
+                softIssues.push(
+                  `[warning] dialogue: ${unitKey}/${bracket}: разорваны циклы диалога (${broken.join(', ')})`,
+                );
+              }
+              return normalized;
             };
 
             // Невалидный кэш (или валидный с затравками QA) сидирует best —
@@ -660,6 +686,83 @@ export function useBulkCalendarGeneration() {
 
       if (stageIssues.length > 0) {
         fail('dialogue_units', `диалоговые юниты не собраны полностью (${stageIssues.length} проблем)`, stageIssues);
+        return;
+      }
+    }
+
+    // ── Phase 9: ending_prose — эпилоги концовок хребта (реюз легаси-стадии
+    // ending поверх deriveLegacyOutline; тот же трюк, что beat_prose). Без них
+    // компилятор не строит ending-router и финал зацикливается в хаб. Ключи —
+    // ровно те, что нужны концовкам спайна (endingKey(kind, liId)); валидный
+    // кэш пропускается. setSpine каскадно чистит endings — инвалидация есть.
+    publish('ending_prose', 8);
+    {
+      const stageIssues: string[] = [];
+      const derived = deriveLegacyOutline(spine, calendar, schedule, brief, worldModel);
+      const liById = new Map(brief.loveInterests.map(li => [li.id, li]));
+      const spineBeatProse = useNarrativeStore.getState().spineBeatProse;
+
+      const endingErrors = (v: EndingVariant, kind: typeof spine.endings[number]['kind']): string[] =>
+        validateEndingVariant(v, kind)
+          .filter(i => i.severity === 'error')
+          .map(formatIssue);
+
+      // Дедуп по ключу: у спайна может быть несколько концовок одного kind/liId.
+      const wanted = new Map<string, { kind: typeof spine.endings[number]['kind']; liId: string | null }>();
+      for (const e of spine.endings) {
+        const key = endingKey(e.kind, e.liId ?? undefined);
+        if (!wanted.has(key)) wanted.set(key, { kind: e.kind, liId: e.liId ?? null });
+      }
+
+      for (const [key, task] of wanted) {
+        const li = task.liId ? liById.get(task.liId) ?? null : null;
+        const cached = useNarrativeStore.getState().endings[key];
+        if (cached && endingErrors(cached, task.kind).length === 0) continue;
+
+        try {
+          const basePayload = buildEndingRequestPayload(brief, derived.outline, task.kind, li, null, spineBeatProse);
+          type EndingPayload = typeof basePayload & { previousAttempt?: EndingVariant; previousIssues?: string[] };
+          let best: { ending: EndingVariant; errorCount: number; errors: string[] } | null =
+            cached != null
+              ? {
+                  ending: cached,
+                  errorCount: endingErrors(cached, task.kind).length,
+                  errors: endingErrors(cached, task.kind),
+                }
+              : null;
+          let lastAttemptError: unknown = null;
+          for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+            try {
+              const payload: EndingPayload = !best
+                ? basePayload
+                : { ...basePayload, previousAttempt: best.ending, previousIssues: best.errors };
+              const { data, error: reqError } = await generateEnding({ body: payload });
+              if (reqError || !data) throw new Error(`не удалось запустить генерацию концовки ${key}`);
+              const ending = await pollBatchResult(data.batchId, parseEndingVariant);
+              const errors = endingErrors(ending, task.kind);
+              if (!best || errors.length < best.errorCount) {
+                best = { ending, errorCount: errors.length, errors };
+              }
+              if (errors.length === 0) break;
+            } catch (attemptErr) {
+              lastAttemptError = attemptErr;
+            }
+          }
+          if (best && best.errorCount === 0) {
+            // liId генератора может отсутствовать/врать — фиксируем свой.
+            useNarrativeStore.getState().setEnding(key, { ...best.ending, kind: task.kind, liId: task.liId });
+          } else if (best) {
+            stageIssues.push(`${key}: эпилог не прошёл валидацию: ${best.errors.slice(0, 2).join('; ')}`);
+          } else {
+            throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
+          }
+        } catch (e) {
+          stageIssues.push(`${key}: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      if (stageIssues.length > 0) {
+        fail('ending_prose', `эпилоги концовок не собраны полностью (${stageIssues.length} проблем)`, stageIssues);
         return;
       }
     }

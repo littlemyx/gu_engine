@@ -115,6 +115,34 @@ describe('validateSchedule', () => {
     expect(issues.some(i => i.severity === 'error' && i.scope === 'slots/1')).toBe(true);
   });
 
+  it('финальная конвергенция: слот финала со всеми LI в одной локации НЕ пережат', () => {
+    const convSpine: SpinePlan = {
+      ...spine,
+      beats: [
+        spine.beats[0],
+        spine.beats[1],
+        beat({
+          id: 'fin',
+          kind: 'finale',
+          act: 4,
+          window: { fromSlot: 9, toSlot: 11 },
+          participants: ['kira', 'yuki', 'asel'],
+          locationId: 'loc_beat',
+        }),
+      ],
+    };
+    const schedule = buildSchedule(brief, convSpine, cal, castPlan, tagMap, 0);
+    const finSlot = assignBeatSlots(convSpine, cal).fin;
+    // Все три LI запинены в финальную локацию → одна локация на слоте.
+    const locs = new Set(['kira', 'yuki', 'asel'].map(id => schedule[id][finSlot]));
+    expect(locs).toEqual(new Set(['loc_beat']));
+    // Но это НЕ ошибка «игроку не из чего выбирать» — финал сводит намеренно.
+    const slotErrors = validateSchedule(schedule, convSpine, cal, brief).filter(
+      i => i.severity === 'error' && i.scope === `slots/${finSlot}`,
+    );
+    expect(slotErrors).toEqual([]);
+  });
+
   it('ловит LI ниже пола присутствия в акте (warning)', () => {
     const schedule = build();
     // Акт 2 = слоты 3..5: убираем aselь со сцены полностью.

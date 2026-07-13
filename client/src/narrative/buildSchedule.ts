@@ -267,12 +267,19 @@ export function validateSchedule(
       if (loc) occupied.add(loc);
     }
     const beatId = bySlotBeat.get(s);
-    const beatLoc = beatId ? beatById.get(beatId)?.locationId : null;
+    const beat = beatId ? beatById.get(beatId) : null;
+    const beatLoc = beat?.locationId ?? null;
     if (beatLoc) occupied.add(beatLoc);
+
+    // Конвергентные биты (finale/actGate) — скриптовая сходка: история сводит
+    // персонажей в одну локацию, игрок туда ведётся, «куда пойти» не выбирает.
+    // Требовать ≥2 локации на таком слоте неверно (иначе финал, где все LI
+    // встречаются, всегда «пережат»).
+    const isConvergence = beat?.kind === 'finale' || beat?.kind === 'actGate';
 
     const maxOccupants = liIds.length + (beatLoc ? 1 : 0);
     const required = Math.min(2, available.size, maxOccupants);
-    if (occupied.size < required) {
+    if (!isConvergence && occupied.size < required) {
       issues.push({
         severity: 'error',
         scope: `slots/${s}`,

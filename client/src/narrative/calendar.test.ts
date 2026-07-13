@@ -154,12 +154,12 @@ describe('validateSpine', () => {
     expect(issues.some(i => i.message.includes('начинается позже'))).toBe(true);
   });
 
-  it('ловит пережатые окна: двум битам не хватает слотов', () => {
+  it('ловит пережатые окна: двум co-play битам не хватает слотов', () => {
     const spine = okSpine();
     spine.beats[0].window = { fromSlot: 1, toSlot: 1 };
     spine.beats.splice(1, 0, beat({ id: 'b1b', act: 1, window: { fromSlot: 1, toSlot: 1 } }));
     const issues = errors(validateSpine(spine, cal, brief, null));
-    expect(issues.some(i => i.message.includes('не хватает свободного слота'))).toBe(true);
+    expect(issues.some(i => i.message.includes('не удаётся расположить'))).toBe(true);
   });
 
   it('ловит окно вне слотов своего акта', () => {
@@ -315,5 +315,58 @@ describe('validateCalendar', () => {
     };
     const issues = errors(validateCalendar(cal, brief, null, {}, castPlan));
     expect(issues.some(i => i.scope === 'tagMap/workplace')).toBe(true);
+  });
+
+  it('ловит несвязный мир: локация-остров без пути от старта', () => {
+    const mkLoc = (id: string, adjacent: { locationId: string; via: string }[]) => ({
+      id,
+      name: id,
+      description: '',
+      pointsOfInterest: [],
+      adjacent,
+      mood: 'neutral_calm' as const,
+      specialKind: null,
+    });
+    // corridor↔hall связаны; family_home — остров без рёбер (реальный кейс E2E).
+    const world = {
+      locations: [
+        mkLoc('corridor', [{ locationId: 'hall', via: 'дверь' }]),
+        mkLoc('hall', [{ locationId: 'corridor', via: 'дверь' }]),
+        mkLoc('family_home', []),
+      ],
+      anchorLocations: {},
+    };
+    const issues = errors(validateCalendar(cal, brief, world, null, null));
+    expect(issues.some(i => i.scope === 'world/family_home/adjacent' && i.message.includes('не связана'))).toBe(true);
+
+    // Добавили ребро — мир связен, ошибок связности нет.
+    const fixed = {
+      ...world,
+      locations: [
+        world.locations[0],
+        world.locations[1],
+        mkLoc('family_home', [{ locationId: 'corridor', via: 'улица' }]),
+      ],
+    };
+    expect(errors(validateCalendar(cal, brief, fixed, null, null))).toEqual([]);
+  });
+
+  it('ловит adjacent-ссылку на несуществующую локацию', () => {
+    const world = {
+      locations: [
+        {
+          id: 'hall',
+          name: 'hall',
+          description: '',
+          pointsOfInterest: [],
+          adjacent: [{ locationId: 'ghost', via: 'дыра' }],
+          mood: 'neutral_calm' as const,
+          specialKind: null,
+        },
+      ],
+      anchorLocations: {},
+    };
+    const issues = errors(validateCalendar(cal, brief, world, null, null));
+    expect(issues.some(i => i.scope === 'world/hall/adjacent' && i.message.includes('несуществующего'))).toBe(true);
   });
 });

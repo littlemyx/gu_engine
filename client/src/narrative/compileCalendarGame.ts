@@ -386,7 +386,8 @@ export function compileCalendarGameProject(
       stateVars.set(met, { range: [0, 1], default: 0 });
 
       const outId = uniqueId(`${hubId(loc.id)}__meet_${unit.id}`);
-      hubOutputs.push({ id: outId, text: `Поговорить с ${liNameById.get(liId) ?? liId}` });
+      // «Поговорить: <имя>» — имя в именительном, чтобы не склонять («с Кира»).
+      hubOutputs.push({ id: outId, text: `Поговорить: ${liNameById.get(liId) ?? liId}` });
 
       const encRouterId = uniqueId(`enc_${unit.id}`);
       edges.push({
@@ -423,7 +424,7 @@ export function compileCalendarGameProject(
       stateVars.set(met, { range: [0, 1], default: 0 });
 
       const outId = uniqueId(`${hubId(loc.id)}__meet_${run.liId}_${run.fromSlot}`);
-      hubOutputs.push({ id: outId, text: `Поговорить с ${liNameById.get(run.liId) ?? run.liId}` });
+      hubOutputs.push({ id: outId, text: `Поговорить: ${liNameById.get(run.liId) ?? run.liId}` });
 
       const encRouterId = uniqueId(`enc_${run.liId}_${run.fromSlot}`);
       edges.push({

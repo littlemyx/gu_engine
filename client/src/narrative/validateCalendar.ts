@@ -71,6 +71,54 @@ export function validateCalendar(
     }
   }
 
+  // Связность мира: движок перемещает игрока ТОЛЬКО по adjacent-рёбрам, поэтому
+  // каждая локация обязана быть достижима из любой другой (одна компонента).
+  // Остров = размещённые в нём биты/расписание невозможно посетить, а запертый
+  // бит запирает всё, что требует его флаги (реальный кейс E2E: family_home без
+  // единого ребра сделал финал недостижимым в собранной игре).
+  if (worldModel && worldModel.locations.length > 0) {
+    const locIds = new Set(worldModel.locations.map(l => l.id));
+    const adj = new Map<string, Set<string>>();
+    const link = (a: string, b: string) => {
+      (adj.get(a) ?? adj.set(a, new Set<string>()).get(a)!).add(b);
+      (adj.get(b) ?? adj.set(b, new Set<string>()).get(b)!).add(a);
+    };
+    for (const loc of worldModel.locations) {
+      for (const a of loc.adjacent) {
+        if (!locIds.has(a.locationId)) {
+          issues.push({
+            severity: 'error',
+            scope: `world/${loc.id}/adjacent`,
+            message: `локация "${loc.id}" ссылается на несуществующего соседа "${a.locationId}"`,
+          });
+          continue;
+        }
+        link(loc.id, a.locationId);
+      }
+    }
+    const start = worldModel.locations[0].id;
+    const seen = new Set<string>([start]);
+    const queue = [start];
+    while (queue.length > 0) {
+      const cur = queue.pop()!;
+      for (const n of adj.get(cur) ?? []) {
+        if (!seen.has(n)) {
+          seen.add(n);
+          queue.push(n);
+        }
+      }
+    }
+    for (const loc of worldModel.locations) {
+      if (!seen.has(loc.id)) {
+        issues.push({
+          severity: 'error',
+          scope: `world/${loc.id}/adjacent`,
+          message: `локация "${loc.id}" не связана с остальным миром (нет пути от "${start}") — добавьте adjacent-рёбра`,
+        });
+      }
+    }
+  }
+
   // Маппинг тегов: каждый агендный тег каста должен вести хотя бы к одной
   // существующей локации, иначе расписание не разложит персонажа по миру.
   if (castPlan && tagMap) {

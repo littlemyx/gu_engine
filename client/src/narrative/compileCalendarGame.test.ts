@@ -236,7 +236,7 @@ describe('compileCalendarGameProject', () => {
     expect(stats.encountersWired).toBe(2);
 
     const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
-    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить: Кира')!;
     expect(meet).toBeTruthy();
     const meetEdge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
     expect(hasCond(meetEdge.condition, { path: 'slot', gte: 0 })).toBe(true);
@@ -368,7 +368,7 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
   it('кнопка юнита гейтится окном, флагами guard-а и одноразовостью met[unit]', () => {
     const { scenes, project } = compileUnits();
     const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
-    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить: Кира')!;
     expect(meet).toBeTruthy();
     const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
     expect(hasCond(edge.condition, { path: 'slot', gte: 0 })).toBe(true);
@@ -382,7 +382,7 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
   it('fired-цепочка компилируется в unit[<dep>] ≥ 1 на кнопке зависимого юнита', () => {
     const { scenes } = compileUnits();
     const hubB = scenes.nodes.find(n => n.id === 'hub_loc_b')!;
-    const meet = hubB.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    const meet = hubB.data.outputs.find(o => o.text === 'Поговорить: Кира')!;
     const edge = scenes.edges.find(e => e.source === 'hub_loc_b' && e.sourceHandle === meet.id)!;
     expect(hasCond(edge.condition, { path: 'unit[evt_kira_talk]', gte: 1 })).toBe(true);
     expect(hasCond(edge.condition, { path: 'slot', gte: 6 })).toBe(true);
@@ -434,7 +434,7 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
     const { scenes, stats } = compile({ enc_kira: [dialogueUnit] }, {});
     expect(stats.encountersWired).toBe(2);
     const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
-    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить с Кира')!;
+    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить: Кира')!;
     const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
     expect(hasCond(edge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
   });

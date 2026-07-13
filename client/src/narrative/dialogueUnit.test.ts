@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DialogueUnit, DialogueUnitChoice, DialogueUnitNode } from './dialogueUnit';
-import { parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
+import { breakDialogueCycles, parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
 
 const LI = 'kira';
 
@@ -206,5 +206,77 @@ describe('parseDialogueUnit', () => {
     expect(() => parseDialogueUnit('{"nodes": [], "entryNodeId": "", "bracket": "warm"}')).toThrow();
     expect(() => parseDialogueUnit('{"bracket": "neutral"}')).toThrow(/nodes or entryNodeId/);
     expect(() => parseDialogueUnit('not json')).toThrow(/JSON parse failed/);
+  });
+});
+
+describe('breakDialogueCycles', () => {
+  /**
+   * Реконструкция реального фейла E2E-прогона (campus_alley/negative):
+   * LLM пишет «возврат к прошлой теме» — n3[say]→n2 замыкает цикл n2→n3→n2.
+   */
+  const cyclicUnit = (): DialogueUnit => ({
+    id: 'unit_cyclic',
+    liId: LI,
+    bracket: 'negative',
+    entryNodeId: 'n1',
+    nodes: [
+      node({
+        id: 'n1',
+        choices: [
+          choice({ id: 'c1', kind: 'say', text: 'Заговорить', next: 'n2' }),
+          choice({ id: 'c1b', kind: 'farewell', text: 'Уйти', next: 'bye' }),
+        ],
+      }),
+      node({
+        id: 'n2',
+        choices: [
+          choice({ id: 'c2', kind: 'say', text: 'Продолжить', next: 'n3' }),
+          choice({ id: 'c2b', kind: 'farewell', text: 'Уйти', next: 'bye' }),
+        ],
+      }),
+      node({
+        id: 'n3',
+        choices: [
+          choice({ id: 'c3', kind: 'say', text: 'Вернуться к теме', next: 'n2' }), // цикл
+          choice({ id: 'c3b', kind: 'farewell', text: 'Попрощаться', next: 'bye' }),
+        ],
+      }),
+      node({
+        id: 'bye',
+        closing: true,
+        dialogue: [{ speaker: LI, emotion: 'idle', line: 'Пока.' }],
+        choices: [],
+      }),
+    ],
+  });
+
+  it('цикл ловится валидатором, разрыв делает юнит полностью валидным', () => {
+    const before = errorsOf(cyclicUnit());
+    expect(before.some(e => e.message.includes('цикл'))).toBe(true);
+
+    const { unit: fixed, broken } = breakDialogueCycles(cyclicUnit());
+    expect(broken).toEqual(['n3[say]→n2']);
+    expect(errorsOf(fixed)).toEqual([]);
+    // Узел-источник сохранил остальные выборы (не стал обрывом).
+    const n3 = fixed.nodes.find(n => n.id === 'n3')!;
+    expect(n3.choices.map(c => c.id)).toEqual(['c3b']);
+  });
+
+  it('идемпотентен: DAG проходит без изменений', () => {
+    const clean = validUnit();
+    const { unit: same, broken } = breakDialogueCycles(clean);
+    expect(broken).toEqual([]);
+    expect(same).toEqual(clean);
+    // Повторный вызов на уже разорванном тоже ничего не рвёт.
+    const { unit: fixed } = breakDialogueCycles(cyclicUnit());
+    expect(breakDialogueCycles(fixed).broken).toEqual([]);
+  });
+
+  it('узел с единственным выбором-циклом не трогает (оставляет валидатору)', () => {
+    const u = cyclicUnit();
+    u.nodes[2].choices = [choice({ id: 'c3', kind: 'say', text: 'Вернуться', next: 'n2' })];
+    const { unit: same, broken } = breakDialogueCycles(u);
+    expect(broken).toEqual([]);
+    expect(errorsOf(same).some(e => e.message.includes('цикл'))).toBe(true);
   });
 });
