@@ -47,6 +47,9 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
   const characters = useNarrativeStore(s => s.characters);
 
   const liData = useMemo((): LiRelationshipData[] => {
+    // unitProse ключуется id юнита (evt_*/enc_*) — принадлежность LI несёт
+    // сам DialogueUnit.liId.
+    const allUnits = Object.values(unitProse).flat();
     return brief.loveInterests.map(li => {
       // Присутствие детерминировано расписанием: адаптер кладёт LI в
       // availableLIs якорей, где персонаж на сцене.
@@ -66,7 +69,7 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
         spriteUrl,
         anchorsPresent,
         encounters,
-        units: unitProse[`enc_${li.id}`] ?? [],
+        units: allUnits.filter(u => u.liId === li.id),
       };
     });
   }, [brief.loveInterests, outline, unitProse, characters]);

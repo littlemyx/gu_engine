@@ -112,6 +112,8 @@ const Playground = () => {
   const worldModel = useNarrativeStore(s => s.worldModel);
   const audioBase = useNarrativeStore(s => s.audioBase);
   const audioByLi = useNarrativeStore(s => s.audioByLi);
+  const unitProse = useNarrativeStore(s => s.unitProse);
+  const endings = useNarrativeStore(s => s.endings);
 
   // Календарная монтажка: модель деривируется, когда весь стек стадий готов.
   const calendar = useNarrativeStore(s => s.calendar);
@@ -140,7 +142,6 @@ const Playground = () => {
   const chips = useMemo<ChipSpec[]>(() => {
     const anchorCount = activeOutline?.anchors.length ?? 0;
     const liCount = brief.loveInterests.length;
-    const beatsDone = Object.keys(spineBeatProse).length;
     const imagesDone = Object.entries(images).filter(([k, i]) => i.status === 'done' && k.startsWith('loc:')).length;
     const imagesTotal = worldModel ? worldModel.locations.length : 0;
     const charsDone = Object.values(characters).filter(c => c.status === 'done').length;
@@ -150,23 +151,54 @@ const Playground = () => {
         (acc, li) => acc + (li.positive?.status === 'done' ? 1 : 0) + (li.negative?.status === 'done' ? 1 : 0),
         0,
       );
+
+    // «История» — весь календарный прогон одним чипом. Четыре слоя одной
+    // задачи: структура (хребет) и три вида прозы поверх неё. Во время
+    // прогона подпись показывает текущую стадию.
+    const liWithUnits = new Set(
+      Object.values(unitProse)
+        .flat()
+        .map(u => u.liId),
+    );
+    const storyLayers = [
+      Boolean(spine),
+      anchorCount > 0 && Object.keys(spineBeatProse).length >= anchorCount,
+      liCount > 0 && brief.loveInterests.every(li => liWithUnits.has(li.id)),
+      (spine?.endings.length ?? 0) > 0 && Object.keys(endings).length >= (spine?.endings.length ?? 0),
+    ];
+    const storyDone = storyLayers.filter(Boolean).length;
+    const storyChip: ChipSpec = {
+      key: 'story',
+      target: 'graph',
+      label: calendarRunning
+        ? `История · ${CALENDAR_PHASE_LABEL[calendarGen.phase] ?? calendarGen.phase}`
+        : storyDone === storyLayers.length
+        ? 'История ✓'
+        : spine
+        ? `История ${storyDone}/${storyLayers.length}`
+        : 'История —',
+      dot: calendarRunning
+        ? CHIP_RUNNING
+        : storyDone === storyLayers.length
+        ? CHIP_DONE
+        : spine
+        ? CHIP_PARTIAL
+        : CHIP_IDLE,
+    };
+
     return [
-      {
-        key: 'spine',
-        target: 'graph',
-        label: spine ? 'Хребет ✓' : 'Хребет —',
-        dot: calendarRunning ? CHIP_RUNNING : spine ? CHIP_DONE : CHIP_IDLE,
-      },
-      progressChip('scenes', 'Сцены', beatsDone, anchorCount, calendarGen.phase === 'beat_prose', 'graph'),
+      storyChip,
       progressChip('images', 'Фоны', imagesDone, imagesTotal, imageGen.status.state === 'running', 'graph'),
       progressChip('sprites', 'Спрайты', charsDone, liCount, characterGen.status.state === 'running', 'heroes'),
       progressChip('audio', 'Аудио', audioDone, 1 + liCount * 2, audioGen.status.state === 'running', 'audio'),
     ];
   }, [
     activeOutline,
-    brief.loveInterests.length,
+    brief.loveInterests,
     spine,
     spineBeatProse,
+    unitProse,
+    endings,
     images,
     characters,
     worldModel,
