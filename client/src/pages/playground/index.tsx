@@ -660,8 +660,9 @@ const CalendarGenBar: React.FC<{
       <button
         type="button"
         className={hasSpine ? styles.secondaryBtn : styles.primaryBtn}
-        onClick={() => void gen.run(brief)}
+        onClick={() => void gen.run(brief, hasSpine ? { force: true } : undefined)}
         disabled={disabled || running}
+        title={hasSpine ? 'Полная перегенерация: кэши стадий сбрасываются, медиа остаются' : undefined}
       >
         {running ? 'Генерация...' : hasSpine ? 'Перегенерировать' : 'Сгенерировать'}
       </button>

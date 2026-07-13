@@ -103,6 +103,12 @@ export type BulkCalendarRunOptions = {
     /** unitId → issue-строки для его диалоговой прозы. */
     dialogue?: Record<string, string[]>;
   };
+  /**
+   * Полная перегенерация: сброс пайплайн-кэшей перед прогоном (каскад от
+   * castPlan вниз). Без него прогон по валидному стеку — no-op: каждая
+   * стадия переиспользует кэш. Медиа (фоны/спрайты/аудио) не трогаются.
+   */
+  force?: boolean;
 };
 
 /** Артефакт стадии worldCalendar целиком (пишется в стор одним сеттером). */
@@ -126,6 +132,10 @@ export function useBulkCalendarGeneration() {
     runningRef.current = true;
     setError(null);
     setIssues([]);
+
+    // force: сброс кэшей всех стадий — setCastPlan(null) каскадно чистит
+    // calendar/tagMap/spine/schedule/eventUnits/unitProse/spineBeatProse/endings.
+    if (options?.force) useNarrativeStore.getState().setCastPlan(null);
 
     // Нефатальные проблемы прогона (фолбэк каста, счётчик pruning-а):
     // показываются автору и при успехе, и при фейле.
