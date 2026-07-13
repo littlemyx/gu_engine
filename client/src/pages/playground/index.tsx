@@ -682,22 +682,40 @@ const ImageGenBar: React.FC<{
   anchorCount: number;
 }> = ({ status, onStart, onCancel, onReset, anchorCount }) => {
   const images = useNarrativeStore(s => s.images);
+  const worldModel = useNarrativeStore(s => s.worldModel);
+  const clearImages = useNarrativeStore(s => s.clearImages);
   const cachedDone = Object.values(images).filter(i => i.status === 'done').length;
+  const total = worldModel ? worldModel.locations.length : anchorCount;
+  const allDone = total > 0 && cachedDone >= total;
 
   if (status.state === 'idle') {
     return (
       <div className={styles.bulkBar}>
         <div className={styles.bulkLeft}>
           <span className={styles.bulkTitle}>
-            Генерация фонов · {cachedDone} / {anchorCount} готово
+            Генерация фонов · {cachedDone} / {total} готово
           </span>
           <span className={styles.bulkMeta}>
-            один POST /generate/background на якорь · 3 параллельно · ~3–5 минут на полный outline
+            один POST /generate/background на локацию · 3 параллельно · ~3–5 минут на полный набор
           </span>
         </div>
-        <button type="button" className={styles.primaryBtn} onClick={onStart}>
-          Сгенерировать фоны
-        </button>
+        {allDone ? (
+          <button
+            type="button"
+            className={styles.secondaryBtn}
+            title="Сбросить кэш фонов и сгенерировать заново"
+            onClick={() => {
+              clearImages();
+              onStart();
+            }}
+          >
+            Перегенерировать всё
+          </button>
+        ) : (
+          <button type="button" className={styles.primaryBtn} onClick={onStart}>
+            Сгенерировать фоны
+          </button>
+        )}
       </div>
     );
   }
@@ -1035,6 +1053,9 @@ const LocationMoodPanel: React.FC = () => {
   );
 };
 
+/** SFX генерятся по каноническим эмоциям (кроме idle) — см. useBulkAudioGeneration. */
+const SFX_TOTAL = CANONICAL_POSES.length - 1;
+
 const AudioGenBar: React.FC<{
   status: AudioBulkStatus;
   brief: Brief;
@@ -1045,6 +1066,7 @@ const AudioGenBar: React.FC<{
   const audioBase = useNarrativeStore(s => s.audioBase);
   const audioByLi = useNarrativeStore(s => s.audioByLi);
   const audioSfx = useNarrativeStore(s => s.audioSfx);
+  const clearAudio = useNarrativeStore(s => s.clearAudio);
   const [baseStyle, setBaseStyle] = useState(() => buildBaseStyle(brief));
 
   const liCount = brief.loveInterests.length;
@@ -1054,6 +1076,9 @@ const AudioGenBar: React.FC<{
   );
   const sfxDone = Object.keys(audioSfx).length;
   const baseDone = audioBase?.status === 'done';
+  // Прогон resumable: готовые треки пропускаются, поэтому на полном кэше
+  // обычный старт — no-op. «Всё готово» переключает кнопку в force-режим.
+  const allDone = baseDone && liCount > 0 && variationsDone >= liCount * 2 && sfxDone >= SFX_TOTAL;
 
   const phaseLabel: Record<string, string> = {
     base: 'базовая подложка',
@@ -1114,7 +1139,8 @@ const AudioGenBar: React.FC<{
     <div className={styles.bulkBar}>
       <div className={styles.bulkLeft}>
         <span className={styles.bulkTitle}>
-          Генерация аудио · база: {baseDone ? '✓' : '—'} · вариации: {variationsDone}/{liCount * 2} · SFX: {sfxDone}/7
+          Генерация аудио · база: {baseDone ? '✓' : '—'} · вариации: {variationsDone}/{liCount * 2} · SFX: {sfxDone}/
+          {SFX_TOTAL}
         </span>
         <span className={styles.bulkMeta}>
           Suno API · мелодия → per-LI вариации (positive/negative) → SFX по эмоциям · нужен audio_gen (:3300) c
@@ -1128,9 +1154,23 @@ const AudioGenBar: React.FC<{
           placeholder="Стиль базовой мелодии"
         />
       </div>
-      <button type="button" className={styles.primaryBtn} onClick={() => onStart(baseStyle)}>
-        Сгенерировать аудио
-      </button>
+      {allDone ? (
+        <button
+          type="button"
+          className={styles.secondaryBtn}
+          title="Сбросить аудио-кэш (включая выбранные варианты) и сгенерировать заново"
+          onClick={() => {
+            clearAudio();
+            onStart(baseStyle);
+          }}
+        >
+          Перегенерировать всё
+        </button>
+      ) : (
+        <button type="button" className={styles.primaryBtn} onClick={() => onStart(baseStyle)}>
+          Сгенерировать аудио
+        </button>
+      )}
     </div>
   );
 };
