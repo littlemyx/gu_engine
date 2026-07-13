@@ -1,22 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processOutline, processSegment, processLiCards, processNarrationWeb, processAnchorBeat, processBeatPlan, processWorldModel, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueVariant, processDialogueUnit, processDialogueQA, processStoryLeafQA, processEnding } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processAnchorBeat, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueUnit, processDialogueQA, processStoryLeafQA, processEnding } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
-  OutlineRequest,
-  SegmentRequest,
-  LiCardsRequest,
-  NarrationWebRequest,
   AnchorBeatRequest,
-  BeatPlanRequest,
-  WorldModelRequest,
   WorldCalendarRequest,
   CastPlanRequest,
   EventPoolRequest,
   SpineRequest,
-  DialogueVariantRequest,
   DialogueUnitRequest,
   DialogueQARequest,
   StoryLeafQARequest,
@@ -87,133 +80,6 @@ app.post('/generate/sceneText', (req, res) => {
   logger.log(`[POST /generate/sceneText] batch=${batchId} depth=${body.depth}/${body.maxDepth} chain=${body.sceneChain?.length ?? 0}`);
 
   processSceneText(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
-app.post('/generate/outline', (req, res) => {
-  const body = req.body as OutlineRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'outline';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  const liCount = Array.isArray((body.brief as { loveInterests?: unknown[] })?.loveInterests)
-    ? (body.brief as { loveInterests: unknown[] }).loveInterests.length
-    : 0;
-  logger.log(`[POST /generate/outline] batch=${batchId} liCount=${liCount}`);
-
-  processOutline(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
-app.post('/generate/segment', (req, res) => {
-  const body = req.body as SegmentRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'segment';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  const fromId = (body.anchorFrom as { id?: string })?.id ?? '?';
-  const toId = (body.anchorTo as { id?: string })?.id ?? '?';
-  logger.log(`[POST /generate/segment] batch=${batchId} ${fromId} -> ${toId}`);
-
-  processSegment(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
-app.post('/generate/liCards', (req, res) => {
-  const body = req.body as LiCardsRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'liCards';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  logger.log(`[POST /generate/liCards] batch=${batchId} count=${body.count}`);
-
-  processLiCards(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
-app.post('/generate/narrationWeb', (req, res) => {
-  const body = req.body as NarrationWebRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'narrationWeb';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  const fromId = (body.storyAnchorFrom as { id?: string })?.id ?? '?';
-  const toId = (body.storyAnchorTo as { id?: string })?.id ?? '?';
-  logger.log(`[POST /generate/narrationWeb] batch=${batchId} ${fromId} -> ${toId} availableLIs=${body.availableLIs?.length ?? 0}`);
-
-  processNarrationWeb(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
-app.post('/generate/worldModel', (req, res) => {
-  const body = req.body as WorldModelRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'worldModel';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  logger.log(`[POST /generate/worldModel] batch=${batchId}`);
-
-  processWorldModel(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });
@@ -318,30 +184,6 @@ app.post('/generate/spine', (req, res) => {
   res.json({ batchId, itemIds: [itemId] });
 });
 
-app.post('/generate/beatPlan', (req, res) => {
-  const body = req.body as BeatPlanRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'beatPlan';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  logger.log(`[POST /generate/beatPlan] batch=${batchId} slots=${body.encounterSlots?.length ?? 0}`);
-
-  processBeatPlan(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
 app.post('/generate/anchorBeat', (req, res) => {
   const body = req.body as AnchorBeatRequest;
 
@@ -363,31 +205,6 @@ app.post('/generate/anchorBeat', (req, res) => {
   logger.log(`[POST /generate/anchorBeat] batch=${batchId} anchor=${anchorId} outgoing=${body.outgoingTargets?.length ?? 0}`);
 
   processAnchorBeat(batch, body);
-
-  res.json({ batchId, itemIds: [itemId] });
-});
-
-app.post('/generate/dialogueVariant', (req, res) => {
-  const body = req.body as DialogueVariantRequest;
-
-  const batchId = randomUUID();
-  const itemId = 'dialogueVariant';
-
-  const itemStates: Record<string, ItemState> = {
-    [itemId]: { id: itemId, status: 'pending' },
-  };
-
-  const batch: BatchState = {
-    batchId,
-    createdAt: new Date().toISOString(),
-    items: itemStates,
-  };
-  batches.set(batchId, batch);
-
-  const liId = (body.liCard as { id?: string })?.id ?? '?';
-  logger.log(`[POST /generate/dialogueVariant] batch=${batchId} li=${liId} bracket=${body.bracket}`);
-
-  processDialogueVariant(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

@@ -6,7 +6,7 @@ import type { Calendar, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } fro
 import { guardFlags } from './validateSpine';
 import { guardFiredIds, unitEstablishes } from './parseEventPool';
 import type { Guard } from './events';
-import type { WorldAudioInput, WorldCompileStats } from './compileWorldGame';
+import type { AudioTrackState, LiAudioState } from './narrativeStore';
 import type {
   GameProjectFile,
   GameSceneEdge,
@@ -53,6 +53,27 @@ import { audioUrlFor, buildSceneAudioProfile, resolveSfxUrl, selectedTrackFile }
  * Движок game/src/engine.ts НЕ меняется; календарь уезжает в
  * settings.calendar для HUD (game/src/calendarState.ts).
  */
+
+/** Сгенерированные аудио-артефакты, подаваемые компилятору. */
+export type WorldAudioInput = {
+  base: AudioTrackState | null;
+  /** Банк эмбиентов по настроению локации (LocationMood → трек). */
+  moodBeds: Record<string, AudioTrackState>;
+  /** Диегетические беды особых локаций (SpecialAmbientKind → трек). */
+  specialBeds: Record<string, AudioTrackState>;
+  byLi: Record<string, LiAudioState>;
+  sfx: Record<string, string>;
+};
+
+export type WorldCompileStats = {
+  locations: number;
+  events: number;
+  encountersWired: number;
+  dialogueScenes: number;
+  endingScenes: number;
+  totalNodes: number;
+  totalEdges: number;
+};
 
 export type CalendarCompileStats = WorldCompileStats & {
   slotCount: number;

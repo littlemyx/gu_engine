@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateBeatPlanData, GenerateBeatPlanResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateDialogueVariantData, GenerateDialogueVariantResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateLiCardsData, GenerateLiCardsResponses, GenerateNarrationWebData, GenerateNarrationWebResponses, GenerateOutlineData, GenerateOutlineResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSegmentData, GenerateSegmentResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryLeafQaData, GenerateStoryLeafQaResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GenerateWorldModelData, GenerateWorldModelResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryLeafQaData, GenerateStoryLeafQaResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -35,66 +35,6 @@ export const generateStoryMasterPrompt = <ThrowOnError extends boolean = false>(
  */
 export const generateSceneText = <ThrowOnError extends boolean = false>(options: Options<GenerateSceneTextData, ThrowOnError>) => (options.client ?? client).post<GenerateSceneTextResponses, unknown, ThrowOnError>({
     url: '/generate/sceneText',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Generate a high-level outline (acts + anchor skeleton) from a brief
- */
-export const generateOutline = <ThrowOnError extends boolean = false>(options: Options<GenerateOutlineData, ThrowOnError>) => (options.client ?? client).post<GenerateOutlineResponses, unknown, ThrowOnError>({
-    url: '/generate/outline',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Generate scene-level draft DAG between two outline anchors
- */
-export const generateSegment = <ThrowOnError extends boolean = false>(options: Options<GenerateSegmentData, ThrowOnError>) => (options.client ?? client).post<GenerateSegmentResponses, unknown, ThrowOnError>({
-    url: '/generate/segment',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Generate love interest character cards from a story master prompt
- */
-export const generateLiCards = <ThrowOnError extends boolean = false>(options: Options<GenerateLiCardsData, ThrowOnError>) => (options.client ?? client).post<GenerateLiCardsResponses, unknown, ThrowOnError>({
-    url: '/generate/liCards',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Generate a narration web (exploration DAG) between two story anchors
- */
-export const generateNarrationWeb = <ThrowOnError extends boolean = false>(options: Options<GenerateNarrationWebData, ThrowOnError>) => (options.client ?? client).post<GenerateNarrationWebResponses, unknown, ThrowOnError>({
-    url: '/generate/narrationWeb',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Build the persistent world model (locations registry with adjacency) from the outline
- */
-export const generateWorldModel = <ThrowOnError extends boolean = false>(options: Options<GenerateWorldModelData, ThrowOnError>) => (options.client ?? client).post<GenerateWorldModelResponses, unknown, ThrowOnError>({
-    url: '/generate/worldModel',
     ...options,
     headers: {
         'Content-Type': 'application/json',
@@ -151,18 +91,6 @@ export const generateSpine = <ThrowOnError extends boolean = false>(options: Opt
 });
 
 /**
- * Plan relationship beats across encounter slots of the story outline
- */
-export const generateBeatPlan = <ThrowOnError extends boolean = false>(options: Options<GenerateBeatPlanData, ThrowOnError>) => (options.client ?? client).post<GenerateBeatPlanResponses, unknown, ThrowOnError>({
-    url: '/generate/beatPlan',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
  * Generate an on-screen beat scene for a story anchor with diegetic transition labels
  */
 export const generateAnchorBeat = <ThrowOnError extends boolean = false>(options: Options<GenerateAnchorBeatData, ThrowOnError>) => (options.client ?? client).post<GenerateAnchorBeatResponses, unknown, ThrowOnError>({
@@ -179,18 +107,6 @@ export const generateAnchorBeat = <ThrowOnError extends boolean = false>(options
  */
 export const generateEnding = <ThrowOnError extends boolean = false>(options: Options<GenerateEndingData, ThrowOnError>) => (options.client ?? client).post<GenerateEndingResponses, unknown, ThrowOnError>({
     url: '/generate/ending',
-    ...options,
-    headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-    }
-});
-
-/**
- * Generate a dialogue variant for a character encounter at a given relationship bracket
- */
-export const generateDialogueVariant = <ThrowOnError extends boolean = false>(options: Options<GenerateDialogueVariantData, ThrowOnError>) => (options.client ?? client).post<GenerateDialogueVariantResponses, unknown, ThrowOnError>({
-    url: '/generate/dialogueVariant',
     ...options,
     headers: {
         'Content-Type': 'application/json',

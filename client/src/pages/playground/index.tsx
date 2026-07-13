@@ -5,8 +5,6 @@ import {
   ARCHETYPE_IDS,
   validateBrief,
   useBriefStore,
-  useStoryOutlineGeneration,
-  useBulkStoryGeneration,
   useBulkImageGeneration,
   useBulkCharacterGeneration,
   useBulkAudioGeneration,
@@ -20,16 +18,12 @@ import {
   isLocationMood,
   SPECIAL_AMBIENT_KINDS,
   SPECIAL_AMBIENT_KIND_LABELS,
-  convertStoryToGameProject,
-  compileWorldGameProject,
   compileCalendarGameProject,
   downloadJson,
   slugify,
   type ArchetypeProfile,
   type LocationMood,
   type SpecialAmbientKind,
-  type StoryOutlineGenStatus,
-  type BulkStoryGenStatus,
   type CharacterBulkStatus,
   type ImageBulkStatus,
   type AudioBulkStatus,
@@ -96,11 +90,8 @@ const progressChip = (
 
 const Playground = () => {
   const brief = useBriefStore(s => s.brief);
-  const persistedOutline = useNarrativeStore(s => s.storyOutline);
   const issues = useMemo(() => validateBrief(brief), [brief]);
   const errorCount = issues.filter(i => i.severity === 'error').length;
-  const outlineGen = useStoryOutlineGeneration();
-  const bulkGen = useBulkStoryGeneration();
   const imageGen = useBulkImageGeneration();
   const characterGen = useBulkCharacterGeneration();
   const poseRegen = useRegeneratePoses();
@@ -110,11 +101,12 @@ const Playground = () => {
 
   const isBlocked = errorCount > 0;
 
-  const [activeSection, setActiveSection] = useState<SectionId>(() => (persistedOutline ? 'graph' : 'brief'));
+  const [activeSection, setActiveSection] = useState<SectionId>(() =>
+    useNarrativeStore.getState().spine ? 'graph' : 'brief',
+  );
   const [graphView, setGraphView] = useState<GraphView>('montage');
 
   // Статусы пайплайна для чипов топ-бара.
-  const anchorBeats = useNarrativeStore(s => s.anchorBeats);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
   const worldModel = useNarrativeStore(s => s.worldModel);
@@ -136,25 +128,21 @@ const Playground = () => {
     [brief, calendar, spine, schedule, worldModel, spineBeatProse, branchAssignment],
   );
 
-  // Адаптер совместимости: пока компилятор/страницы живут на StoryOutlinePlan,
-  // хребет+календарь подменяют outline производным. Явно сгенерированный
-  // story outline имеет приоритет (легаси-путь не регрессирует).
+  // Адаптер совместимости: страницы героев/фонов и промпт-билдеры живут на
+  // StoryOutlinePlan — хребет+календарь дают производный outline.
   const derivedLegacy = useMemo(
     () => (spine && calendar ? deriveLegacyOutline(spine, calendar, schedule, brief, worldModel) : null),
     [spine, calendar, schedule, brief, worldModel],
   );
-  const activeOutline =
-    outlineGen.status.state === 'done' ? outlineGen.status.outline : persistedOutline ?? derivedLegacy?.outline ?? null;
-  const usingDerivedOutline = activeOutline != null && activeOutline === derivedLegacy?.outline;
+  const activeOutline = derivedLegacy?.outline ?? null;
 
+  const calendarRunning = calendarGen.phase !== 'idle' && calendarGen.phase !== 'done' && !calendarGen.error;
   const chips = useMemo<ChipSpec[]>(() => {
     const anchorCount = activeOutline?.anchors.length ?? 0;
     const liCount = brief.loveInterests.length;
-    const beatsDone = Object.keys(anchorBeats).length;
-    const imagesDone = Object.entries(images).filter(
-      ([k, i]) => i.status === 'done' && (worldModel ? k.startsWith('loc:') : !k.startsWith('loc:')),
-    ).length;
-    const imagesTotal = worldModel ? worldModel.locations.length : anchorCount;
+    const beatsDone = Object.keys(spineBeatProse).length;
+    const imagesDone = Object.entries(images).filter(([k, i]) => i.status === 'done' && k.startsWith('loc:')).length;
+    const imagesTotal = worldModel ? worldModel.locations.length : 0;
     const charsDone = Object.values(characters).filter(c => c.status === 'done').length;
     const audioDone =
       (audioBase?.status === 'done' ? 1 : 0) +
@@ -164,12 +152,12 @@ const Playground = () => {
       );
     return [
       {
-        key: 'outline',
-        target: 'brief',
-        label: activeOutline ? 'Outline ✓' : 'Outline —',
-        dot: outlineGen.status.state === 'generating' ? CHIP_RUNNING : activeOutline ? CHIP_DONE : CHIP_IDLE,
+        key: 'spine',
+        target: 'graph',
+        label: spine ? 'Хребет ✓' : 'Хребет —',
+        dot: calendarRunning ? CHIP_RUNNING : spine ? CHIP_DONE : CHIP_IDLE,
       },
-      progressChip('scenes', 'Сцены', beatsDone, anchorCount, bulkGen.status.state === 'running', 'graph'),
+      progressChip('scenes', 'Сцены', beatsDone, anchorCount, calendarGen.phase === 'beat_prose', 'graph'),
       progressChip('images', 'Фоны', imagesDone, imagesTotal, imageGen.status.state === 'running', 'graph'),
       progressChip('sprites', 'Спрайты', charsDone, liCount, characterGen.status.state === 'running', 'heroes'),
       progressChip('audio', 'Аудио', audioDone, 1 + liCount * 2, audioGen.status.state === 'running', 'audio'),
@@ -177,14 +165,15 @@ const Playground = () => {
   }, [
     activeOutline,
     brief.loveInterests.length,
-    anchorBeats,
+    spine,
+    spineBeatProse,
     images,
     characters,
     worldModel,
     audioBase,
     audioByLi,
-    outlineGen.status.state,
-    bulkGen.status.state,
+    calendarRunning,
+    calendarGen.phase,
     imageGen.status.state,
     characterGen.status.state,
     audioGen.status.state,
@@ -240,9 +229,7 @@ const Playground = () => {
           </Link>
         </nav>
 
-        {activeSection === 'brief' && (
-          <BriefSection brief={brief} issues={issues} outlineGen={outlineGen} isBlocked={isBlocked} />
-        )}
+        {activeSection === 'brief' && <BriefSection brief={brief} issues={issues} />}
 
         {activeSection === 'graph' && (
           <div className={styles.sectionScroll}>
@@ -268,23 +255,21 @@ const Playground = () => {
                       </button>
                     ))}
                   </div>
-                  {graphView === 'montage' && (
-                    <MontageBoard
-                      outline={activeOutline}
-                      calendarModel={calendarModel}
-                      branchAssignment={branchAssignment}
-                      onBranchAssignmentChange={setBranchAssignment}
-                    />
-                  )}
+                  {graphView === 'montage' &&
+                    (calendarModel ? (
+                      <MontageBoard
+                        calendarModel={calendarModel}
+                        branchAssignment={branchAssignment}
+                        onBranchAssignmentChange={setBranchAssignment}
+                      />
+                    ) : (
+                      <div className={styles.graphEmpty}>
+                        <span>Монтажный стол появится после генерации расписания (бар выше).</span>
+                      </div>
+                    ))}
                 </div>
                 {graphView === 'flow' && <OutlineGraph outline={activeOutline} />}
                 {graphView === 'list' && <OutlineResult outline={activeOutline} />}
-                <BulkStoryBar
-                  status={bulkGen.status}
-                  onStart={() => bulkGen.start(brief, activeOutline)}
-                  onCancel={bulkGen.cancel}
-                  onReset={bulkGen.reset}
-                />
                 <ImageGenBar
                   status={imageGen.status}
                   onStart={() => imageGen.start(brief, activeOutline)}
@@ -370,7 +355,6 @@ const Playground = () => {
                 />
                 <ExportBar
                   outline={activeOutline}
-                  anchorLocations={usingDerivedOutline ? derivedLegacy?.anchorLocations ?? null : null}
                   spine={spine}
                   calendar={calendar}
                   schedule={schedule}
@@ -393,45 +377,17 @@ const Playground = () => {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// СЕКЦИЯ «БРИФ» (бриф + валидация + архетипы + генерация outline)
+// СЕКЦИЯ «БРИФ» (бриф + валидация + архетипы)
 // ────────────────────────────────────────────────────────────────────────────
 
 const BriefSection: React.FC<{
   brief: Brief;
   issues: ReturnType<typeof validateBrief>;
-  outlineGen: ReturnType<typeof useStoryOutlineGeneration>;
-  isBlocked: boolean;
-}> = ({ brief, issues, outlineGen, isBlocked }) => {
+}> = ({ brief, issues }) => {
   const [showRawBrief, setShowRawBrief] = useState(false);
 
   return (
     <div className={styles.sectionScroll}>
-      <div style={{ marginTop: 16 }}>
-        <OutlineBar
-          status={outlineGen.status}
-          disabled={isBlocked}
-          onGenerate={() => outlineGen.generate(brief)}
-          onReset={outlineGen.reset}
-        />
-      </div>
-
-      {outlineGen.status.state === 'done' && outlineGen.status.warnings.length > 0 && (
-        <div className={styles.sectionPad}>
-          <div className={styles.errorBox}>
-            {outlineGen.status.warnings.map(w => (
-              <div key={w.scope}>
-                ⚠ {w.scope}: {w.message}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {outlineGen.status.state === 'error' && (
-        <div className={styles.sectionPad}>
-          <div className={styles.errorBox}>Ошибка генерации: {outlineGen.status.message}</div>
-        </div>
-      )}
-
       <div className={styles.body}>
         <div className={styles.column}>
           <BriefEditor brief={brief} />
@@ -570,70 +526,8 @@ const ArchetypeView: React.FC<{ archetype: ArchetypeProfile }> = ({ archetype })
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// OUTLINE GENERATION
+// OUTLINE (производный от хребта — вид «Список якорей»)
 // ────────────────────────────────────────────────────────────────────────────
-
-const OutlineBar: React.FC<{
-  status: StoryOutlineGenStatus;
-  disabled: boolean;
-  onGenerate: () => void;
-  onReset: () => void;
-}> = ({ status, disabled, onGenerate, onReset }) => {
-  const [statusDot, statusLabel] = (() => {
-    switch (status.state) {
-      case 'idle':
-        return [styles.statusDotIdle, 'не запускалось'];
-      case 'generating':
-        return [
-          styles.statusDotGen,
-          status.batchId
-            ? `генерируется... (попытка ${status.attempt}, batch ${status.batchId.slice(0, 8)})`
-            : 'отправка запроса...',
-        ];
-      case 'done':
-        return [
-          styles.statusDotDone,
-          `готово · ${status.outline.anchors.length} якорей${
-            status.warnings.length > 0 ? ` · ⚠ ${status.warnings.length} предупреждений` : ''
-          }`,
-        ];
-      case 'error':
-        return [styles.statusDotError, 'ошибка'];
-    }
-  })();
-
-  return (
-    <div className={styles.outlineBar}>
-      <div className={styles.outlineBarLeft}>
-        <span className={styles.outlineBarTitle}>Story Outline</span>
-        <span className={styles.outlineBarMeta}>
-          <span className={`${styles.statusDot} ${statusDot}`} />
-          {statusLabel}
-          {disabled && ' · бриф невалиден, исправь ошибки сначала'}
-        </span>
-      </div>
-      <div className={styles.outlineBarRight}>
-        {status.state === 'done' && (
-          <button type="button" className={styles.secondaryBtn} onClick={onReset}>
-            Сбросить
-          </button>
-        )}
-        <button
-          type="button"
-          className={styles.primaryBtn}
-          onClick={onGenerate}
-          disabled={disabled || status.state === 'generating'}
-        >
-          {status.state === 'generating'
-            ? 'Генерация...'
-            : status.state === 'done'
-            ? 'Перегенерировать'
-            : 'Сгенерировать outline'}
-        </button>
-      </div>
-    </div>
-  );
-};
 
 const OutlineResult: React.FC<{ outline: StoryOutlinePlan }> = ({ outline }) => {
   const byAct = useMemo(() => {
@@ -715,39 +609,8 @@ const AnchorRow: React.FC<{ anchor: StoryAnchor }> = ({ anchor }) => {
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// BULK STORY GENERATION (world model + beats + dialogue variants + endings)
+// CALENDAR GENERATION (календарный пайплайн)
 // ────────────────────────────────────────────────────────────────────────────
-
-const PHASE_LABEL: Record<string, string> = {
-  world_model: 'World Model',
-  beat_plan: 'Beat Plan',
-  anchor_beats: 'Anchor Beats',
-  dialogue_variants: 'Dialogue Variants',
-  endings: 'Endings',
-};
-
-const BulkStoryBar: React.FC<{
-  status: BulkStoryGenStatus;
-  onStart: () => void;
-  onCancel: () => void;
-  onReset: () => void;
-}> = ({ status, onStart, onCancel, onReset }) => {
-  if (status.state === 'idle') {
-    return (
-      <div className={styles.bulkBar}>
-        <div className={styles.bulkLeft}>
-          <span className={styles.bulkTitle}>Bulk Story Generation</span>
-          <span className={styles.bulkMeta}>мир + beat-сцены + диалоги + концовки · 3 параллельно · ~5–10 минут</span>
-        </div>
-        <button type="button" className={styles.primaryBtn} onClick={onStart}>
-          Сгенерировать всё
-        </button>
-      </div>
-    );
-  }
-
-  return <BulkStoryBarBody status={status} onCancel={onCancel} onReset={onReset} />;
-};
 
 const CALENDAR_PHASE_LABEL: Record<string, string> = {
   cast: 'Каст и агенды',
@@ -802,70 +665,6 @@ const CalendarGenBar: React.FC<{
       >
         {running ? 'Генерация...' : hasSpine ? 'Перегенерировать' : 'Сгенерировать'}
       </button>
-    </div>
-  );
-};
-
-const BulkStoryBarBody: React.FC<{
-  status: BulkStoryGenStatus;
-  onCancel: () => void;
-  onReset: () => void;
-}> = ({ status, onCancel, onReset }) => {
-  if (status.state === 'idle') return null;
-
-  if (status.state === 'running') {
-    const pct = status.total === 0 ? 100 : Math.round((status.completed / status.total) * 100);
-    return (
-      <div className={styles.bulkBar}>
-        <div className={styles.bulkLeft}>
-          <span className={styles.bulkTitle}>
-            {PHASE_LABEL[status.phase] ?? status.phase} · {status.completed} / {status.total}
-            {status.cancelled && ' (отменяется...)'}
-          </span>
-          <div className={styles.progressTrack}>
-            <div className={styles.progressFill} style={{ width: `${pct}%` }} />
-          </div>
-          <span className={styles.bulkMeta}>
-            ⚙ в процессе: {status.inFlight}
-            {status.failures.length > 0 && ` · ✗ ошибок: ${status.failures.length}`}
-          </span>
-        </div>
-        <button type="button" className={styles.secondaryBtn} onClick={onCancel} disabled={status.cancelled}>
-          {status.cancelled ? 'Отменяется...' : 'Остановить'}
-        </button>
-      </div>
-    );
-  }
-
-  // state === 'done'
-  return (
-    <div className={styles.bulkBar}>
-      <div className={styles.bulkLeft}>
-        <span className={styles.bulkTitle}>
-          Генерация завершена · {status.beatsGenerated} beats · {status.variantsGenerated} variants ·{' '}
-          {status.endingsGenerated} endings
-          {status.cancelled && ' (остановлено)'}
-        </span>
-        <span className={styles.bulkMeta}>
-          {status.failures.length > 0 ? (
-            <>
-              ✗ {status.failures.length} ошибок:{' '}
-              {status.failures
-                .slice(0, 3)
-                .map(f => f.key)
-                .join(', ')}
-              {status.failures.length > 3 && ` и ещё ${status.failures.length - 3}`}
-            </>
-          ) : (
-            'все артефакты сгенерированы и валидны'
-          )}
-        </span>
-      </div>
-      <div style={{ display: 'flex', gap: 8 }}>
-        <button type="button" className={styles.secondaryBtn} onClick={onReset}>
-          OK
-        </button>
-      </div>
     </div>
   );
 };
@@ -1478,18 +1277,14 @@ const QAPanel: React.FC<{
 
 const ExportBar: React.FC<{
   outline: StoryOutlinePlan;
-  /** Маппинг anchor→loc от адаптера deriveLegacyOutline (легаси-фолбэк). */
-  anchorLocations?: Record<string, string> | null;
   /** Полный календарный стек → компиляция через compileCalendarGameProject. */
   spine?: SpinePlan | null;
   calendar?: Calendar | null;
   schedule?: CharacterSchedule | null;
   /** Последний прогон story QA — гейт экспорта при error-severity issues. */
   qaStatus?: StoryQAStatus;
-}> = ({ outline, anchorLocations, spine, calendar, schedule, qaStatus }) => {
+}> = ({ outline, spine, calendar, schedule, qaStatus }) => {
   const brief = useBriefStore(s => s.brief);
-  const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
-  const anchorBeats = useNarrativeStore(s => s.anchorBeats);
   const endings = useNarrativeStore(s => s.endings);
   const worldModel = useNarrativeStore(s => s.worldModel);
   const spineBeatProse = useNarrativeStore(s => s.spineBeatProse);
@@ -1509,25 +1304,17 @@ const ExportBar: React.FC<{
   const qaErrorCount = qaRan ? qaStatus.issues.filter(i => i.severity === 'error').length : 0;
   const qaBlocked = qaErrorCount > 0 && !overrideQaErrors;
 
-  const beatCount = Object.keys(anchorBeats).length;
-  const variantCount = Object.keys(dialogueVariants).length;
-  // При наличии модели мира фоны ключуются по loc:<id> — считаем только их.
-  const imageCount = Object.entries(images).filter(
-    ([k, i]) => i.status === 'done' && (worldModel ? k.startsWith('loc:') : !k.startsWith('loc:')),
-  ).length;
-  const imageTotal = worldModel ? worldModel.locations.length : outline.anchors.length;
+  const beatCount = Object.keys(spineBeatProse).length;
+  // Фоны ключуются по loc:<id>.
+  const imageCount = Object.entries(images).filter(([k, i]) => i.status === 'done' && k.startsWith('loc:')).length;
+  const imageTotal = worldModel ? worldModel.locations.length : 0;
   const characterCount = Object.values(characters).filter(c => c.status === 'done').length;
   const liCount = brief.loveInterests.length;
   const audioReady = audioBase?.status === 'done';
 
-  // Календарный путь: полный стек spine+calendar+schedule+worldModel →
-  // календарный компилятор (slot-переменная, «Подождать», HUD). Легаси-фолбэк:
-  // worldCalendar не знает якорей, маппинг anchor→loc приносит адаптер.
-  const useCalendarCompiler = Boolean(spine && calendar && schedule && worldModel);
-  const worldForExport =
-    worldModel && anchorLocations
-      ? { ...worldModel, anchorLocations: { ...worldModel.anchorLocations, ...anchorLocations } }
-      : worldModel;
+  // Экспорт возможен только при полном календарном стеке: spine+calendar+
+  // schedule+worldModel → календарный компилятор (slot-переменная, HUD).
+  const canExport = Boolean(spine && calendar && schedule && worldModel);
 
   const audioInput = {
     base: audioBase,
@@ -1538,38 +1325,21 @@ const ExportBar: React.FC<{
   };
 
   const onExport = () => {
-    // Приоритет: календарный компилятор → world-компилятор (адаптерный
-    // outline) → легаси-конвертация (прямые рёбра якорь→якорь, без аудио).
-    // dialogueVariants легаси-пайплайна в календарный компилятор НЕ подаются —
-    // его прозу несёт unitProse (в v1 обычно пуст → встречи без кнопок).
-    const result = useCalendarCompiler
-      ? compileCalendarGameProject(
-          brief,
-          spine!,
-          calendar!,
-          schedule!,
-          worldModel!,
-          spineBeatProse,
-          unitProse,
-          eventUnits,
-          endings,
-          images,
-          characters,
-          audioInput,
-        )
-      : worldForExport
-      ? compileWorldGameProject(
-          brief,
-          outline,
-          worldForExport,
-          dialogueVariants,
-          anchorBeats,
-          endings,
-          images,
-          characters,
-          audioInput,
-        )
-      : convertStoryToGameProject(brief, outline, {}, dialogueVariants, anchorBeats, endings, images, characters, null);
+    if (!canExport) return;
+    const result = compileCalendarGameProject(
+      brief,
+      spine!,
+      calendar!,
+      schedule!,
+      worldModel!,
+      spineBeatProse,
+      unitProse,
+      eventUnits,
+      endings,
+      images,
+      characters,
+      audioInput,
+    );
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);
     setTimeout(() => downloadJson('scenes.json', result.scenes), 250);
@@ -1580,15 +1350,13 @@ const ExportBar: React.FC<{
       <div className={styles.exportLeft}>
         <span className={styles.exportTitle}>Экспорт в game/-движок</span>
         <span className={styles.exportMeta}>
-          {beatCount}/{outline.anchors.length} beat-сцен · {variantCount} dialogue variants ·{' '}
+          {beatCount}/{outline.anchors.length} beat-сцен · {Object.keys(unitProse).length} диалоговых юнитов ·{' '}
           {Object.keys(endings).length} концовок · {imageCount}/{imageTotal} фонов · {characterCount}/{liCount} спрайтов
           {worldModel ? ` · ${worldModel.locations.length} локаций` : ' · без модели мира'}
           {audioReady ? ' · аудио готово' : ' · без аудио'}
-          {useCalendarCompiler
+          {canExport
             ? ` · календарный компилятор (${calendar!.slotCount} слотов)`
-            : worldForExport
-            ? ' · world-компилятор'
-            : ' · легаси-конвертер'}
+            : ' · нет полного календарного стека'}
           {!qaRan && ' · story QA не запускался'}
           {qaRan && qaErrorCount > 0 && ` · ✗ story QA: ${qaErrorCount} ошибок`}
         </span>
@@ -1603,8 +1371,14 @@ const ExportBar: React.FC<{
         type="button"
         className={styles.primaryBtn}
         onClick={onExport}
-        disabled={qaBlocked}
-        title={qaBlocked ? 'story QA нашёл ошибки — исправьте или включите чекбокс обхода' : undefined}
+        disabled={qaBlocked || !canExport}
+        title={
+          !canExport
+            ? 'нужен полный календарный стек: хребет, календарь, расписание, мир'
+            : qaBlocked
+            ? 'story QA нашёл ошибки — исправьте или включите чекбокс обхода'
+            : undefined
+        }
       >
         Скачать .gu.json + scenes.json
       </button>

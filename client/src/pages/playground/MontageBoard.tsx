@@ -1,12 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  useBriefStore,
-  useNarrativeStore,
-  deriveMontageModel,
   formatGuard,
   formatEffect,
-  type StoryOutlinePlan,
-  type MontageModel,
   type MontageCharacter,
   type MontageLocation,
   type SliceEventView,
@@ -21,10 +16,8 @@ import styles from './MontageBoard.module.css';
  * сквозь кадры; события — ромбы на линиях с карточками на отдельной ленте;
  * внизу шкала времени с дорожками персонажей, скользящим окном и плейхедом.
  *
- * Два источника модели:
- *   - легаси: deriveMontageModel (срез = якорь outline, одна локация-бокс);
- *   - календарь (prop calendarModel): срез = слот, 1-3 локации-бокса в кадре.
- * Оба нормализуются в BoardFrame/BoardBox — рендер и интеракции общие.
+ * Источник модели — календарь (prop calendarModel): срез = слот,
+ * 1-3 локации-бокса в кадре; нормализуется в BoardFrame/BoardBox.
  *
  * Интеракции макета:
  *   1/2 — hover на линию или чип персонажа подсвечивает её на всю длину;
@@ -38,13 +31,6 @@ const FILM_H = 466;
 const FRAME_TOP = 44;
 const OFFSTAGE_Y = 424;
 const TL_X0 = 90;
-
-// Легаси-кадр (один бокс) — геометрия макета 4a.
-const LEG_FRAME_W = 360;
-const LEG_GAP = 64;
-const LEG_WINDOW = 3;
-const LOC_X = 32;
-const LOC_TOP = 120;
 
 // Календарный кадр: уже (слотов много), боксы стопкой.
 const CAL_FRAME_W = 232;
@@ -109,46 +95,6 @@ type BoardModel = {
   acts: Array<{ act: number; fromZ: number; toZ: number }>;
 };
 
-function boardFromLegacy(model: MontageModel): BoardModel {
-  const frames: BoardFrame[] = model.slices.map(slice => ({
-    z: slice.z,
-    key: slice.anchor.id,
-    title: slice.anchor.timeMarker || `срез ${slice.z + 1}`,
-    mono: slice.anchor.id,
-    dayStart: false,
-    boxes: [
-      {
-        locationId: slice.locationId,
-        locationName: slice.locationName,
-        ambientLabel: slice.ambientLabel,
-        presentCharIds: slice.presentCharIds,
-        events: slice.events,
-        left: LOC_X,
-        width: LEG_FRAME_W - LOC_X * 2,
-        top: LOC_TOP,
-        height: Math.max(70, 50 + slice.presentCharIds.length * 26),
-        rowStart: LOC_TOP + 42,
-        rowStep: 26,
-        neutralY: LOC_TOP - 22,
-      },
-    ],
-    hiddenLocCount: 0,
-    events: slice.events,
-    presentCharIds: slice.presentCharIds,
-    tlLabel: slice.anchor.timeMarker || slice.anchor.id,
-    tlTitle: `${slice.anchor.timeMarker || ''} · ${slice.anchor.id}`,
-  }));
-  return {
-    frames,
-    characters: model.characters,
-    moves: model.moves,
-    presence: model.presence,
-    locations: model.locations,
-    adjacency: model.adjacency,
-    acts: model.acts,
-  };
-}
-
 function boardFromCalendar(model: CalendarMontageModel): BoardModel {
   const frames: BoardFrame[] = model.slices.map(slice => {
     const shown = slice.locations.slice(0, CAL_MAX_BOXES);
@@ -204,37 +150,21 @@ function boardFromCalendar(model: CalendarMontageModel): BoardModel {
 }
 
 export const MontageBoard: React.FC<{
-  outline: StoryOutlinePlan;
-  calendarModel?: CalendarMontageModel | null;
-  /** Селектор веток (календарь): branchPointId → outcomeId; нет ключа = все ветки. */
+  calendarModel: CalendarMontageModel;
+  /** Селектор веток: branchPointId → outcomeId; нет ключа = все ветки. */
   branchAssignment?: Record<string, string>;
   onBranchAssignmentChange?: (next: Record<string, string>) => void;
-}> = ({ outline, calendarModel, branchAssignment = {}, onBranchAssignmentChange }) => {
-  const brief = useBriefStore(s => s.brief);
-  const worldModel = useNarrativeStore(s => s.worldModel);
-  const beatPlan = useNarrativeStore(s => s.beatPlan);
-  const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
-  const anchorBeats = useNarrativeStore(s => s.anchorBeats);
+}> = ({ calendarModel, branchAssignment = {}, onBranchAssignmentChange }) => {
+  const board: BoardModel = useMemo(() => boardFromCalendar(calendarModel), [calendarModel]);
 
-  const legacyModel: MontageModel = useMemo(
-    () => deriveMontageModel({ brief, outline, worldModel, beatPlan, dialogueVariants, anchorBeats }),
-    [brief, outline, worldModel, beatPlan, dialogueVariants, anchorBeats],
-  );
-
-  const isCal = Boolean(calendarModel);
-  const board: BoardModel = useMemo(
-    () => (calendarModel ? boardFromCalendar(calendarModel) : boardFromLegacy(legacyModel)),
-    [calendarModel, legacyModel],
-  );
-
-  const FRAME_W = isCal ? CAL_FRAME_W : LEG_FRAME_W;
-  const GAP = isCal ? CAL_GAP : LEG_GAP;
+  const FRAME_W = CAL_FRAME_W;
+  const GAP = CAL_GAP;
   const STEP = FRAME_W + GAP;
   const frameLeft = (z: number) => PAD + z * STEP;
   const xCenter = (z: number) => frameLeft(z) + FRAME_W / 2;
 
   const N = board.frames.length;
-  const W = Math.min(isCal ? CAL_WINDOW : LEG_WINDOW, Math.max(N, 1));
+  const W = Math.min(CAL_WINDOW, Math.max(N, 1));
   const maxStart = Math.max(0, N - W);
 
   const [selectedZ, setSelectedZ] = useState(() => clamp(Math.floor(N / 2), 0, Math.max(N - 1, 0)));
@@ -382,17 +312,13 @@ export const MontageBoard: React.FC<{
   if (N === 0) {
     return (
       <div className={styles.board}>
-        <div className={styles.boardEmpty}>
-          {isCal
-            ? 'Календарь пуст — монтажному столу нечего показывать.'
-            : 'В outline нет якорей — монтажному столу нечего показывать.'}
-        </div>
+        <div className={styles.boardEmpty}>Календарь пуст — монтажному столу нечего показывать.</div>
       </div>
     );
   }
 
   const visibleFrames = board.frames.slice(windowStart, windowStart + W);
-  const maxCards = isCal ? 2 : 4;
+  const maxCards = 2;
 
   const eventStatus = (ev: SliceEventView): { text: string; color: string } => {
     if (!ev.hasScene) return { text: 'триггер · без сцены', color: '#9ca3af' };
@@ -418,7 +344,7 @@ export const MontageBoard: React.FC<{
   return (
     <div className={styles.board}>
       {/* ── селектор веток (фаза 5): «—» = все ветки, сегмент = лист ── */}
-      {isCal && branchPoints.length > 0 && (
+      {branchPoints.length > 0 && (
         <div className={styles.branchRow}>
           <span className={styles.legendLabel}>ветки</span>
           {branchPoints.map(bp => (
@@ -486,7 +412,7 @@ export const MontageBoard: React.FC<{
           за кадром
         </span>
         <span className={styles.legendMeta}>
-          {N} {isCal ? 'слотов' : 'срезов'} · {board.frames.reduce((acc, f) => acc + f.events.length, 0)} событий
+          {N} слотов · {board.frames.reduce((acc, f) => acc + f.events.length, 0)} событий
         </span>
       </div>
 
@@ -496,7 +422,7 @@ export const MontageBoard: React.FC<{
           {board.frames.map(frame => {
             const sel = frame.z === selectedZ;
             const lastBox = frame.boxes[frame.boxes.length - 1];
-            const showEmpty = isCal ? frame.boxes.length === 0 : frame.presentCharIds.length === 0;
+            const showEmpty = frame.boxes.length === 0;
             return (
               <React.Fragment key={frame.key}>
                 <div
@@ -540,7 +466,7 @@ export const MontageBoard: React.FC<{
                     </div>
                   )}
                   {showEmpty && (
-                    <div className={styles.offstageLabel} style={{ left: 0, width: FRAME_W, top: LOC_TOP - 8 }}>
+                    <div className={styles.offstageLabel} style={{ left: 0, width: FRAME_W, top: CAL_BOX_TOP - 8 }}>
                       пустой срез
                     </div>
                   )}
@@ -723,8 +649,8 @@ export const MontageBoard: React.FC<{
         <span className={styles.stripLabel}>события видимых срезов</span>
         {visibleFrames.map(frame =>
           frame.events.slice(0, maxCards).map((ev, idx) => {
-            const col = isCal ? 0 : Math.floor(idx / 2);
-            const row = isCal ? idx : idx % 2;
+            const col = 0;
+            const row = idx;
             const color = charColor(ev.charId);
             const status = eventStatus(ev);
             const hi =
@@ -772,7 +698,7 @@ export const MontageBoard: React.FC<{
               <span
                 key={frame.key}
                 className={styles.moreChip}
-                style={{ left: PAD + (frame.z - windowStart) * STEP + (isCal ? 182 : 2 * 182), top: 26 }}
+                style={{ left: PAD + (frame.z - windowStart) * STEP + 182, top: 26 }}
               >
                 +{frame.events.length - maxCards} ещё
               </span>

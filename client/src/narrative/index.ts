@@ -13,16 +13,7 @@ export { validateBrief } from './validateBrief';
 export type { BriefIssue } from './validateBrief';
 export { buildOutlineRequestPayload, computeOutlineTargets } from './buildOutlineRequest';
 export { validateStoryOutline } from './validateStoryOutline';
-export { useOutlineGeneration } from './useOutlineGeneration';
-export type { OutlineGenStatus } from './useOutlineGeneration';
-export { buildSegmentRequestPayload } from './buildSegmentRequest';
-export { useSegmentGeneration } from './useSegmentGeneration';
-export type { SegmentGenStatus } from './useSegmentGeneration';
-export { validateSegmentSemantics, getAllSegmentValidations, getSegmentValidations } from './validateSegment';
-export type { SegmentValidationContext } from './validateSegment';
 export { topoOrderAnchors, ancestorChain, directPredecessors, outgoingOf, encounterIndexFor } from './anchorOrder';
-export { validateBeatPlan } from './validateBeatPlan';
-export { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
 export { buildEndingRequestPayload } from './buildEndingRequest';
 export { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 export { useNarrativeStore } from './narrativeStore';
@@ -34,35 +25,20 @@ export type {
   LiAudioState,
 } from './narrativeStore';
 export { useBriefStore } from './briefStore';
-export { useBulkSegmentGeneration } from './useBulkSegmentGeneration';
-export type { BulkGenStatus, BulkFailure } from './useBulkSegmentGeneration';
 export { useBulkImageGeneration } from './useBulkImageGeneration';
 export type { ImageBulkStatus, ImageBulkFailure } from './useBulkImageGeneration';
 export { useBulkCharacterGeneration } from './useBulkCharacterGeneration';
 export type { CharacterBulkStatus, CharacterBulkFailure } from './useBulkCharacterGeneration';
-export {
-  convertToGameProject,
-  convertStoryToGameProject,
-  downloadJson,
-  slugify,
-  type ConversionStats,
-  type ConversionResult,
-  type StoryConversionResult,
-  type GameSceneGraph,
-  type GameProjectFile,
-} from './convertToGameProject';
-export { compileWorldGameProject, type WorldCompileResult, type WorldCompileStats } from './compileWorldGame';
+export { downloadJson, slugify, type GameSceneGraph, type GameProjectFile } from './convertToGameProject';
 export {
   compileCalendarGameProject,
   lintRouters,
   scheduleRuns,
   type CalendarCompileResult,
   type CalendarCompileStats,
+  type WorldAudioInput,
+  type WorldCompileStats,
 } from './compileCalendarGame';
-export { useStoryOutlineGeneration } from './useStoryOutlineGeneration';
-export type { StoryOutlineGenStatus } from './useStoryOutlineGeneration';
-export { useBulkStoryGeneration } from './useBulkStoryGeneration';
-export type { BulkStoryGenStatus, BulkStoryFailure } from './useBulkStoryGeneration';
 export {
   CANONICAL_POSES,
   EMOTION_TO_POSE,
@@ -70,7 +46,6 @@ export {
   resolveEmotionToPose,
   resolveEmotionToSpriteUrl,
   pickCharacterEmotion,
-  collectUsedEmotions,
   findMissingPoses,
   type CanonicalPose,
   type SpriteResolution,
@@ -178,7 +153,7 @@ export type { BulkCalendarPhase, BulkCalendarProgress, BulkCalendarRunOptions } 
 export { deriveCalendarMontage } from './calendarSliceModel';
 export type { CalendarMontageModel } from './calendarSliceModel';
 export { deriveLegacyOutline } from './deriveLegacyOutline';
-export { deriveMontageModel, liLineColor, LI_LINE_PALETTE } from './sliceModel';
+export { liLineColor, LI_LINE_PALETTE } from './sliceModel';
 export type {
   MontageModel,
   MontageSlice,
@@ -186,7 +161,6 @@ export type {
   MontageLocation,
   SliceEventView,
   CharacterMove,
-  MontageInputs,
 } from './sliceModel';
 export { useBulkAudioGeneration, buildBaseStyle, buildToneStyle } from './useBulkAudioGeneration';
 export type { AudioBulkStatus, AudioBulkFailure } from './useBulkAudioGeneration';
