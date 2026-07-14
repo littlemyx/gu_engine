@@ -39,6 +39,13 @@ export type GameSpriteEntry = {
   position: 'left' | 'center' | 'right';
 };
 
+/** Локальная реплика game/src/types.ts SceneLineEntry. */
+export type GameSceneLineEntry = {
+  speaker?: string;
+  text: string;
+  sprites?: GameSpriteEntry[];
+};
+
 /** Локальная реплика game/src/types.ts SceneAudioProfile. */
 export type GameSceneAudioProfile = {
   liId: string;
@@ -53,6 +60,7 @@ export type GameSceneNodeData = {
   image: string;
   sprite?: string;
   sprites?: GameSpriteEntry[];
+  lines?: GameSceneLineEntry[];
   outputs: GameSceneOutput[];
   sceneType?: GameSceneType;
   audioProfile?: GameSceneAudioProfile;

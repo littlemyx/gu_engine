@@ -8,6 +8,7 @@ import type { Brief, EndingVariant, WorldLocation, WorldModel } from './types';
 import type { DialogueUnit } from './dialogueUnit';
 import { validateDialogueUnit } from './dialogueUnit';
 import type { GameSceneGraph, GameStateCondition } from './convertToGameProject';
+import type { CharacterGenState } from './narrativeStore';
 
 const brief: Brief = SAMPLE_BRIEF;
 
@@ -437,6 +438,67 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
     const meet = hubA.data.outputs.find(o => o.text === 'Поговорить: Кира')!;
     const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
     expect(hasCond(edge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
+  });
+});
+
+// ── Пер-строчный трек спрайтов: поза говорящего следует эмоции реплики ──────
+
+describe('compileCalendarGameProject: lines со спрайтами по эмоции строки', () => {
+  const characters: Record<string, CharacterGenState> = {
+    kira: {
+      status: 'done',
+      idleFilename: 'kira_idle.png',
+      poseFilenames: { soft: 'kira_soft.png', happy: 'kira_happy.png' },
+    },
+  };
+
+  /** d2: эмоция узла soft, но реплика happy — спрайт строки должен разойтись с узловым. */
+  const divergentUnit: DialogueUnit = JSON.parse(JSON.stringify(dialogueUnit));
+  divergentUnit.nodes[1].dialogue[0].emotion = 'happy';
+
+  const compileChars = () =>
+    compileCalendarGameProject(
+      brief,
+      spine,
+      cal,
+      schedule,
+      worldModel,
+      {},
+      { enc_kira: [divergentUnit] },
+      {},
+      endings,
+      {},
+      characters,
+    );
+
+  it('нарратив — строка без speaker, наследует позу первой реплики; реплика — с именем', () => {
+    const { scenes } = compileChars();
+    const d2 = scenes.nodes.find(n => n.id.endsWith('_d2') && n.data.lines)!;
+    expect(d2.data.lines).toHaveLength(2);
+    const [narr, line] = d2.data.lines!;
+    expect(narr.speaker).toBeUndefined();
+    expect(narr.text).toBe('Она пожимает плечами.');
+    // Нарратив — сценическая ремарка к первой реплике (happy), не узловая soft.
+    expect(narr.sprites![0].url).toContain('kira_happy.png');
+    expect(line.speaker).toBe('Кира');
+    expect(line.text).toBe('День как день, спасибо.');
+  });
+
+  it('спрайт реплики следует эмоции строки, узловой набор остаётся фолбэком', () => {
+    const { scenes } = compileChars();
+    const d2 = scenes.nodes.find(n => n.id.endsWith('_d2') && n.data.lines)!;
+    // Узловой набор — доминантная эмоция сцены (soft).
+    expect(d2.data.sprites![0].url).toContain('kira_soft.png');
+    // Строка реплики — эмоция самой реплики (happy).
+    expect(d2.data.lines![1].sprites![0].url).toContain('kira_happy.png');
+  });
+
+  it('эмоция без спрайта падает в idle-фолбэк и не ломает трек', () => {
+    const { scenes } = compileChars();
+    // d1: эмоция idle → idleFilename для узла и строк.
+    const d1 = scenes.nodes.find(n => n.id.endsWith('_d1') && n.data.lines)!;
+    expect(d1.data.sprites![0].url).toContain('kira_idle.png');
+    expect(d1.data.lines![1].sprites![0].url).toContain('kira_idle.png');
   });
 });
 

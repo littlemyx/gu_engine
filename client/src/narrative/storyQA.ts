@@ -458,10 +458,16 @@ export function buildStoryLeafQARequests(inputs: StoryQAInputs): StoryLeafQAPayl
   return enumerateLeafAssignments(spine)
     .slice(0, MAX_LEAF_QA_CALLS)
     .map(leaf => {
-      const { played } = playableBeatsForLeaf(spine, calendar, leaf.assignment);
+      const { played, earliest } = playableBeatsForLeaf(spine, calendar, leaf.assignment);
       const beats = [...played]
         .map(id => beatById.get(id)!)
         .sort((a, b) => slotOfBeat(a) - slotOfBeat(b) || (a.id < b.id ? -1 : 1));
+      // Критику отдаются только концовки, достижимые НА ЭТОМ листе: чужие
+      // (требующие флаги невыбранных исходов) провоцируют ложные
+      // «противоречия выбору». Пустой список (лист без концовок — отдельная
+      // error validateSpine) деградирует в полный, чтобы не слепить критика.
+      const reachableEndings = spine.endings.filter(e => guardFlags(e.guard).every(f => earliest.has(f)));
+      const endingsForLeaf = reachableEndings.length > 0 ? reachableEndings : spine.endings;
       return {
         leafLabel: leaf.label || 'единственный лист',
         beatSummariesOrdered: beats.map(b => {
@@ -473,7 +479,7 @@ export function buildStoryLeafQARequests(inputs: StoryQAInputs): StoryLeafQAPayl
             timeMarker: slotLabel(slotOfBeat(b), calendar),
           };
         }),
-        endings: spine.endings.map(e => ({
+        endings: endingsForLeaf.map(e => ({
           id: e.id,
           kind: e.kind,
           summary: `${e.liId ? `LI: ${e.liId}; ` : ''}требует: [${guardFlags(e.guard).join(', ')}]`,

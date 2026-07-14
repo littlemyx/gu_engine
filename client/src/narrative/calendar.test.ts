@@ -28,6 +28,9 @@ const cal: Calendar = {
   actBoundaries: [0, 1, 2, 3],
 };
 
+/** Финал — конвергентная сходка: participants обязаны накрывать всех LI брифа. */
+const allLiIds = (): string[] => brief.loveInterests.map(li => li.id);
+
 const beat = (patch: Partial<SpineBeat> & Pick<SpineBeat, 'id'>): SpineBeat => ({
   kind: 'beat',
   act: 1,
@@ -48,7 +51,7 @@ const okSpine = (): SpinePlan => ({
     beat({ id: 'b1', act: 1, window: { fromSlot: 0, toSlot: 2 }, establishes: ['met_all'] }),
     beat({ id: 'b2', act: 2, window: { fromSlot: 3, toSlot: 5 }, guard: guardFromRequires(['met_all']) }),
     beat({ id: 'b3', act: 3, window: { fromSlot: 6, toSlot: 8 } }),
-    beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 } }),
+    beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, participants: allLiIds() }),
   ],
   endings: [
     { id: 'e_good', kind: 'good', liId: 'kira', guard: { all: [] } },
@@ -196,6 +199,20 @@ describe('validateSpine', () => {
     spine.endings[0] = { id: 'e_good', kind: 'good', liId: 'nobody', guard: { all: [] } };
     expect(errors(validateSpine(spine, cal, brief, null)).some(i => i.scope === 'endings/e_good')).toBe(true);
   });
+
+  it('финал с requires → error: финал должен быть безусловным', () => {
+    const spine = okSpine();
+    spine.beats[3].guard = guardFromRequires(['met_all']);
+    const issues = errors(validateSpine(spine, cal, brief, null));
+    expect(issues.some(i => i.scope === 'beats/fin/requires' && i.message.includes('безусловным'))).toBe(true);
+  });
+
+  it('финал без части LI в participants → error: конвергентная сходка', () => {
+    const spine = okSpine();
+    spine.beats[3].participants = ['kira'];
+    const issues = errors(validateSpine(spine, cal, brief, null));
+    expect(issues.some(i => i.scope === 'beats/fin/participants' && i.message.includes('yuki'))).toBe(true);
+  });
 });
 
 describe('validateSpine: feasibility листьев веток', () => {
@@ -233,7 +250,14 @@ describe('validateSpine: feasibility листьев веток', () => {
         guard: guardFromRequires(['chose_truth']),
         establishes: ['club_reborn'],
       }),
-      beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, establishes: ['story_resolved'] }),
+      beat({
+        id: 'fin',
+        kind: 'finale',
+        act: 4,
+        window: { fromSlot: 9, toSlot: 11 },
+        establishes: ['story_resolved'],
+        participants: allLiIds(),
+      }),
     ],
     endings: [
       { id: 'e_good', kind: 'good', liId: 'kira', guard: guardFromRequires(['story_resolved', 'club_reborn']) },

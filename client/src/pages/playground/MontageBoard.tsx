@@ -453,8 +453,10 @@ export const MontageBoard: React.FC<{
                       className={`${styles.locBox} ${sel ? styles.locBoxSel : ''}`}
                       style={{ left: box.left, top: box.top - FRAME_TOP, width: box.width, height: box.height }}
                     >
-                      <span className={styles.locBoxTitle}>{box.locationName}</span>
-                      {box.ambientLabel && <span className={styles.ambientChip}>♪ {box.ambientLabel}</span>}
+                      <div className={styles.locBoxHeader}>
+                        <span className={styles.locBoxTitle}>{box.locationName}</span>
+                        {box.ambientLabel && <span className={styles.ambientChip}>♪ {box.ambientLabel}</span>}
+                      </div>
                     </div>
                   ))}
                   {frame.hiddenLocCount > 0 && lastBox && (

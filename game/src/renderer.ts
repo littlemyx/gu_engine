@@ -1,6 +1,6 @@
 import { GameEngine } from "./engine";
 import { GameAudio } from "./audio";
-import { SceneNode, SceneType } from "./types";
+import { SceneLineEntry, SceneNode, SceneType, SpriteEntry } from "./types";
 import { parseScene, SceneLine } from "./speaker";
 
 const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -25,6 +25,14 @@ export class GameRenderer {
   private onMapOpen: (() => void) | null = null;
   private busy = false;
   private mounted = false;
+
+  // Пошаговый показ строк (узлы с data.lines): клик проявляет следующую
+  // строку и меняет спрайты по её эмоции; выборы появляются после последней.
+  private sceneLines: SceneLineEntry[] = [];
+  private lineIndex = 0;
+  private lineSceneType: SceneType = "dialogue";
+  private pendingOutputs: SceneNode["data"]["outputs"] = [];
+  private pendingDelayMs = 0;
 
   // Ссылки на элементы каркаса.
   private stage!: HTMLElement;
@@ -132,6 +140,7 @@ export class GameRenderer {
     });
     this.stage.addEventListener("click", () => {
       if (this.busy) return;
+      if (this.revealNextLine()) return;
       if (this.engine?.getSceneType() === "narration" && !this.isEndNode()) {
         this.runAction(() => this.engine?.advance());
       }
@@ -159,9 +168,15 @@ export class GameRenderer {
     // проиграют enter сами).
     this.clearLeaving();
 
+    this.sceneLines = [];
+    this.lineIndex = 0;
+
     this.topLabelEl.textContent = this.topLabelProvider?.() ?? "";
     this.swapBackground(node.data.image, settings.sceneFadeInMs);
-    this.renderSprites(node);
+    this.renderSpriteSet(
+      node.data.lines?.[0]?.sprites ?? node.data.sprites,
+      node.data.sprite,
+    );
 
     if (this.audio) {
       // Total target function: цель вычисляется на КАЖДОМ рендере — выход из
@@ -191,6 +206,17 @@ export class GameRenderer {
       return;
     }
 
+    if (node.data.lines?.length) {
+      this.sceneLines = node.data.lines;
+      this.lineSceneType = sceneType;
+      this.pendingOutputs = activeOutputs;
+      this.pendingDelayMs = settings.choiceAppearDelayMs;
+      this.preloadLineSprites(node.data.lines);
+      this.textEl.innerHTML = lineHtml(node.data.lines[0], false);
+      this.renderLineChoices();
+      return;
+    }
+
     if (sceneType === "narration") {
       this.renderNarration(node);
       return;
@@ -199,19 +225,54 @@ export class GameRenderer {
     this.renderDialogue(node, sceneType, activeOutputs, settings.choiceAppearDelayMs);
   }
 
-  private renderSprites(node: SceneNode): void {
+  private renderSpriteSet(sprites: SpriteEntry[] | undefined, single?: string): void {
     let html = "";
-    if (node.data.sprites?.length) {
-      html = node.data.sprites
+    if (sprites?.length) {
+      html = sprites
         .map(
           (s) =>
             `<img class="stage-sprite stage-sprite--${s.position}" src="${escapeAttr(s.url)}" alt="" />`,
         )
         .join("");
-    } else if (node.data.sprite) {
-      html = `<img class="stage-sprite stage-sprite--center" src="${escapeAttr(node.data.sprite)}" alt="" />`;
+    } else if (single) {
+      html = `<img class="stage-sprite stage-sprite--center" src="${escapeAttr(single)}" alt="" />`;
     }
     this.spritesEl.innerHTML = html;
+  }
+
+  /** Прогрев поз всех строк узла — смена спрайта при листании без мигания. */
+  private preloadLineSprites(lines: SceneLineEntry[]): void {
+    const urls = new Set<string>();
+    for (const l of lines) {
+      for (const s of l.sprites ?? []) urls.add(s.url);
+    }
+    for (const url of urls) {
+      new Image().src = url;
+    }
+  }
+
+  /** Проявляет следующую строку узла. false — листать нечего. */
+  private revealNextLine(): boolean {
+    if (this.lineIndex >= this.sceneLines.length - 1) return false;
+    this.lineIndex++;
+    const line = this.sceneLines[this.lineIndex];
+    this.textEl.insertAdjacentHTML("beforeend", lineHtml(line, true));
+    this.textEl.scrollTop = this.textEl.scrollHeight;
+    const node = this.engine?.getCurrentNode();
+    this.renderSpriteSet(line.sprites ?? node?.data.sprites, node?.data.sprite);
+    this.renderLineChoices();
+    return true;
+  }
+
+  /** Хвост контента в lines-режиме: «…» до последней строки, затем выборы. */
+  private renderLineChoices(): void {
+    const lastLine = this.lineIndex >= this.sceneLines.length - 1;
+    if (!lastLine || this.lineSceneType === "narration") {
+      this.choicesEl.className = "stage-choices";
+      this.choicesEl.innerHTML = `<div class="advance-hint">…</div>`;
+      return;
+    }
+    this.renderChoiceButtons(this.pendingOutputs, this.pendingDelayMs);
   }
 
   private renderDialogue(
@@ -221,7 +282,13 @@ export class GameRenderer {
     delayMs: number,
   ): void {
     this.textEl.innerHTML = this.sceneTextHtml(node.data.label, sceneType);
+    this.renderChoiceButtons(activeOutputs, delayMs);
+  }
 
+  private renderChoiceButtons(
+    activeOutputs: SceneNode["data"]["outputs"],
+    delayMs: number,
+  ): void {
     this.choicesEl.className = "stage-choices";
     this.choicesEl.innerHTML = activeOutputs
       .map(
@@ -374,6 +441,26 @@ export class GameRenderer {
     img.src = url;
     setTimeout(go, BG_PRELOAD_TIMEOUT);
   }
+}
+
+/**
+ * Блок одной строки lines-режима. Строка без speaker — нарративная ремарка.
+ * revealed — строка проявлена кликом уже после enter-анимации контента,
+ * поэтому играет собственное появление.
+ */
+function lineHtml(line: SceneLineEntry, revealed: boolean): string {
+  // Только fade: translateY внутри overflow-y:auto контейнера на время
+  // анимации создаёт переполнение, и скроллбар мигает.
+  const anim = revealed ? ` style="animation:lineIn 250ms ease both"` : "";
+  if (!line.speaker) {
+    return `<div class="scene-text scene-text--narration"${anim}>${escapeHtml(line.text)}</div>`;
+  }
+  return (
+    `<div class="scene-line"${anim}>` +
+    `<div class="scene-speaker">${escapeHtml(line.speaker)}</div>` +
+    `<div class="scene-text">${escapeHtml(line.text)}</div>` +
+    `</div>`
+  );
 }
 
 function escapeHtml(str: string): string {

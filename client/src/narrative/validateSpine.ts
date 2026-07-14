@@ -209,6 +209,36 @@ export function validateSpine(
     });
   }
 
+  // Финал — общая конвергентная сходка. В собранной игре биты срабатывают
+  // там, куда игрок пришёл сам, поэтому guard-флаги финала из битов чужих
+  // сюжетных линий делают финал недостижимым для игрока, следившего за одним
+  // LI (D3 storyQA: каждая политика обязана дойти до финала). Отсюда два
+  // инварианта: финал безусловен (различия судеб выражают концовки), и в нём
+  // участвуют ВСЕ LI — расписание сведёт их в локацию финала, а с ними и
+  // игрока, идущего за любым из них.
+  if (finale) {
+    const finaleFlags = guardFlags(finale.guard);
+    if (finaleFlags.length > 0) {
+      issues.push({
+        severity: 'error',
+        scope: `beats/${finale.id}/requires`,
+        message: `finale "${finale.id}" требует флаги [${finaleFlags.join(
+          ', ',
+        )}] — финал должен быть безусловным (requires: []); различия веток выражаются в requires концовок`,
+      });
+    }
+    const missingLis = brief.loveInterests.map(li => li.id).filter(id => !finale.participants.includes(id));
+    if (missingLis.length > 0) {
+      issues.push({
+        severity: 'error',
+        scope: `beats/${finale.id}/participants`,
+        message: `finale "${
+          finale.id
+        }" — конвергентная сходка: в participants обязаны быть все LI брифа, отсутствуют [${missingLis.join(', ')}]`,
+      });
+    }
+  }
+
   // Локации существуют в модели мира.
   if (worldModel) {
     const locIds = new Set(worldModel.locations.map(l => l.id));

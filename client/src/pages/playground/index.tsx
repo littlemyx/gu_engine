@@ -1216,9 +1216,16 @@ const QA_GROUP_ORDER = ['spine', 'calendar', 'schedule', 'units', 'dialogue', 'q
 
 const qaGroupOf = (issue: SegmentIssue): string => issue.scope.split('/')[0] || '?';
 
-/** Затравки регенерации: spine-issues списком, dialogue-issues по unitId. */
+/**
+ * Затравки регенерации: spine-issues списком (плюс sim/leaf — симуляция
+ * политик и критик листьев судят именно хребет), dialogue-issues по unitId.
+ */
+const SPINE_SEED_GROUPS = new Set(['spine', 'sim', 'leaf']);
+
 function buildSeedIssues(issues: SegmentIssue[]): BulkCalendarRunOptions['seedIssues'] {
-  const spine = issues.filter(i => qaGroupOf(i) === 'spine').map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
+  const spine = issues
+    .filter(i => SPINE_SEED_GROUPS.has(qaGroupOf(i)))
+    .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
   const dialogue: Record<string, string[]> = {};
   for (const i of issues) {
     if (qaGroupOf(i) !== 'dialogue') continue;

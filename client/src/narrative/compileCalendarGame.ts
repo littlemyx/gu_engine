@@ -11,6 +11,7 @@ import type {
   GameProjectFile,
   GameSceneEdge,
   GameSceneGraph,
+  GameSceneLineEntry,
   GameSceneNode,
   GameSceneOutput,
   GameSpriteEntry,
@@ -552,11 +553,47 @@ export function compileCalendarGameProject(
         const draft = nodeAsDraftScene(un);
         const positions = assignPositions(un.charactersPresent.length);
         const sprites: GameSpriteEntry[] = [];
+        const spriteIndexByChar = new Map<string, number>();
         for (let ci = 0; ci < un.charactersPresent.length; ci++) {
           const charId = un.charactersPresent[ci];
           const emotion = pickCharacterEmotion(draft, charId);
           const { url } = resolveEmotionToSpriteUrl(characters[charId], emotion);
-          if (url) sprites.push({ url, position: positions[ci] ?? 'center' });
+          if (url) {
+            spriteIndexByChar.set(charId, sprites.length);
+            sprites.push({ url, position: positions[ci] ?? 'center' });
+          }
+        }
+
+        // Пер-строчный трек: спрайт говорящего следует эмоции ЕГО реплики,
+        // остальные персонажи держат эмоцию узла. Узловые sprites остаются
+        // фолбэком для плееров без поддержки lines.
+        const baseSprites = sprites.length ? sprites : undefined;
+        const spritesForLine = (dl: typeof un.dialogue[number]): GameSpriteEntry[] | undefined => {
+          const si = spriteIndexByChar.get(dl.speaker);
+          if (si === undefined) return baseSprites;
+          const emotion = dl.emotion || pickCharacterEmotion(draft, dl.speaker);
+          const { url } = resolveEmotionToSpriteUrl(characters[dl.speaker], emotion);
+          if (!url || url === sprites[si].url) return baseSprites;
+          return sprites.map((s, i) => (i === si ? { ...s, url } : s));
+        };
+
+        const sceneLines: GameSceneLineEntry[] = [];
+        const narrationText = escapeNL(un.narration);
+        if (narrationText) {
+          // Нарратив узла — сценическая ремарка к ПЕРВОЙ реплике («её голос
+          // становится мягче…»), поэтому наследует её позу, а не узловую.
+          const firstLine = un.dialogue[0];
+          sceneLines.push({
+            text: narrationText,
+            sprites: firstLine ? spritesForLine(firstLine) : baseSprites,
+          });
+        }
+        for (const dl of un.dialogue) {
+          sceneLines.push({
+            speaker: liNameById.get(dl.speaker) ?? dl.speaker,
+            text: dl.line,
+            sprites: spritesForLine(dl),
+          });
         }
 
         const unOutputs: GameSceneOutput[] = [];
@@ -603,6 +640,7 @@ export function compileCalendarGameProject(
             image: bgForLocation(locId),
             sprite: sprites[0]?.url,
             sprites: sprites.length ? sprites : undefined,
+            lines: sceneLines.length ? sceneLines : undefined,
             outputs: unOutputs,
             sceneType: un.choices.length === 0 ? 'narration' : 'dialogue',
             audioProfile,

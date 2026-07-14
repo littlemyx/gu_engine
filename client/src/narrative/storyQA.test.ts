@@ -5,7 +5,7 @@ import type { DialogueUnit } from './dialogueUnit';
 import type { DialogueVariantBracket, SegmentIssue } from './types';
 import { SAMPLE_BRIEF } from './sampleBrief';
 import type { StoryQAInputs } from './storyQA';
-import { runStoryQAStructural, simulatePolicies, summarizePolicyReports } from './storyQA';
+import { buildStoryLeafQARequests, runStoryQAStructural, simulatePolicies, summarizePolicyReports } from './storyQA';
 
 /** 4 дня × 3 части = 12 слотов, по акту на день (как в calendar.test). */
 const cal: Calendar = {
@@ -246,5 +246,22 @@ describe('simulatePolicies (D3)', () => {
     expect(reports[0].endingSatisfied).toBeNull();
     const summary = summarizePolicyReports(reports);
     expect(summary.some(i => i.severity === 'error' && i.message.includes('концовка'))).toBe(true);
+  });
+});
+
+describe('buildStoryLeafQARequests (D4)', () => {
+  it('концовки листа фильтруются по достижимости: чужая ветка не попадает к критику', () => {
+    const payloads = buildStoryLeafQARequests(mkInputs(simSpine(), []));
+    expect(payloads).toHaveLength(2);
+    const byLabel = Object.fromEntries(payloads.map(p => [p.leafLabel, p.endings.map(e => e.id)]));
+    expect(byLabel['bp=o1']).toEqual(['e1']);
+    expect(byLabel['bp=o2']).toEqual(['e2']);
+  });
+
+  it('лист без единой достижимой концовки деградирует в полный список (критик не слепнет)', () => {
+    const spine = simSpine();
+    spine.endings = [{ id: 'e_ghost', kind: 'normal', liId: null, guard: guardFromRequires(['never_set']) }];
+    const payloads = buildStoryLeafQARequests(mkInputs(spine, []));
+    expect(payloads[0].endings.map(e => e.id)).toEqual(['e_ghost']);
   });
 });
