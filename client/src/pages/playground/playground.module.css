@@ -835,3 +835,302 @@
   background: #fafafa;
   font-size: 12px;
 }
+
+/* ── App shell (макет 4a): топ-бар + левый рейл + секции ──────────────── */
+
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  width: 100vw;
+  background: #f7f6f2;
+  color: #1f2937;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+
+.topBar {
+  height: 60px;
+  background: #fff;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+
+.topTitle {
+  font-size: 16px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.topMeta {
+  font-size: 12px;
+  color: #9ca3af;
+  white-space: nowrap;
+}
+
+.topChips {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+  align-items: center;
+}
+
+.pipeChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.pipeChip:hover {
+  border-color: #c7d2fe;
+}
+
+.pipeDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.shellBody {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.rail {
+  width: 64px;
+  background: #fff;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.railItem {
+  width: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  border-radius: 8px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.railItemActive {
+  background: #eef2ff;
+}
+
+.railIcon {
+  width: 18px;
+  height: 18px;
+  border: 2px solid #9ca3af;
+  border-radius: 4px;
+  box-sizing: border-box;
+}
+
+.railIconRound {
+  border-radius: 50%;
+}
+
+.railItemActive .railIcon {
+  border-color: #4f46e5;
+}
+
+.railLabel {
+  font-size: 9px;
+  color: #9ca3af;
+}
+
+.railItemActive .railLabel {
+  color: #4f46e5;
+  font-weight: 600;
+}
+
+.railSpacer {
+  flex: 1;
+}
+
+.railHome {
+  font-size: 10px;
+  color: #9ca3af;
+  text-decoration: none;
+  padding: 8px 0;
+  text-align: center;
+}
+
+.railHome:hover {
+  color: #4f46e5;
+}
+
+.sectionScroll {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0 0 40px 0;
+}
+
+.graphInner {
+  margin: 16px 32px 0 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.viewToggle {
+  display: flex;
+  gap: 2px;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 3px;
+  width: fit-content;
+}
+
+.viewToggleBtn {
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #6b7280;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.viewToggleActive {
+  background: #fff;
+  color: #1f2937;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+.graphEmpty {
+  margin: 16px 32px 0 32px;
+  background: #fff;
+  border: 1px dashed #d1d5db;
+  border-radius: 12px;
+  padding: 48px 24px;
+  text-align: center;
+  color: #6b7280;
+  font-size: 13px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.sectionPad {
+  margin: 16px 32px 0 32px;
+}
+
+/* ── Story QA panel (фаза 6) ─────────────────────────────────────────────── */
+
+.qaPanel {
+  margin: 16px 32px 0 32px;
+  padding: 14px 20px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.qaHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.qaGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.qaGroupTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin: 4px 0 2px 0;
+}
+
+.qaBadgeError {
+  font-size: 10px;
+  font-weight: 600;
+  color: #b91c1c;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.qaBadgeWarning {
+  font-size: 10px;
+  font-weight: 600;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.qaPolicyTable {
+  border-collapse: collapse;
+  font-size: 12px;
+  color: #374151;
+}
+
+.qaPolicyTable th {
+  text-align: left;
+  font-weight: 600;
+  color: #6b7280;
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.qaPolicyTable td {
+  padding: 4px 12px 4px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.qaPolicyName {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+.qaOverrideRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #b91c1c;
+  margin-top: 4px;
+  cursor: pointer;
+}

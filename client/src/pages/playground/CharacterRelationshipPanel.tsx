@@ -5,7 +5,7 @@ import {
   IMAGE_SERVER_BASE,
   topoOrderAnchors,
   type StoryOutlinePlan,
-  type DialogueVariant,
+  type DialogueUnit,
 } from '@/narrative';
 import styles from './CharacterRelationshipPanel.module.css';
 
@@ -14,7 +14,7 @@ type Props = {
 };
 
 type EncounterPoint = {
-  /** Якорь-этап, на котором доступна встреча (компилятор мира подключает её в hub локации). */
+  /** Якорь-этап, на котором доступна встреча (компилятор подключает её в hub локации). */
   fromId: string;
   location: string;
 };
@@ -25,7 +25,8 @@ type LiRelationshipData = {
   spriteUrl: string | null;
   anchorsPresent: string[];
   encounters: EncounterPoint[];
-  variants: Record<string, DialogueVariant[]>;
+  /** Диалоговые юниты encounter-а этого LI (enc_<liId> из unitProse). */
+  units: DialogueUnit[];
 };
 
 const BRACKET_LABEL: Record<string, string> = {
@@ -42,23 +43,19 @@ const BRACKET_COLOR: Record<string, string> = {
 
 export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
   const brief = useBriefStore(s => s.brief);
-  const dialogueVariants = useNarrativeStore(s => s.dialogueVariants);
+  const unitProse = useNarrativeStore(s => s.unitProse);
   const characters = useNarrativeStore(s => s.characters);
 
   const liData = useMemo((): LiRelationshipData[] => {
+    // unitProse ключуется id юнита (evt_*/enc_*) — принадлежность LI несёт
+    // сам DialogueUnit.liId.
+    const allUnits = Object.values(unitProse).flat();
     return brief.loveInterests.map(li => {
-      // Встречи детерминированы: компилятор мира подключает encounter для
-      // каждой пары (якорь, LI из availableLIs) — в топо-порядке сюжета.
+      // Присутствие детерминировано расписанием: адаптер кладёт LI в
+      // availableLIs якорей, где персонаж на сцене.
       const anchorsWithLi = topoOrderAnchors(outline).filter(a => a.availableLIs.includes(li.id));
       const anchorsPresent = anchorsWithLi.map(a => a.id);
       const encounters: EncounterPoint[] = anchorsWithLi.map(a => ({ fromId: a.id, location: a.location }));
-
-      const variants: Record<string, DialogueVariant[]> = {};
-      for (const [key, dvs] of Object.entries(dialogueVariants)) {
-        if (key.endsWith(`:${li.id}`)) {
-          variants[key] = dvs;
-        }
-      }
 
       const charState = characters[li.id];
       const spriteUrl =
@@ -72,10 +69,10 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
         spriteUrl,
         anchorsPresent,
         encounters,
-        variants,
+        units: allUnits.filter(u => u.liId === li.id),
       };
     });
-  }, [brief.loveInterests, outline, dialogueVariants, characters]);
+  }, [brief.loveInterests, outline, unitProse, characters]);
 
   if (liData.length === 0) return null;
 
@@ -92,7 +89,6 @@ export const CharacterRelationshipPanel: React.FC<Props> = ({ outline }) => {
 };
 
 const LiCard: React.FC<{ li: LiRelationshipData; outline: StoryOutlinePlan }> = ({ li, outline }) => {
-  const totalVariants = Object.values(li.variants).reduce((s, v) => s + v.length, 0);
   const totalEncounters = li.encounters.length;
 
   return (
@@ -102,39 +98,49 @@ const LiCard: React.FC<{ li: LiRelationshipData; outline: StoryOutlinePlan }> = 
         <div>
           <div className={styles.liName}>{li.liName}</div>
           <div className={styles.liMeta}>
-            {li.anchorsPresent.length} якорей · {totalEncounters} encounter-ов · {totalVariants} вариантов
+            {li.anchorsPresent.length} якорей · {totalEncounters} encounter-ов · {li.units.length} диалоговых юнитов
           </div>
         </div>
       </div>
 
       <div className={styles.timeline}>
-        {outline.anchors.map(anchor => {
-          const isPresent = li.anchorsPresent.includes(anchor.id);
-          const anchorEncounters = li.encounters.filter(e => e.fromId === anchor.id);
-          return (
-            <AnchorDot
-              key={anchor.id}
-              anchor={anchor}
-              isPresent={isPresent}
-              encounters={anchorEncounters}
-              variants={li.variants}
-              fromId={anchor.id}
-              liId={li.liId}
-            />
-          );
-        })}
+        {outline.anchors.map(anchor => (
+          <AnchorDot
+            key={anchor.id}
+            anchor={anchor}
+            isPresent={li.anchorsPresent.includes(anchor.id)}
+            hasEncounters={li.encounters.some(e => e.fromId === anchor.id)}
+          />
+        ))}
       </div>
 
-      {totalEncounters > 0 && (
-        <div className={styles.encounterList}>
-          {li.encounters.map((enc, i) => (
-            <EncounterRow key={i} enc={enc} variants={li.variants[`${enc.fromId}:${li.liId}`] ?? []} />
-          ))}
+      <div className={styles.encounterRow}>
+        <div className={styles.encounterLocation}>
+          <span className={styles.encounterEdge}>encounter-юнит</span>
         </div>
-      )}
+        <div className={styles.bracketRow}>
+          {(['positive', 'neutral', 'negative'] as const).map(bracket => {
+            const has = li.units.some(u => u.bracket === bracket);
+            return (
+              <span
+                key={bracket}
+                className={styles.bracketBadge}
+                style={{
+                  borderColor: has ? BRACKET_COLOR[bracket] : '#d1d5db',
+                  color: has ? BRACKET_COLOR[bracket] : '#9ca3af',
+                  fontWeight: has ? 600 : 400,
+                }}
+              >
+                {BRACKET_LABEL[bracket]}
+                {has && ' ✓'}
+              </span>
+            );
+          })}
+        </div>
+      </div>
 
-      {totalEncounters === 0 && Object.keys(li.variants).length === 0 && (
-        <div className={styles.emptyState}>Встреч нет: персонаж не указан в availableLIs ни одного якоря.</div>
+      {totalEncounters === 0 && li.units.length === 0 && (
+        <div className={styles.emptyState}>Встреч нет: персонаж не попадает в расписание ни одного якоря.</div>
       )}
     </div>
   );
@@ -143,79 +149,14 @@ const LiCard: React.FC<{ li: LiRelationshipData; outline: StoryOutlinePlan }> = 
 const AnchorDot: React.FC<{
   anchor: { id: string; act: number; location: string };
   isPresent: boolean;
-  encounters: EncounterPoint[];
-  variants: Record<string, DialogueVariant[]>;
-  fromId: string;
-  liId: string;
-}> = ({ anchor, isPresent, encounters, variants, fromId, liId }) => {
-  const hasEncounters = encounters.length > 0;
-  const varKey = `${fromId}:${liId}`;
-  const dvs = variants[varKey] ?? [];
-  const hasAllBrackets = dvs.length >= 3;
-
-  return (
-    <div className={styles.dotWrapper} title={`${anchor.id}\n${anchor.location}`}>
-      <div
-        className={`${styles.dot} ${
-          hasEncounters
-            ? hasAllBrackets
-              ? styles.dotComplete
-              : styles.dotEncounter
-            : isPresent
-            ? styles.dotPresent
-            : styles.dotAbsent
-        }`}
-      />
-      {hasEncounters && (
-        <div className={styles.dotBrackets}>
-          {(['positive', 'neutral', 'negative'] as const).map(b => {
-            const has = dvs.some(v => v.bracket === b);
-            return (
-              <span
-                key={b}
-                className={styles.microBadge}
-                style={{
-                  background: has ? BRACKET_COLOR[b] : '#e5e7eb',
-                  opacity: has ? 1 : 0.4,
-                }}
-                title={`${BRACKET_LABEL[b]}${has ? ' ✓' : ''}`}
-              />
-            );
-          })}
-        </div>
-      )}
-      <div className={styles.dotLabel}>{anchor.id.replace(/_/g, ' ').slice(0, 12)}</div>
-    </div>
-  );
-};
-
-const EncounterRow: React.FC<{
-  enc: EncounterPoint;
-  variants: DialogueVariant[];
-}> = ({ enc, variants }) => (
-  <div className={styles.encounterRow}>
-    <div className={styles.encounterLocation}>
-      <span className={styles.encounterEdge}>{enc.fromId}</span>
-      {enc.location && <span className={styles.encounterPlace}>{enc.location}</span>}
-    </div>
-    <div className={styles.bracketRow}>
-      {(['positive', 'neutral', 'negative'] as const).map(bracket => {
-        const has = variants.some(v => v.bracket === bracket);
-        return (
-          <span
-            key={bracket}
-            className={styles.bracketBadge}
-            style={{
-              borderColor: has ? BRACKET_COLOR[bracket] : '#d1d5db',
-              color: has ? BRACKET_COLOR[bracket] : '#9ca3af',
-              fontWeight: has ? 600 : 400,
-            }}
-          >
-            {BRACKET_LABEL[bracket]}
-            {has && ' ✓'}
-          </span>
-        );
-      })}
-    </div>
+  hasEncounters: boolean;
+}> = ({ anchor, isPresent, hasEncounters }) => (
+  <div className={styles.dotWrapper} title={`${anchor.id}\n${anchor.location}`}>
+    <div
+      className={`${styles.dot} ${
+        hasEncounters ? styles.dotEncounter : isPresent ? styles.dotPresent : styles.dotAbsent
+      }`}
+    />
+    <div className={styles.dotLabel}>{anchor.id.replace(/_/g, ' ').slice(0, 12)}</div>
   </div>
 );

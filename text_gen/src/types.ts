@@ -22,133 +22,98 @@ export interface SceneTextRequest {
 }
 
 /**
- * Запрос на генерацию outline-плана (акты + якорный скелет) из брифа.
- * Бриф и архетипы передаются как opaque JSON-объекты — text_gen их не
- * интерпретирует, а только сериализует в промпт.
- */
-export interface OutlineRequest {
-  brief: unknown;
-  archetypeProfiles: Record<string, unknown>;
-  /** Целевые бюджеты: число якорей, распределение по актам, доля сюжетных. */
-  targets?: {
-    anchorCount: number;
-    anchorsPerAct: number[];
-    plotOnlyAnchorCount: number;
-  };
-  /**
-   * Previously generated outline that failed validation. Present together
-   * with previousIssues during retry-with-feedback flow.
-   */
-  previousAttempt?: unknown | null;
-  /** Issue messages from the previous attempt (verbatim). */
-  previousIssues?: string[];
-}
-
-/**
- * Запрос на генерацию scene-уровневого DAG между двумя якорями.
+ * Запрос стадии worldCalendar: локации мира + дискретный календарь
+ * (дни × части дня, границы актов) + маппинг агендных тегов на локации.
  * Все вложенные структуры — opaque JSON (text_gen их не интерпретирует).
  */
-export interface SegmentRequest {
+export interface WorldCalendarRequest {
   brief: unknown;
-  archetypeProfile: unknown | null;
-  anchorFrom: unknown;
-  anchorTo: unknown;
-  existingFlags?: string[];
-  /**
-   * Baseline state ranges at segment entry: {[stateVarPath]: [lo, hi]}.
-   * Computed on the client by reconciling anchorFrom.entryStateRequired with
-   * archetype.initialState. Shown to the LLM verbatim in the prompt and used
-   * by the validator's range-feasibility check — eliminates hidden 0-default
-   * mismatches that previously caused infinite retry loops.
-   */
-  baselineStateRanges?: Record<string, [number, number]>;
-  /**
-   * Previously generated segment that failed validation. Present together
-   * with previousIssues during retry-with-feedback flow.
-   */
-  previousAttempt?: unknown | null;
-  /** Issue messages from the previous attempt (verbatim). */
-  previousIssues?: string[];
-}
-
-export interface LiCardsRequest {
-  storyMasterPrompt: string;
-  count: number;
-  hints?: {
-    archetypes?: string[];
-    constraints?: string;
+  /** CastPlan с агендными тегами LI, или null (стаб-агенды без LLM). */
+  castPlan: unknown | null;
+  /** Целевые размеры календаря (computeCalendarTargets + brief.scale.acts). */
+  targets: {
+    days: number;
+    daypartsPerDay: number;
+    slotCount: number;
+    acts: number;
   };
-}
-
-export interface NarrationWebRequest {
-  brief: unknown;
-  storyAnchorFrom: unknown;
-  storyAnchorTo: unknown;
-  availableLIs: { liId: string; liName: string; roleInWorld: string }[];
-  existingFlags?: string[];
   /**
-   * Beat-сцена FROM-якоря, которую игрок только что видел. Паутина должна
-   * продолжаться сразу после неё, не повторяя и не противореча.
-   */
-  fromAnchorBeatText?: string;
-  /**
-   * LI, встречи с которыми запланированы beat-планом в этом якоре: паутина
-   * ОБЯЗАНА содержать encounter-триггер для каждого из них.
-   */
-  plannedEncounterLIs?: string[];
-  /** Локация from-якоря (сущность из модели мира). */
-  fromLocation?: { id: string; name: string; description: string; pointsOfInterest: string[] };
-  /** Локация to-якоря (сущность из модели мира). */
-  toLocation?: { id: string; name: string; description: string; pointsOfInterest: string[] };
-  /**
-   * Маршрут from→to по карте мира: последовательность локаций с «via»
-   * (как игрок попадает в каждую следующую). Сцены паутины обязаны идти
-   * по этому маршруту.
-   */
-  route?: { locationId: string; name: string; via: string }[];
-  /**
-   * Previously generated web that failed validation. Present together
-   * with previousIssues during retry-with-feedback flow.
-   */
-  previousAttempt?: unknown | null;
-  /** Issue messages from the previous attempt (verbatim). */
-  previousIssues?: string[];
-}
-
-/**
- * Запрос на построение модели мира: реестр локаций со связностью,
- * извлечённый из якорей outline. Локации переиспользуются между якорями.
- */
-export interface WorldModelRequest {
-  brief: unknown;
-  /** StoryOutlinePlan: якоря с location/timeMarker + рёбра. */
-  outline: unknown;
-  /**
-   * Previously generated world model that failed validation. Present
+   * Previously generated world+calendar that failed validation. Present
    * together with previousIssues during retry-with-feedback flow.
    */
-  previousAttempt?: unknown | null;
+  previousAttempt?: unknown;
   /** Issue messages from the previous attempt (verbatim). */
   previousIssues?: string[];
 }
 
 /**
- * Запрос на планирование битов отношений: раскладка requiredBeats архетипов
- * по encounter-слотам (liId × anchorId) поверх готового outline.
+ * Запрос стадии castPlan (A1): персоны + цели по стадиям арки +
+ * weekly-паттерны по абстрактным тегам локаций. Бриф и архетипы —
+ * opaque JSON (тот же trimming-паттерн, что у OutlineRequest).
  */
-export interface BeatPlanRequest {
+export interface CastPlanRequest {
   brief: unknown;
-  /** StoryOutlinePlan, якоря предварительно топологически отсортированы. */
-  outline: unknown;
-  /** Профили использованных архетипов (requiredBeats живут здесь). */
+  /** Только профили архетипов, использованных LI брифа. */
   archetypeProfiles: Record<string, unknown>;
-  /** Допустимые пары (anchorId × liIds) для встреч. */
-  encounterSlots: { anchorId: string; act: number; location: string; liIds: string[] }[];
   /**
-   * Previously generated plan that failed validation. Present together
+   * Previously generated cast plan that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
    */
-  previousAttempt?: unknown | null;
+  previousAttempt?: unknown;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос стадии eventPool (B2): пул событий-storylet-ов ОДНОГО персонажа —
+ * шеллы guard+goal+effects без прозы. Контекст O(1): карточка LI + агенда,
+ * выжимка его расписания, релевантные биты хребта и размеры календаря.
+ */
+export interface EventPoolRequest {
+  brief: unknown;
+  /** Карточка LI из брифа (opaque JSON). */
+  liCard: unknown;
+  /** Агенда этого персонажа из castPlan (goals/weeklyPattern/locationTags). */
+  agenda: unknown;
+  /** Слоты, где персонаж на сцене: только non-null позиции расписания. */
+  scheduleExcerpt: { slot: number; locationId: string }[];
+  /** Биты хребта с участием персонажа: id/summary/window. */
+  spineBeats: { id: string; summary: string; window: { fromSlot: number; toSlot: number } }[];
+  /** Размеры календаря. */
+  calendar: { slotCount: number; dayparts: string[]; actBoundaries: number[] };
+  /** Целевые бюджеты: юнитов на стадию арки. */
+  targets: { unitsPerStage: number };
+  /**
+   * Previously generated pool that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
+/**
+ * Запрос стадии spine: хребет истории — биты с окнами слотов и
+ * guarded-концовки поверх готового мира и календаря.
+ */
+export interface SpineRequest {
+  brief: unknown;
+  /** WorldModel (locations) — биты ссылаются на id локаций. */
+  worldModel: unknown;
+  /** Calendar (days/dayparts/slotCount/actBoundaries). */
+  calendar: unknown;
+  /** Маппинг агендных тегов на локации, или null. */
+  tagMap: unknown | null;
+  /** Целевые бюджеты: число битов и лимит развилок (0 в фазе 1). */
+  targets: {
+    beatCount: number;
+    branchPointBudget: number;
+  };
+  /**
+   * Previously generated spine that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown;
   /** Issue messages from the previous attempt (verbatim). */
   previousIssues?: string[];
 }
@@ -181,7 +146,14 @@ export interface AnchorBeatRequest {
   previousIssues?: string[];
 }
 
-export interface DialogueVariantRequest {
+/**
+ * Запрос стадии dialogueUnit (эволюция dialogueVariant, фаза 3
+ * calendar-branching): те же контекстные поля, но выходной контракт —
+ * DialogueUnit с typed choices (kind: ask|say|react|farewell), обязательным
+ * next у каждого выбора и явными closing-узлами. Понятия nextSceneId:null
+ * больше не существует.
+ */
+export interface DialogueUnitRequest {
   brief: unknown;
   liCard: unknown;
   archetypeProfile: unknown;
@@ -207,12 +179,41 @@ export interface DialogueVariantRequest {
     anchorBeatText?: string;
   };
   /**
-   * Previously generated variant that failed validation. Present together
+   * Previously generated unit that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
    */
   previousAttempt?: unknown | null;
   /** Issue messages from the previous attempt (verbatim). */
   previousIssues?: string[];
+}
+
+/**
+ * Запрос стадии dialogueQA (D1): LLM-критик готового диалогового юнита.
+ * Вход — сам юнит + брекет + выжимка карточки LI; выход — строгий JSON
+ * {"issues": [{severity, scope, message}]}.
+ */
+export interface DialogueQARequest {
+  /** Сгенерированный DialogueUnit (opaque JSON). */
+  unit: unknown;
+  bracket: 'positive' | 'neutral' | 'negative';
+  /** Выжимка карточки LI: имя, характер, речевой стиль. */
+  liCardSummary: string;
+}
+
+/**
+ * Запрос стадии storyLeafQA (D4): LLM-критик сюжета одного листа ветвления.
+ * Вход — лента summary битов листа в хронологии + концовки + тон брифа;
+ * выход — строгий JSON {"issues": [{severity, scope, message}]}.
+ */
+export interface StoryLeafQARequest {
+  /** «bp1=o1, bp2=o2» — какая комбинация исходов образует лист. */
+  leafLabel: string;
+  /** Биты листа в порядке назначенных слотов. */
+  beatSummariesOrdered: { id: string; summary: string; timeMarker: string }[];
+  /** Концовки хребта (kind: good/normal/bad). */
+  endings: { id: string; kind: string; summary?: string }[];
+  /** Тон мира из брифа (настроение, темы, интенсивность). */
+  briefTone: string;
 }
 
 /**

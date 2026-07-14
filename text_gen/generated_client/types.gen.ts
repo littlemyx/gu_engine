@@ -97,37 +97,35 @@ export type SceneTextRequest = {
     characters?: Array<SceneCharacter>;
 };
 
-export type OutlineRequest = {
+export type WorldCalendarRequest = {
     /**
-     * Procedural narrative brief (Brief in client/src/narrative/types.ts).
-     * Treated as opaque JSON by text_gen — embedded into the prompt as-is.
-     *
+     * Procedural narrative brief, embedded into the prompt as-is.
      */
     brief: {
         [key: string]: unknown;
     };
     /**
-     * Map of archetypeId -> ArchetypeProfile, only the archetypes
-     * referenced by the brief's loveInterests. Embedded into the prompt
-     * so the LLM knows which beats are required per route.
+     * CastPlan with per-LI agenda location tags (workplace/hangout/home...);
+     * every tag must be mapped to at least one location. Null when agendas
+     * are stubbed client-side.
      *
      */
-    archetypeProfiles: {
+    castPlan?: {
         [key: string]: unknown;
     };
     /**
-     * Computed budgets: anchorCount, anchorsPerAct, plotOnlyAnchorCount
-     * (derived from targetDurationMinutes / commonRouteShare).
+     * Calendar sizes computed from brief.scale (computeCalendarTargets):
+     * the generated calendar must match them exactly.
      *
      */
-    targets?: {
-        [key: string]: unknown;
+    targets: {
+        days: number;
+        daypartsPerDay: number;
+        slotCount: number;
+        acts: number;
     };
     /**
-     * Previously generated outline that failed validation. When present
-     * alongside previousIssues, the LLM is asked to produce a corrected
-     * version.
-     *
+     * Previously generated world+calendar that failed validation.
      */
     previousAttempt?: {
         [key: string]: unknown;
@@ -138,99 +136,34 @@ export type OutlineRequest = {
     previousIssues?: Array<string>;
 };
 
-export type SegmentRequest = {
+export type CastPlanRequest = {
     /**
-     * Brief context (characters, world, tone, art style, scale).
+     * Procedural narrative brief, embedded into the prompt as-is.
      */
     brief: {
         [key: string]: unknown;
     };
     /**
-     * ArchetypeProfile of the LI on this route, or null for common-route
-     * segments. Used by the LLM to apply trajectory rules and beat themes.
+     * Map of archetypeId -> ArchetypeProfile, only the archetypes
+     * referenced by the brief's loveInterests.
      *
      */
-    archetypeProfile?: {
+    archetypeProfiles: {
         [key: string]: unknown;
     };
     /**
-     * AnchorPlan of the source anchor (segment entry).
-     */
-    anchorFrom: {
-        [key: string]: unknown;
-    };
-    /**
-     * AnchorPlan of the target anchor (segment exit). Its
-     * entryStateRequired ranges/flags define the success criterion.
-     *
-     */
-    anchorTo: {
-        [key: string]: unknown;
-    };
-    /**
-     * Flags already established by ancestors of anchorFrom in the outline.
-     * Helps the LLM stay consistent with what has already happened.
-     *
-     */
-    existingFlags?: Array<string>;
-    /**
-     * Baseline state ranges at segment entry: {[stateVarPath]: [lo, hi]}.
-     * Computed on the client by reconciling anchorFrom.entryStateRequired
-     * with archetype.initialState. Shown to the LLM verbatim in the prompt
-     * and used by the validator's range-feasibility check — eliminates
-     * hidden 0-default mismatches that previously caused infinite retry
-     * loops.
-     *
-     */
-    baselineStateRanges?: {
-        [key: string]: [
-            number,
-            number
-        ];
-    };
-    /**
-     * Previously generated GeneratedSegment that failed validation.
-     * When present alongside previousIssues, the LLM is asked to
-     * regenerate with awareness of what failed before.
-     *
+     * Previously generated cast plan that failed validation.
      */
     previousAttempt?: {
         [key: string]: unknown;
     };
     /**
-     * Human-readable list of issues from the previous attempt
-     * (e.g. "ни один из 4 путей не приводит state в требования
-     * anchorTo"). Each entry is shown to the LLM verbatim.
-     *
+     * Validation issue messages from the previous attempt.
      */
     previousIssues?: Array<string>;
 };
 
-export type LiCardsRequest = {
-    /**
-     * The story master prompt text describing the world and setting
-     */
-    storyMasterPrompt: string;
-    /**
-     * Number of love interest characters to generate
-     */
-    count: number;
-    /**
-     * Optional hints to guide LI generation
-     */
-    hints?: {
-        /**
-         * Preferred archetype IDs (slow_burn, enemies_to_lovers, etc.)
-         */
-        archetypes?: Array<string>;
-        /**
-         * Additional constraints for LI generation
-         */
-        constraints?: string;
-    };
-};
-
-export type NarrationWebRequest = {
+export type EventPoolRequest = {
     /**
      * Brief context (world, tone, protagonist).
      */
@@ -238,62 +171,51 @@ export type NarrationWebRequest = {
         [key: string]: unknown;
     };
     /**
-     * StoryAnchor of the source (segment entry).
+     * LoveInterestCard of the character (opaque JSON).
      */
-    storyAnchorFrom: {
+    liCard: {
         [key: string]: unknown;
     };
     /**
-     * StoryAnchor of the target (segment exit).
+     * CastAgenda of the character (goals/weeklyPattern/locationTags).
      */
-    storyAnchorTo: {
+    agenda: {
         [key: string]: unknown;
     };
     /**
-     * Love interests available for encounter in this location.
+     * Slots where the character is on stage (non-null schedule positions only).
      */
-    availableLIs: Array<{
-        liId: string;
-        liName: string;
-        roleInWorld: string;
-    }>;
-    /**
-     * Flags already established by prior story anchors.
-     */
-    existingFlags?: Array<string>;
-    /**
-     * Beat scene text of the FROM anchor the player just saw; the web continues right after it.
-     */
-    fromAnchorBeatText?: string;
-    /**
-     * LI ids whose encounters are planned at this anchor; the web must contain a trigger for each.
-     */
-    plannedEncounterLIs?: Array<string>;
-    /**
-     * World-model location entity of the FROM anchor.
-     */
-    fromLocation?: {
-        [key: string]: unknown;
-    };
-    /**
-     * World-model location entity of the TO anchor.
-     */
-    toLocation?: {
-        [key: string]: unknown;
-    };
-    /**
-     * Ordered location path from -> to; web scenes must move forward along it.
-     */
-    route?: Array<{
+    scheduleExcerpt: Array<{
+        slot: number;
         locationId: string;
-        name: string;
-        via: string;
     }>;
     /**
-     * Previously generated NarrationWeb that failed validation.
-     * When present alongside previousIssues, the LLM is asked to
-     * produce a corrected version.
-     *
+     * Spine beats the character participates in (id/summary/window).
+     */
+    spineBeats: Array<{
+        id: string;
+        summary: string;
+        window: {
+            fromSlot: number;
+            toSlot: number;
+        };
+    }>;
+    /**
+     * Calendar sizes for window validation context.
+     */
+    calendar: {
+        slotCount: number;
+        dayparts: Array<string>;
+        actBoundaries: Array<number>;
+    };
+    /**
+     * Budgets — target units per arc stage.
+     */
+    targets: {
+        unitsPerStage: number;
+    };
+    /**
+     * Previously generated pool that failed validation.
      */
     previousAttempt?: {
         [key: string]: unknown;
@@ -304,61 +226,39 @@ export type NarrationWebRequest = {
     previousIssues?: Array<string>;
 };
 
-export type WorldModelRequest = {
+export type SpineRequest = {
     brief: {
         [key: string]: unknown;
     };
     /**
-     * StoryOutlinePlan with anchors (free-text locations) and edges.
+     * World model (locations registry) the beats reference by id.
      */
-    outline: {
+    worldModel: {
         [key: string]: unknown;
     };
     /**
-     * Previously generated world model that failed validation.
+     * Discrete calendar (days, dayparts, actBoundaries).
      */
-    previousAttempt?: {
+    calendar: {
         [key: string]: unknown;
     };
     /**
-     * Validation issue messages from the previous attempt.
+     * Agenda-tag to location-ids mapping, or null.
      */
-    previousIssues?: Array<string>;
-};
-
-export type BeatPlanRequest = {
-    /**
-     * Brief context (world, tone, LI cast).
-     */
-    brief: {
+    tagMap?: {
         [key: string]: unknown;
     };
     /**
-     * StoryOutlinePlan with anchors pre-sorted topologically.
-     */
-    outline: {
-        [key: string]: unknown;
-    };
-    /**
-     * Archetype profiles keyed by archetype id (requiredBeats source).
-     */
-    archetypeProfiles: {
-        [key: string]: unknown;
-    };
-    /**
-     * Allowed (anchor x LI) encounter slots.
-     */
-    encounterSlots: Array<{
-        anchorId: string;
-        act: number;
-        location: string;
-        liIds: Array<string>;
-    }>;
-    /**
-     * Previously generated BeatPlan that failed validation.
-     * When present alongside previousIssues, the LLM is asked to
-     * produce a corrected version.
+     * Budgets: number of beats (±1) and branch point limit
+     * (0 in the current format version — branchPoint kind forbidden).
      *
+     */
+    targets: {
+        beatCount: number;
+        branchPointBudget: number;
+    };
+    /**
+     * Previously generated spine that failed validation.
      */
     previousAttempt?: {
         [key: string]: unknown;
@@ -464,7 +364,7 @@ export type EndingRequest = {
     previousIssues?: Array<string>;
 };
 
-export type DialogueVariantRequest = {
+export type DialogueUnitRequest = {
     /**
      * Brief context.
      */
@@ -513,7 +413,7 @@ export type DialogueVariantRequest = {
         [key: string]: unknown;
     };
     /**
-     * Previously generated DialogueVariant that failed validation.
+     * Previously generated DialogueUnit that failed validation.
      * When present alongside previousIssues, the LLM is asked to
      * produce a corrected version.
      *
@@ -525,6 +425,50 @@ export type DialogueVariantRequest = {
      * Validation issue messages from the previous attempt.
      */
     previousIssues?: Array<string>;
+};
+
+export type DialogueQaRequest = {
+    /**
+     * The generated DialogueUnit to review (opaque JSON).
+     */
+    unit: {
+        [key: string]: unknown;
+    };
+    /**
+     * Relationship bracket the unit was generated for.
+     */
+    bracket: 'positive' | 'neutral' | 'negative';
+    /**
+     * Short summary of the LI card (name, personality, speech style).
+     */
+    liCardSummary: string;
+};
+
+export type StoryLeafQaRequest = {
+    /**
+     * Which branch-outcome combination forms this leaf ("bp1=o1, bp2=o2").
+     */
+    leafLabel: string;
+    /**
+     * Beats of the leaf in assigned-slot order.
+     */
+    beatSummariesOrdered: Array<{
+        id: string;
+        summary: string;
+        timeMarker: string;
+    }>;
+    /**
+     * Spine endings available to this story.
+     */
+    endings: Array<{
+        id: string;
+        kind: string;
+        summary?: string;
+    }>;
+    /**
+     * World tone digest from the brief (mood, themes, intensity).
+     */
+    briefTone: string;
 };
 
 export type ErrorResponse = {
@@ -563,101 +507,69 @@ export type GenerateSceneTextResponses = {
 
 export type GenerateSceneTextResponse = GenerateSceneTextResponses[keyof GenerateSceneTextResponses];
 
-export type GenerateOutlineData = {
-    body: OutlineRequest;
+export type GenerateWorldCalendarData = {
+    body: WorldCalendarRequest;
     path?: never;
     query?: never;
-    url: '/generate/outline';
+    url: '/generate/worldCalendar';
 };
 
-export type GenerateOutlineResponses = {
+export type GenerateWorldCalendarResponses = {
     /**
      * Generation batch accepted
      */
     200: GenerateResponse;
 };
 
-export type GenerateOutlineResponse = GenerateOutlineResponses[keyof GenerateOutlineResponses];
+export type GenerateWorldCalendarResponse = GenerateWorldCalendarResponses[keyof GenerateWorldCalendarResponses];
 
-export type GenerateSegmentData = {
-    body: SegmentRequest;
+export type GenerateCastPlanData = {
+    body: CastPlanRequest;
     path?: never;
     query?: never;
-    url: '/generate/segment';
+    url: '/generate/castPlan';
 };
 
-export type GenerateSegmentResponses = {
+export type GenerateCastPlanResponses = {
     /**
      * Generation batch accepted
      */
     200: GenerateResponse;
 };
 
-export type GenerateSegmentResponse = GenerateSegmentResponses[keyof GenerateSegmentResponses];
+export type GenerateCastPlanResponse = GenerateCastPlanResponses[keyof GenerateCastPlanResponses];
 
-export type GenerateLiCardsData = {
-    body: LiCardsRequest;
+export type GenerateEventPoolData = {
+    body: EventPoolRequest;
     path?: never;
     query?: never;
-    url: '/generate/liCards';
+    url: '/generate/eventPool';
 };
 
-export type GenerateLiCardsResponses = {
+export type GenerateEventPoolResponses = {
     /**
      * Generation batch accepted
      */
     200: GenerateResponse;
 };
 
-export type GenerateLiCardsResponse = GenerateLiCardsResponses[keyof GenerateLiCardsResponses];
+export type GenerateEventPoolResponse = GenerateEventPoolResponses[keyof GenerateEventPoolResponses];
 
-export type GenerateNarrationWebData = {
-    body: NarrationWebRequest;
+export type GenerateSpineData = {
+    body: SpineRequest;
     path?: never;
     query?: never;
-    url: '/generate/narrationWeb';
+    url: '/generate/spine';
 };
 
-export type GenerateNarrationWebResponses = {
+export type GenerateSpineResponses = {
     /**
      * Generation batch accepted
      */
     200: GenerateResponse;
 };
 
-export type GenerateNarrationWebResponse = GenerateNarrationWebResponses[keyof GenerateNarrationWebResponses];
-
-export type GenerateWorldModelData = {
-    body: WorldModelRequest;
-    path?: never;
-    query?: never;
-    url: '/generate/worldModel';
-};
-
-export type GenerateWorldModelResponses = {
-    /**
-     * Generation batch accepted
-     */
-    200: GenerateResponse;
-};
-
-export type GenerateWorldModelResponse = GenerateWorldModelResponses[keyof GenerateWorldModelResponses];
-
-export type GenerateBeatPlanData = {
-    body: BeatPlanRequest;
-    path?: never;
-    query?: never;
-    url: '/generate/beatPlan';
-};
-
-export type GenerateBeatPlanResponses = {
-    /**
-     * Generation batch accepted
-     */
-    200: GenerateResponse;
-};
-
-export type GenerateBeatPlanResponse = GenerateBeatPlanResponses[keyof GenerateBeatPlanResponses];
+export type GenerateSpineResponse = GenerateSpineResponses[keyof GenerateSpineResponses];
 
 export type GenerateAnchorBeatData = {
     body: AnchorBeatRequest;
@@ -691,21 +603,53 @@ export type GenerateEndingResponses = {
 
 export type GenerateEndingResponse = GenerateEndingResponses[keyof GenerateEndingResponses];
 
-export type GenerateDialogueVariantData = {
-    body: DialogueVariantRequest;
+export type GenerateDialogueUnitData = {
+    body: DialogueUnitRequest;
     path?: never;
     query?: never;
-    url: '/generate/dialogueVariant';
+    url: '/generate/dialogueUnit';
 };
 
-export type GenerateDialogueVariantResponses = {
+export type GenerateDialogueUnitResponses = {
     /**
      * Generation batch accepted
      */
     200: GenerateResponse;
 };
 
-export type GenerateDialogueVariantResponse = GenerateDialogueVariantResponses[keyof GenerateDialogueVariantResponses];
+export type GenerateDialogueUnitResponse = GenerateDialogueUnitResponses[keyof GenerateDialogueUnitResponses];
+
+export type GenerateDialogueQaData = {
+    body: DialogueQaRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/dialogueQA';
+};
+
+export type GenerateDialogueQaResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateDialogueQaResponse = GenerateDialogueQaResponses[keyof GenerateDialogueQaResponses];
+
+export type GenerateStoryLeafQaData = {
+    body: StoryLeafQaRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/storyLeafQA';
+};
+
+export type GenerateStoryLeafQaResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateStoryLeafQaResponse = GenerateStoryLeafQaResponses[keyof GenerateStoryLeafQaResponses];
 
 export type ListBatchesData = {
     body?: never;

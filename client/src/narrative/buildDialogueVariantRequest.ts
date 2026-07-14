@@ -13,7 +13,7 @@ import type {
 import { ARCHETYPES } from './archetypes';
 import { encounterIndexFor } from './anchorOrder';
 
-function computeBracketRanges(
+export function computeBracketRanges(
   bracket: DialogueVariantBracket,
   archetype: ArchetypeProfile,
 ): Record<StateVarPath, Range> {

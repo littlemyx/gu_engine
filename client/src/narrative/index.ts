@@ -13,16 +13,7 @@ export { validateBrief } from './validateBrief';
 export type { BriefIssue } from './validateBrief';
 export { buildOutlineRequestPayload, computeOutlineTargets } from './buildOutlineRequest';
 export { validateStoryOutline } from './validateStoryOutline';
-export { useOutlineGeneration } from './useOutlineGeneration';
-export type { OutlineGenStatus } from './useOutlineGeneration';
-export { buildSegmentRequestPayload } from './buildSegmentRequest';
-export { useSegmentGeneration } from './useSegmentGeneration';
-export type { SegmentGenStatus } from './useSegmentGeneration';
-export { validateSegmentSemantics, getAllSegmentValidations, getSegmentValidations } from './validateSegment';
-export type { SegmentValidationContext } from './validateSegment';
 export { topoOrderAnchors, ancestorChain, directPredecessors, outgoingOf, encounterIndexFor } from './anchorOrder';
-export { validateBeatPlan } from './validateBeatPlan';
-export { buildBeatPlanRequestPayload, computeEncounterSlots } from './buildBeatPlanRequest';
 export { buildEndingRequestPayload } from './buildEndingRequest';
 export { buildAnchorBeatRequestPayload } from './buildAnchorBeatRequest';
 export { useNarrativeStore } from './narrativeStore';
@@ -34,28 +25,20 @@ export type {
   LiAudioState,
 } from './narrativeStore';
 export { useBriefStore } from './briefStore';
-export { useBulkSegmentGeneration } from './useBulkSegmentGeneration';
-export type { BulkGenStatus, BulkFailure } from './useBulkSegmentGeneration';
 export { useBulkImageGeneration } from './useBulkImageGeneration';
 export type { ImageBulkStatus, ImageBulkFailure } from './useBulkImageGeneration';
 export { useBulkCharacterGeneration } from './useBulkCharacterGeneration';
 export type { CharacterBulkStatus, CharacterBulkFailure } from './useBulkCharacterGeneration';
+export { downloadJson, slugify, type GameSceneGraph, type GameProjectFile } from './convertToGameProject';
 export {
-  convertToGameProject,
-  convertStoryToGameProject,
-  downloadJson,
-  slugify,
-  type ConversionStats,
-  type ConversionResult,
-  type StoryConversionResult,
-  type GameSceneGraph,
-  type GameProjectFile,
-} from './convertToGameProject';
-export { compileWorldGameProject, type WorldCompileResult, type WorldCompileStats } from './compileWorldGame';
-export { useStoryOutlineGeneration } from './useStoryOutlineGeneration';
-export type { StoryOutlineGenStatus } from './useStoryOutlineGeneration';
-export { useBulkStoryGeneration } from './useBulkStoryGeneration';
-export type { BulkStoryGenStatus, BulkStoryFailure } from './useBulkStoryGeneration';
+  compileCalendarGameProject,
+  lintRouters,
+  scheduleRuns,
+  type CalendarCompileResult,
+  type CalendarCompileStats,
+  type WorldAudioInput,
+  type WorldCompileStats,
+} from './compileCalendarGame';
 export {
   CANONICAL_POSES,
   EMOTION_TO_POSE,
@@ -63,13 +46,122 @@ export {
   resolveEmotionToPose,
   resolveEmotionToSpriteUrl,
   pickCharacterEmotion,
-  collectUsedEmotions,
   findMissingPoses,
   type CanonicalPose,
   type SpriteResolution,
 } from './emotionResolver';
 export { useRegeneratePoses, poseKey } from './useRegeneratePoses';
 export type { PoseRegenEntry, PoseRegenStatus, PoseItemStatus } from './useRegeneratePoses';
+export {
+  evaluateSlice,
+  evalGuard,
+  createSliceState,
+  matchesSlice,
+  bracketOfAffection,
+  formatGuard,
+  formatEffect,
+  DEFAULT_RELATIONSHIP,
+} from './events';
+export type {
+  TimeSlice,
+  RelationshipState,
+  EventHistory,
+  EventContext,
+  EventKind,
+  EventDef,
+  Guard,
+  Effect,
+  SceneRef,
+  SliceState,
+  SliceEvaluation,
+  AffectionBracket,
+} from './events';
+export {
+  DEFAULT_DAYPARTS,
+  slotOf,
+  dayOfSlot,
+  daypartOfSlot,
+  slotLabel,
+  actOfSlot,
+  actSlotWindow,
+  computeCalendarTargets,
+  guardFromRequires,
+  parseCalendar,
+  parseSpinePlan,
+  parseCastPlan,
+} from './calendarTypes';
+export type {
+  Calendar,
+  CalendarTargets,
+  CastAgenda,
+  CastGoal,
+  CastMember,
+  CastPlan,
+  CharacterSchedule,
+  EventUnit,
+  EventUnitSource,
+  LocationTag,
+  SlotWindow,
+  SpineBeat,
+  SpineBeatKind,
+  SpineBeatOutcome,
+  SpineEnding,
+  SpinePlan,
+} from './calendarTypes';
+export {
+  parseDialogueUnit,
+  validateDialogueUnit,
+  DIALOGUE_CHOICE_KINDS,
+  DIALOGUE_UNIT_MAX_DEPTH,
+} from './dialogueUnit';
+export type { DialogueChoiceKind, DialogueUnit, DialogueUnitChoice, DialogueUnitNode } from './dialogueUnit';
+export { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
+export { computeBracketRanges } from './buildDialogueVariantRequest';
+export { validateSpine, guardFlags, enumerateLeafAssignments, playableBeatsForLeaf } from './validateSpine';
+export type { LeafAssignment } from './validateSpine';
+export {
+  runStoryQAStructural,
+  simulatePolicies,
+  summarizePolicyReports,
+  buildStoryLeafQARequests,
+  DEFAULT_POLICIES,
+  MAX_LEAF_QA_CALLS,
+} from './storyQA';
+export type { StoryQAInputs, PolicyReport, StoryLeafQAPayload } from './storyQA';
+export { useStoryQA } from './useStoryQA';
+export type { StoryQAState, StoryQAStatus } from './useStoryQA';
+export { validateCalendar } from './validateCalendar';
+export { validateCastPlan, REQUIRED_ARC_STAGES } from './validateCastPlan';
+export { buildCastPlanRequestPayload } from './buildCastPlanRequest';
+export { assignBeatSlots, buildScheduleStub } from './beatSchedule';
+export { buildSchedule, validateSchedule } from './buildSchedule';
+export {
+  parseEventPool,
+  validateEventUnits,
+  buildEventPoolRequestPayload,
+  guardFiredIds,
+  unitEstablishes,
+  REL_DELTA_BOUND,
+  EVENT_POOL_UNITS_PER_STAGE,
+} from './parseEventPool';
+export { computeReachableUnits } from './reachability';
+export { buildStubCastPlan } from './castPlanStub';
+export { buildWorldCalendarRequestPayload } from './buildWorldCalendarRequest';
+export { buildSpineRequestPayload, computeSpineTargets } from './buildSpineRequest';
+export { useBulkCalendarGeneration } from './useBulkCalendarGeneration';
+export type { BulkCalendarPhase, BulkCalendarProgress, BulkCalendarRunOptions } from './useBulkCalendarGeneration';
+export { deriveCalendarMontage } from './calendarSliceModel';
+export type { CalendarMontageModel } from './calendarSliceModel';
+export { deriveLegacyOutline } from './deriveLegacyOutline';
+export { liLineColor, LI_LINE_PALETTE } from './sliceModel';
+export type {
+  MontageModel,
+  MontageSlice,
+  MontageCharacter,
+  MontageLocation,
+  SliceEventView,
+  CharacterMove,
+} from './sliceModel';
 export { useBulkAudioGeneration, buildBaseStyle, buildToneStyle } from './useBulkAudioGeneration';
 export type { AudioBulkStatus, AudioBulkFailure } from './useBulkAudioGeneration';
 export {

@@ -1,18 +1,74 @@
 import { generateText } from 'ai';
 import { createOpenAI } from '@ai-sdk/openai';
 import { logger } from './logger.js';
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tier-раскладка моделей по стадиям (docs/plans/calendar-branching.md, фаза 7).
+// A — ответственные проходы (хребет, каст, критик листьев), B — структурный
+// JSON среднего объёма, C — массовая проза. Провайдер — только OpenAI.
+// Переопределение: TEXTGEN_MODEL_<STAGE> (точечно) или TEXTGEN_MODEL_TIER_<A|B|C>.
+// Дефолты сохраняют текущее поведение (gpt-4.1-mini везде).
+// ────────────────────────────────────────────────────────────────────────────
+
+export type StageId =
+  | 'storyMasterPrompt'
+  | 'sceneText'
+  | 'castPlan'
+  | 'eventPool'
+  | 'worldCalendar'
+  | 'spine'
+  | 'anchorBeat'
+  | 'ending'
+  | 'dialogueUnit'
+  | 'dialogueQA'
+  | 'storyLeafQA';
+
+type Tier = 'A' | 'B' | 'C';
+
+const STAGE_TIER: Record<StageId, Tier> = {
+  storyMasterPrompt: 'C',
+  sceneText: 'C',
+  castPlan: 'A',
+  eventPool: 'B',
+  worldCalendar: 'B',
+  spine: 'A',
+  anchorBeat: 'B',
+  ending: 'B',
+  dialogueUnit: 'C',
+  dialogueQA: 'B',
+  storyLeafQA: 'A',
+};
+
+const DEFAULT_TIER_MODEL: Record<Tier, string> = {
+  A: 'gpt-4.1-mini',
+  B: 'gpt-4.1-mini',
+  C: 'gpt-4.1-mini',
+};
+
+export function resolveModelId(stage: StageId): string {
+  const explicit = process.env[`TEXTGEN_MODEL_${stage.toUpperCase()}`];
+  const tier = STAGE_TIER[stage];
+  return explicit ?? process.env[`TEXTGEN_MODEL_TIER_${tier}`] ?? DEFAULT_TIER_MODEL[tier];
+}
+
+function resolveModel(stage: StageId) {
+  const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const id = resolveModelId(stage);
+  logger.log(`[model] ${stage} → ${id} (tier ${STAGE_TIER[stage]})`);
+  return openai(id);
+}
 import type {
   BatchState,
   StoryMasterPromptRequest,
   SceneTextRequest,
-  OutlineRequest,
-  SegmentRequest,
-  LiCardsRequest,
-  NarrationWebRequest,
-  WorldModelRequest,
+  WorldCalendarRequest,
+  CastPlanRequest,
+  EventPoolRequest,
+  SpineRequest,
   AnchorBeatRequest,
-  BeatPlanRequest,
-  DialogueVariantRequest,
+  DialogueUnitRequest,
+  DialogueQARequest,
+  StoryLeafQARequest,
   EndingRequest,
 } from './types.js';
 
@@ -64,7 +120,7 @@ export async function processStoryMasterPrompt(
     logger.log(`[storyMasterPrompt] batch=${batch.batchId} — generating...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('storyMasterPrompt'),
       system: SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -186,7 +242,7 @@ export async function processSceneText(
     logger.log(`[sceneText] batch=${batch.batchId} depth=${body.depth}/${body.maxDepth} chain=${body.sceneChain.length} — generating...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('sceneText'),
       system: SCENE_SYSTEM_PROMPT,
       prompt: userMessage,
     });
@@ -211,351 +267,67 @@ export async function processSceneText(
 // OUTLINE GENERATION
 // ============================================================================
 
-const OUTLINE_SYSTEM_PROMPT = `Ты — outline-планировщик романтических визуальных новелл (romance VN).
-Ты получаешь:
-  1. Бриф (brief) — описание мира, тона, протагониста и каста love interests (LI).
-  2. Профили архетипов (archetypeProfiles) — для каждого использованного archetypeId.
-
-Твоя задача — построить **скелет сюжетных якорей** для всей игры. Якорь — это событие/локация повествования; между якорями позже будут сгенерированы «паутины» сцен-исследований.
-
-ВАЖНО: Ты генерируешь ТОЛЬКО повествовательный слой (story layer). НЕ создавай per-LI маршруты, relationship-якоря, route_opening, obstacle_reveal, crisis, endings. Отношения с персонажами развиваются через encounter-ы в паутинах между якорями, а не через заранее спланированные маршруты.
-
-Жёсткие правила:
-  1. Один якорь "setup" (act 1) — старт игры, знакомство с миром.
-  2. Якоря — это **события повествования**: смена локации, ключевое сюжетное событие, переход времени.
-  3. Типы якорей: setup, location_enter, story_beat, climax, resolution.
-  4. Каждый якорь ОБЯЗАН иметь:
-     - location — конкретное место ("школьная библиотека", "кафе у набережной", "крыша школы")
-     - timeMarker — время суток и/или дата ("утро понедельника", "вечер среды", "закат")
-  5. availableLIs — массив id персонажей, которые физически могут быть встречены в этой локации.
-     - Каждый LI должен быть доступен минимум в 2-3 якорях
-     - Привязка LI к локации должна быть естественной (учительница = школа, бариста = кафе и т.д.)
-  6. Якоря образуют DAG: рёбра только вперёд. Обычно близкий к цепочке, но допускаются параллельные локации.
-  7. id якоря — короткий snake_case, уникальный, читаемый ("school_morning", "cafe_evening", "festival_day").
-  8. establishes — массив строковых "фактов", которые становятся истинными после этого якоря ("arrived_at_school", "festival_started").
-  9. summary — 1-2 предложения по-русски, что происходит в этом якоре. Конкретно, привязано к сеттингу из брифа.
-  10. Число якорей и их распределение по актам задаются блоком «Целевые бюджеты»
-      в запросе (anchorCount ± 1, anchorsPerAct по актам). Если бюджеты не
-      заданы — 8-15 якорей. Не перегружай — между якорями будут паутины сцен.
-  11. Ровно plotOnlyAnchorCount якорей — «чисто сюжетные»: обычные якоря
-      (story_beat / location_enter) с ПУСТЫМ массивом availableLIs. Это НЕ
-      отдельный тип — поле type всегда одно из пяти перечисленных.
-  12. У climax-якоря availableLIs — не более 2 персонажей, иначе развязка
-      раздувается встречами.
-  13. resolution — РОВНО ОДИН, без исходящих рёбер. setup — ровно один, без
-      входящих. Рёбра не понижают act (act цели >= act источника).
-
-Поле acts — массив актов с короткими целевыми описаниями (purpose), 1 предложение на акт.
-Число актов = brief.scale.acts.
-
-ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json, без комментариев. Структура:
-{
-  "title": "...",
-  "logline": "...",
-  "acts": [{ "act": 1, "purpose": "...", "tone": "..." }],
-  "anchors": [
-    {
-      "id": "school_morning",
-      "type": "location_enter",
-      "act": 1,
-      "location": "школьный двор",
-      "timeMarker": "утро понедельника",
-      "summary": "Первый день в новой школе. Двор полон незнакомых лиц.",
-      "establishes": ["arrived_at_school"],
-      "availableLIs": ["yuki", "kira"]
-    }
-  ],
-  "anchorEdges": [{ "from": "...", "to": "..." }]
-}`;
-
-export async function processOutline(
-  batch: BatchState,
-  body: OutlineRequest,
-): Promise<void> {
-  const itemId = 'outline';
-  const item = batch.items[itemId];
-  item.status = 'processing';
-
-  try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not set');
-    }
-
-    const openai = createOpenAI({ apiKey });
-
-    const briefJson = JSON.stringify(body.brief, null, 2);
-    const archetypesJson = JSON.stringify(body.archetypeProfiles, null, 2);
-
-    const parts: string[] = [
-      `## Бриф\n${briefJson}`,
-      `## Профили архетипов (для контекста персонажей)\n${archetypesJson}`,
-    ];
-
-    if (body.targets) {
-      parts.push(
-        `## Целевые бюджеты\nanchorCount: ${body.targets.anchorCount} (допустимо ±1)\nanchorsPerAct (акт 1..N): ${body.targets.anchorsPerAct.join(', ')}\nplotOnlyAnchorCount (якорей с пустым availableLIs): ${body.targets.plotOnlyAnchorCount}`,
-      );
-    }
-
-    const hasFeedback =
-      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
-    if (hasFeedback) {
-      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
-      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
-      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${prevJson}`);
-      parts.push(
-        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
-      );
-      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ скелет якорей. Те же правила, тот же формат JSON. Только JSON.');
-    } else {
-      parts.push('Сгенерируй скелет сюжетных якорей (только story layer, без per-LI маршрутов). Только JSON.');
-    }
-
-    const userMessage = parts.join('\n\n');
-
-    logger.log(
-      `[outline] batch=${batch.batchId} — generating (brief=${briefJson.length}b, profiles=${archetypesJson.length}b)...`,
-    );
-
-    const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: OUTLINE_SYSTEM_PROMPT,
-      prompt: userMessage,
-    });
-
-    // Validate that response parses as JSON with the right shape
-    const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed.anchors) || !Array.isArray(parsed.anchorEdges)) {
-      throw new Error('Invalid response: missing anchors or anchorEdges');
-    }
-
-    item.status = 'completed';
-    item.result = text;
-    logger.log(
-      `[outline] batch=${batch.batchId} — completed (${parsed.anchors.length} anchors, ${parsed.anchorEdges.length} edges)`,
-    );
-  } catch (err) {
-    item.status = 'failed';
-    item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[outline] batch=${batch.batchId} — failed: ${item.error}`);
-  }
-}
-
-// ============================================================================
-// SEGMENT GENERATION (scenes between two outline anchors)
-// ============================================================================
-
-const SEGMENT_SYSTEM_PROMPT = `Ты — branch-генератор сцен для романтической визуальной новеллы (romance VN).
+const CAST_PLAN_SYSTEM_PROMPT = `Ты — планировщик персонажей романтической визуальной новеллы (romance VN) с календарным временем.
 
 Получаешь:
-  1. Бриф (brief) — мир, тон, протагонист (blank slate, реплики = выборы игрока), каст LI.
-  2. archetypeProfile — профиль архетипа этого маршрута, или null для common-route.
-  3. anchorFrom — стартовый якорь сегмента (что игрок только что прошёл).
-  4. anchorTo — целевой якорь сегмента, куда сегмент обязан игрока привести.
-     Его entryStateRequired (ranges + flags) — это инвариант, который должен
-     достигаться как минимум по одному пути выборов.
-  5. existingFlags — флаги, уже выставленные предками anchorFrom.
+  1. Бриф (brief) — мир, тон, каст love interests (LI) с архетипами.
+  2. Профили архетипов (archetypeProfiles) — для каждого использованного archetypeId.
 
-Твоя задача — сгенерировать **локальный DAG из 3-6 сцен**, который соединяет
-anchorFrom и anchorTo. Каждая сцена имеет 2-3 выбора. Выборы влияют на state
-(stateDeltas + flag set/clear). Хотя бы одна "успешная" ветка через выборы
-должна привести state в anchorTo.entryStateRequired.
+Твоя задача — АГЕНДА каждого LI: цели по стадиям арки отношений + weekly-паттерн
+«где персонаж обычно бывает» по абстрактным тегам локаций. Конкретных локаций
+ещё нет — их создаст следующая стадия по твоим тегам.
 
 Жёсткие правила:
-  1. Сцен ровно столько, сколько нужно нарративно: 3 — для коротких сегментов
-     (li_introduction, route_opening), 4-5 — для средних (obstacle, required_beat),
-     5-6 — для крупных (crisis). Не растягивай.
-  2. Структура графа — DAG с 1-2 локальными "пузырями": некоторые выборы ведут в
-     разные сцены, но к концу сегмента все пути сходятся к anchorTo. Pure линейная
-     цепочка тоже допустима для коротких сегментов.
-  3. id сцен — короткие snake_case, читаемые ("kira_walk_park", "yuki_cafe_dawn").
-  4. nextSceneId выбора:
-     - id другой сцены сегмента → структурное ветвление
-     - null → ветка ведёт в anchorTo (выход сегмента)
-  5. Хотя бы один выбор в сегменте должен иметь nextSceneId === null.
-  6. stateDeltas — небольшие шаги (-0.1...+0.15 типично). КЛЮЧИ в stateDeltas
-     обязаны посимвольно совпадать с ключами, перечисленными в
-     baselineStateRanges и anchorTo.entryStateRequired.ranges — это и есть
-     state-схема для этого outline'а. НЕ переименовывай ключи: если в anchor'е
-     стоит "relationship[kira].tension", пиши именно его; если стоит
-     "tension_kira" — пиши "tension_kira". Любая нормализация формата ломает
-     reachability-валидатор. Дополнительно можешь использовать ключи из
-     archetypeProfile.additionalStateVars (тоже посимвольно как объявлены).
-  7. flagSet включает все required-флаги anchorTo по пути хотя бы одного выбора
-     (можно распределить по разным сценам сегмента).
-  8. Соответствуй trajectory.shape архетипа: например, для "monotone_gradual" не
-     делай резких скачков (max 0.08 за выбор); для "tension_to_affection_pivot"
-     один выбор должен быть "переломным" (резкий tension drop + affection jump).
-  9. Текст narration — 2-4 предложения, по-русски. От 2-го лица протагонист
-     ("Ты входишь...", "Перед тобой..."). Без внутренних монологов.
-  10. dialogue — реплики только LI и других NPC, не протагониста (его реплики —
-      это choices). emotion на каждой реплике ОБЯЗАТЕЛЕН. Используй ТОЛЬКО канонические
-      эмоции: idle, happy, sad, tense, soft, thoughtful, surprised, angry.
-  11. choice.text — короткая фраза, что игрок (= протагонист) делает или говорит.
-      До 12 слов.
-  12. characterEmotions — ОБЯЗАТЕЛЬНОЕ поле в каждой сцене. Маппинг id каждого
-      персонажа из charactersPresent → одна каноническая эмоция (idle/happy/sad/tense/
-      soft/thoughtful/surprised/angry). Определяет спрайт персонажа в этой сцене,
-      даже если персонаж не говорит.
+  1. members — ровно по одной записи на КАЖДОГО LI брифа; id ОБЯЗАН посимвольно
+     совпадать с id LI из брифа. Никаких лишних и никаких пропущенных персонажей.
+  2. isLI: true у всех (стадия описывает только LI).
+  3. goals — 3-6 целей персонажа, КАЖДАЯ с arcStage:
+       1 — знакомство (первое сближение, установление контакта),
+       2 — сближение (доверие, уязвимость, общее дело),
+       3 — кульминация арки (признание, выбор, разрешение конфликта).
+     Стадии 1, 2 и 3 ОБЯЗАНЫ быть покрыты (минимум по одной цели на каждую).
+     description — 1 конкретное предложение по-русски, привязанное к миру брифа
+     и характеру персонажа. id цели — snake_case ("kira_open_up").
+  4. weeklyPattern — объект с ключами-частями дня РОВНО "утро", "день", "вечер".
+     Значение — 1-3 взвешенных тега: [{ "tag": "workplace", "weight": 2 }].
+     weight — целое ≥ 1 (больше = чаще там бывает). Каждая из трёх частей дня
+     ОБЯЗАНА иметь хотя бы одну запись.
+  5. locationTags — 3-5 АБСТРАКТНЫХ тегов на персонажа (snake_case:
+     "workplace", "hangout", "home", "training_ground"...) с описанием
+     по-русски (1 фраза: что это за место для этого персонажа). КАЖДЫЙ тег,
+     использованный в weeklyPattern, обязан быть ключом locationTags.
+     Теги отражают роль персонажа (roleInWorld) и его характер.
+  6. Все тексты — по-русски (кроме id и тегов).
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
-  "fromAnchorId": "...",
-  "toAnchorId": "...",
-  "entrySceneId": "...",
-  "scenes": [
+  "members": [
     {
-      "id": "...",
-      "location": "...",
-      "timeMarker": "...",
-      "charactersPresent": ["kira"],
-      "characterEmotions": { "kira": "tense" },
-      "narration": "...",
-      "dialogue": [
-        { "speaker": "kira", "emotion": "tense", "line": "..." }
-      ],
-      "choices": [
-        {
-          "id": "scene_id_c1",
-          "text": "...",
-          "effects": {
-            "stateDeltas": { "relationship[kira].affection": 0.1 },
-            "flagSet": ["..."],
-            "flagClear": []
-          },
-          "nextSceneId": "next_scene_id_or_null"
+      "id": "kira",
+      "isLI": true,
+      "agenda": {
+        "goals": [
+          { "id": "kira_first_contact", "description": "Обменяться колкостями у стеллажей и запомниться.", "arcStage": 1 },
+          { "id": "kira_open_up", "description": "Показать героине черновики своих переводов.", "arcStage": 2 },
+          { "id": "kira_confession", "description": "Решиться на признание на вечернем фестивале.", "arcStage": 3 }
+        ],
+        "weeklyPattern": {
+          "утро": [{ "tag": "workplace", "weight": 2 }],
+          "день": [{ "tag": "workplace", "weight": 1 }, { "tag": "hangout", "weight": 1 }],
+          "вечер": [{ "tag": "hangout", "weight": 2 }, { "tag": "home", "weight": 1 }]
+        },
+        "locationTags": {
+          "workplace": "библиотека, где Кира подрабатывает",
+          "hangout": "кафе и аллеи кампуса, где она отдыхает",
+          "home": "её комната в общежитии"
         }
-      ]
+      }
     }
   ]
 }`;
 
-export async function processSegment(batch: BatchState, body: SegmentRequest): Promise<void> {
-  const itemId = 'segment';
-  const item = batch.items[itemId];
-  item.status = 'processing';
-
-  try {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
-      throw new Error('OPENAI_API_KEY is not set');
-    }
-
-    const openai = createOpenAI({ apiKey });
-
-    const briefJson = JSON.stringify(body.brief, null, 2);
-    const archetypeJson = body.archetypeProfile ? JSON.stringify(body.archetypeProfile, null, 2) : 'null';
-    const fromJson = JSON.stringify(body.anchorFrom, null, 2);
-    const toJson = JSON.stringify(body.anchorTo, null, 2);
-    const existingFlagsJson = JSON.stringify(body.existingFlags ?? []);
-    const baselineRangesJson = JSON.stringify(body.baselineStateRanges ?? {}, null, 2);
-
-    const parts: string[] = [
-      `## Бриф\n${briefJson}`,
-      `## Профиль архетипа маршрута\n${archetypeJson}`,
-      `## Якорь FROM (стартовая точка сегмента)\n${fromJson}`,
-      `## Якорь TO (целевая точка, куда обязан привести сегмент)\n${toJson}`,
-      `## Уже установленные флаги (из предков)\n${existingFlagsJson}`,
-      `## Базовое состояние на входе сегмента (диапазоны)\n${baselineRangesJson}\nСчитай, что игрок входит в anchorFrom со state в этих диапазонах. Сумма твоих stateDeltas по любому "успешному" пути должна сдвинуть state из этих диапазонов в anchorTo.entryStateRequired.ranges и установить все anchorTo.entryStateRequired.flagsRequired.\n\nВАЖНО про ключи: пиши stateDeltas СТРОГО под теми же именами, что использованы в этом блоке и в anchorTo.entryStateRequired.ranges (посимвольно). Не превращай "tension_kira" в "relationship[kira].tension" и наоборот — иначе валидатор не увидит твоих изменений и сегмент будет отклонён.`,
-    ];
-
-    // Retry-with-feedback: если есть previousAttempt и previousIssues,
-    // показываем LLM-у предыдущую неудачную попытку и список проблем.
-    const hasFeedback =
-      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
-    if (hasFeedback) {
-      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
-      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
-      parts.push(
-        `## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\nЭтот JSON был сгенерирован ранее, но не удовлетворил требованиям. Используй как референс — что-то можно сохранить, главное исправить ошибки ниже.\n\n${prevJson}`,
-      );
-      parts.push(
-        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии сегмента ОБЯЗАТЕЛЬНО устрани эти ошибки. Пути в DAG должны суммарно сдвигать state в нужные диапазоны и устанавливать требуемые флаги anchorTo.`,
-      );
-      parts.push(
-        'Сгенерируй ИСПРАВЛЕННУЮ версию scene-DAG. Те же правила, тот же формат JSON. Только JSON.',
-      );
-    } else {
-      parts.push(
-        'Сгенерируй scene-DAG между этими якорями по правилам выше. Только JSON.',
-      );
-    }
-
-    const userMessage = parts.join('\n\n');
-
-    logger.log(
-      `[segment] batch=${batch.batchId} — generating (brief=${briefJson.length}b, from=${(body.anchorFrom as { id?: string })?.id ?? '?'}, to=${(body.anchorTo as { id?: string })?.id ?? '?'}${hasFeedback ? `, retry with ${body.previousIssues?.length ?? 0} issue(s)` : ''})...`,
-    );
-
-    const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: SEGMENT_SYSTEM_PROMPT,
-      prompt: userMessage,
-    });
-
-    const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed.scenes) || !parsed.entrySceneId) {
-      throw new Error('Invalid response: missing scenes or entrySceneId');
-    }
-
-    item.status = 'completed';
-    item.result = text;
-    logger.log(`[segment] batch=${batch.batchId} — completed (${parsed.scenes.length} scenes)`);
-  } catch (err) {
-    item.status = 'failed';
-    item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[segment] batch=${batch.batchId} — failed: ${item.error}`);
-  }
-}
-
-// ============================================================================
-// LI CARDS GENERATION
-// ============================================================================
-
-const LI_CARDS_SYSTEM_PROMPT = `Ты — дизайнер персонажей для романтических визуальных новелл. Ты получаешь описание мира (story master prompt) и должен создать love interest персонажей, которые органично вписываются в этот мир.
-
-Правила:
-  1. Каждый персонаж должен быть уникальным — разные personality, внешность, роль в мире.
-  2. Персонажи должны быть привязаны к локациям/реалиям мира из master prompt.
-  3. Если указаны предпочтительные архетипы — используй их. Иначе подбери подходящие.
-  4. Доступные архетипы: slow_burn, enemies_to_lovers, forbidden, mutual_pining.
-  5. speechPattern — как персонаж говорит (формально, с сарказмом, тихо и т.д.).
-  6. roleInWorld — роль в мире из master prompt (одноклассница, бариста, соседка и т.д.).
-  7. personality.traits — 3-5 черт характера.
-  8. personality.values — 2-3 ценности.
-  9. personality.fears — 1-2 страха.
-  10. personality.desires — 1-2 желания.
-  11. appearance — описание внешности: волосы, телосложение, характерная деталь.
-  12. Все тексты — по-русски.
-
-ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Массив объектов:
-[
-  {
-    "id": "yuki",
-    "name": "Юки Танака",
-    "age": 17,
-    "roleInWorld": "тихая одноклассница, всегда с книгой",
-    "appearance": {
-      "hair": "длинные тёмные волосы, часто в хвосте",
-      "build": "хрупкая",
-      "signatureItem": "потрёпанный томик поэзии"
-    },
-    "speechPattern": "говорит тихо и обдуманно, часто цитирует книги",
-    "personality": {
-      "traits": ["задумчивая", "наблюдательная", "застенчивая"],
-      "values": ["искренность", "знания"],
-      "fears": ["быть непонятой"],
-      "desires": ["найти родственную душу"]
-    },
-    "archetype": "slow_burn",
-    "archetypeSpecifics": null,
-    "preExistingRelationship": null
-  }
-]`;
-
-export async function processLiCards(batch: BatchState, body: LiCardsRequest): Promise<void> {
-  const itemId = 'liCards';
+export async function processCastPlan(batch: BatchState, body: CastPlanRequest): Promise<void> {
+  const itemId = 'castPlan';
   const item = batch.items[itemId];
   item.status = 'processing';
 
@@ -566,117 +338,107 @@ export async function processLiCards(batch: BatchState, body: LiCardsRequest): P
     const openai = createOpenAI({ apiKey });
 
     const parts: string[] = [
-      `## Мастер-промпт истории\n${body.storyMasterPrompt}`,
-      `Сгенерируй ${body.count} love interest персонажей для этого мира.`,
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Профили архетипов (для контекста персонажей)\n${JSON.stringify(body.archetypeProfiles, null, 2)}`,
     ];
 
-    if (body.hints?.archetypes?.length) {
-      parts.push(`Предпочтительные архетипы: ${body.hints.archetypes.join(', ')}`);
-    }
-    if (body.hints?.constraints) {
-      parts.push(`Дополнительные ограничения: ${body.hints.constraints}`);
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ план каста. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Составь агенды каста (цели по стадиям арки + weekly-паттерны по тегам). Только JSON.');
     }
 
-    parts.push('Только JSON (массив).');
-
-    logger.log(`[liCards] batch=${batch.batchId} — generating ${body.count} cards...`);
+    logger.log(`[castPlan] batch=${batch.batchId} — generating...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: LI_CARDS_SYSTEM_PROMPT,
+      model: resolveModel('castPlan'),
+      system: CAST_PLAN_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
 
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed)) {
-      throw new Error('Invalid response: expected JSON array');
+    if (!Array.isArray(parsed.members)) {
+      throw new Error('Invalid response: missing members');
     }
 
     item.status = 'completed';
     item.result = text;
-    logger.log(`[liCards] batch=${batch.batchId} — completed (${parsed.length} cards)`);
+    logger.log(`[castPlan] batch=${batch.batchId} — completed (${parsed.members.length} members)`);
   } catch (err) {
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[liCards] batch=${batch.batchId} — failed: ${item.error}`);
+    logger.error(`[castPlan] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 
 // ============================================================================
-// NARRATION WEB GENERATION
+// EVENT POOL GENERATION (calendar pipeline, stage B2)
 // ============================================================================
 
-const NARRATION_WEB_SYSTEM_PROMPT = `Ты — сценарист описательных сцен для романтической визуальной новеллы (romance VN).
+const EVENT_POOL_SYSTEM_PROMPT = `Ты — дизайнер событий-storylet-ов для романтической визуальной новеллы (romance VN) с календарным временем.
 
 Получаешь:
   1. Бриф (brief) — мир, тон, протагонист.
-  2. storyAnchorFrom — откуда начинается паутина (локация, время, что произошло).
-  3. storyAnchorTo — куда паутина должна привести.
-  4. availableLIs — персонажи, которые могут быть встречены в этой локации.
+  2. liCard — карточка ОДНОГО love interest.
+  3. agenda — агенда персонажа: цели по стадиям арки (goals с arcStage 1..3).
+  4. scheduleExcerpt — слоты, где персонаж на сцене: [{ slot, locationId }].
+  5. spineBeats — биты хребта с его участием (id/summary/window) — НЕ дублируй их.
+  6. calendar — slotCount, dayparts, actBoundaries.
+  7. targets.unitsPerStage — целевое число юнитов на стадию арки.
 
-Твоя задача — сгенерировать **паутину** между двумя якорями: сцены исследования стартовой локации и ПУТЬ к следующей. Игрок осматривается, может встретить персонажа, затем перемещается к цели.
+Твоя задача — ПУЛ СОБЫТИЙ-ШЕЛЛОВ этого персонажа: guard+goal+effects БЕЗ прозы.
+Проза диалога генерируется отдельно; здесь — только каркас: когда, где, зачем
+и что событие меняет.
 
-Если задан блок «Маршрут» (route) — это ПРОСТРАНСТВЕННЫЙ КОНТРАКТ паутины:
-  - У КАЖДОЙ сцены обязано быть поле locationId — только из локаций маршрута.
-  - Первые сцены — в стартовой локации (fromLocation): исследование и встречи.
-  - Затем сцены двигаются по маршруту ТОЛЬКО ВПЕРЁД (via подсказывает, как).
-  - Encounter-выборы допустимы только в сценах стартовой локации.
-  - Обычный выход (nextSceneId: null без encounterTrigger) — только из сцены
-    КОНЕЧНОЙ локации маршрута: игрок прибыл к порогу следующего этапа.
-    Не вводи игрока внутрь и не разыгрывай прибытие — это сделает следующая
-    сцена-событие.
-  - Сцена с choices=[] тоже допустима только в конечной локации.
+Модель времени: слот = (день, часть дня), нумерация с 0. window = {fromSlot,
+toSlot} включительно — окно, в котором встреча может произойти.
 
 Жёсткие правила:
-  1. 3-8 сцен, связанных как DAG (рёбра только вперёд).
-  2. Типы сцен:
-     - Нарративная (choices = []) — описательный кадр, игрок кликает чтобы продолжить.
-     - Навигационная (choices = 2-3) — action-oriented выборы: «подойти к стойке», «сесть у окна», «выйти на улицу».
-  3. Текст narration — от 2-го лица, атмосферный ("Ты толкаешь дверь...", "Тёплый воздух пахнет..."). 2-4 предложения.
-  4. NPC-диалог допускается (бариста, продавец), но НЕ диалог с love interests — LI появляются только через encounter trigger.
-  5. Encounter trigger — choice с полем encounterTrigger = liId. Означает: "игрок подходит к персонажу, запускается диалог". У такого choice nextSceneId может быть null (выход из паутины в диалог-вариант).
-  6. Encounter triggers только для персонажей из availableLIs.
-  7. КРИТИЧНО (частая ошибка): хотя бы ОДИН choice во всей паутине обязан быть
-     обычным выходом — nextSceneId: null И БЕЗ encounterTrigger («выйти к...»,
-     «направиться дальше»). Encounter-выходы НЕ считаются: после диалога игрок
-     возвращается в ту же сцену. Паутина, где к следующему якорю ведут только
-     встречи, НЕВАЛИДНА.
-  8. В каждой сцене, где есть encounter-выбор, обязан быть хотя бы один обычный
-     выбор (навигация или выход) — встречи одноразовые, и сцена из одних
-     encounter-ов останется без активных кнопок.
-  9. Минимальные state effects: только flagSet (если нужно пометить "заходил в кафе"), никаких stateDeltas.
-  10. id сцен — snake_case, читаемые ("cafe_entrance", "counter_seat", "window_view").
-  11. nextSceneId: id другой сцены или null (выход к storyAnchorTo).
-  12. Паутина должна ощущаться как исследование: разные уголки локации, мелкие детали, атмосфера.
+  1. 4-8 юнитов на персонажа, примерно targets.unitsPerStage на каждую стадию
+     арки (arcStage 1, 2, 3). Стадии упорядочены во времени: окна стадии 1
+     раньше окон стадии 3.
+  2. id юнита — короткий snake_case ("kira_book_talk"). Без префиксов evt_ —
+     их добавит клиент.
+  3. arcStage — 1, 2 или 3; goal — 1 конкретное предложение по-русски: что
+     должно произойти между героями (опирайся на goals агенды, не копируя
+     дословно).
+  4. window обязано ЦЕЛИКОМ лежать в календаре [0, slotCount-1], fromSlot ≤ toSlot.
+  5. locationId — ТОЛЬКО локация из scheduleExcerpt, причём персонаж обязан
+     стоять в ней хотя бы в одном слоте окна (событие там, где он бывает).
+  6. requires — флаги-предусловия (snake_case), только те, что устанавливают
+     spineBeats (summary подскажет) или БОЛЕЕ РАННИЕ юниты этого пула через
+     establishes. Обычно пуст. НЕ выдумывай флаги из воздуха.
+  7. establishes — флаги, становящиеся истинными после события (0-2 шт).
+  8. relEffects — 1-2 эффекта отношений: var из affection|trust|tension,
+     delta в диапазоне -0.3..0.3 (типично ±0.05..0.15).
+  9. Цепочку стадий (событие стадии 2 после событий стадии 1) НЕ кодируй
+     в requires — её строит клиент автоматически.
+  10. Все тексты — по-русски (кроме id и флагов).
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
-  "fromAnchorId": "...",
-  "toAnchorId": "...",
-  "entrySceneId": "...",
-  "scenes": [
+  "units": [
     {
-      "id": "cafe_entrance",
-      "location": "кафе, вход",
-      "locationId": "cafe",
-      "narration": "Ты толкаешь дверь кафе...",
-      "choices": [
-        { "id": "c1", "text": "Подойти к стойке", "nextSceneId": "counter" },
-        { "id": "c2", "text": "Подойти к девушке с книгой", "nextSceneId": null, "encounterTrigger": "yuki" },
-        { "id": "c3", "text": "Сесть у окна", "nextSceneId": "window_seat" }
-      ]
-    },
-    {
-      "id": "counter",
-      "location": "кафе, стойка",
-      "narration": "Бариста протирает чашку и улыбается...",
-      "choices": []
+      "id": "kira_book_talk",
+      "arcStage": 1,
+      "goal": "Разговориться с Кирой о редкой книге и узнать её вкусы.",
+      "locationId": "library",
+      "window": { "fromSlot": 0, "toSlot": 4 },
+      "requires": [],
+      "establishes": ["knows_kira_taste"],
+      "relEffects": [{ "var": "affection", "delta": 0.1 }]
     }
   ]
 }`;
 
-export async function processNarrationWeb(batch: BatchState, body: NarrationWebRequest): Promise<void> {
-  const itemId = 'narrationWeb';
+export async function processEventPool(batch: BatchState, body: EventPoolRequest): Promise<void> {
+  const itemId = 'eventPool';
   const item = batch.items[itemId];
   item.status = 'processing';
 
@@ -686,116 +448,79 @@ export async function processNarrationWeb(batch: BatchState, body: NarrationWebR
 
     const openai = createOpenAI({ apiKey });
 
-    const briefJson = JSON.stringify(body.brief, null, 2);
-    const fromJson = JSON.stringify(body.storyAnchorFrom, null, 2);
-    const toJson = JSON.stringify(body.storyAnchorTo, null, 2);
-    const lisJson = JSON.stringify(body.availableLIs, null, 2);
-    const flagsJson = JSON.stringify(body.existingFlags ?? []);
-
     const parts: string[] = [
-      `## Бриф\n${briefJson}`,
-      `## Якорь FROM\n${fromJson}`,
-      `## Якорь TO\n${toJson}`,
-      `## Доступные LI для encounter\n${lisJson}`,
-      `## Уже установленные флаги\n${flagsJson}`,
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Карточка LI\n${JSON.stringify(body.liCard, null, 2)}`,
+      `## Агенда персонажа\n${JSON.stringify(body.agenda, null, 2)}`,
+      `## Расписание персонажа (слоты на сцене)\n${JSON.stringify(body.scheduleExcerpt, null, 2)}`,
+      `## Биты хребта с его участием (не дублировать)\n${JSON.stringify(body.spineBeats, null, 2)}`,
+      `## Календарь\n${JSON.stringify(body.calendar, null, 2)}`,
+      `## Целевые бюджеты\nunitsPerStage: ${body.targets.unitsPerStage} (итого 4-8 юнитов)`,
     ];
 
-    if (body.fromAnchorBeatText) {
-      parts.push(
-        `## Сцена-событие, которую игрок только что видел\n${body.fromAnchorBeatText}\n\nПаутина начинается СРАЗУ ПОСЛЕ этой сцены. Entry-сцена НЕ переописывает локацию и персонажей заново — игрок уже здесь и всё это видел. Начни с движения, смены фокуса или новой детали ("Ты делаешь шаг вглубь зала...", "Твой взгляд цепляется за..."), а не с "Ты стоишь в...".`,
-      );
-    }
-
-    if (body.plannedEncounterLIs && body.plannedEncounterLIs.length > 0) {
-      parts.push(
-        `## Запланированные встречи\nВ этой паутине ОБЯЗАТЕЛЬНО должен быть хотя бы один choice с encounterTrigger для КАЖДОГО из этих liId: ${body.plannedEncounterLIs.join(', ')}. Размести встречи естественно (персонаж виден в локации, к нему можно подойти).`,
-      );
-    }
-
-    if (body.fromLocation && body.toLocation && body.route && body.route.length > 0) {
-      parts.push(
-        [
-          `## Стартовая локация (fromLocation)\n${JSON.stringify(body.fromLocation, null, 2)}`,
-          `## Конечная локация (toLocation)\n${JSON.stringify(body.toLocation, null, 2)}`,
-          `## Маршрут (route) — сцены идут по нему только вперёд\n${body.route
-            .map((r, i) => `${i + 1}. ${r.locationId} («${r.name}»)${r.via ? ` — попадаем: ${r.via}` : ''}`)
-            .join('\n')}`,
-        ].join('\n\n'),
-      );
-    }
-
-    // Retry-with-feedback: показываем предыдущую неудачную попытку и ошибки.
     const hasFeedback =
       body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
     if (hasFeedback) {
-      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
-      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
       parts.push(
-        `## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\nЭтот JSON был сгенерирован ранее, но не удовлетворил требованиям. Используй как референс — что-то можно сохранить, главное исправить ошибки ниже.\n\n${prevJson}`,
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
       );
-      parts.push(
-        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
-      );
-      parts.push('Сгенерируй ИСПРАВЛЕННУЮ версию паутины. Те же правила, тот же формат JSON. Только JSON.');
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ пул событий. Те же правила, тот же формат JSON. Только JSON.');
     } else {
-      parts.push('Сгенерируй паутину исследования между якорями. Только JSON.');
+      parts.push('Сгенерируй пул событий-шеллов этого персонажа. Только JSON.');
     }
 
-    const userMessage = parts.join('\n\n');
-
-    const fromId = (body.storyAnchorFrom as { id?: string })?.id ?? '?';
-    const toId = (body.storyAnchorTo as { id?: string })?.id ?? '?';
-    logger.log(`[narrationWeb] batch=${batch.batchId} — generating ${fromId} -> ${toId}...`);
+    const liId = (body.liCard as { id?: string })?.id ?? '?';
+    logger.log(`[eventPool] batch=${batch.batchId} — generating li=${liId} (slots=${body.scheduleExcerpt.length})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: NARRATION_WEB_SYSTEM_PROMPT,
-      prompt: userMessage,
+      model: resolveModel('eventPool'),
+      system: EVENT_POOL_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
     });
 
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed.scenes) || !parsed.entrySceneId) {
-      throw new Error('Invalid response: missing scenes or entrySceneId');
+    if (!Array.isArray(parsed.units)) {
+      throw new Error('Invalid response: missing units');
     }
 
     item.status = 'completed';
     item.result = text;
-    logger.log(`[narrationWeb] batch=${batch.batchId} — completed (${parsed.scenes.length} scenes)`);
+    logger.log(`[eventPool] batch=${batch.batchId} — completed (${parsed.units.length} units, li=${liId})`);
   } catch (err) {
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[narrationWeb] batch=${batch.batchId} — failed: ${item.error}`);
+    logger.error(`[eventPool] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 
 // ============================================================================
-// WORLD MODEL GENERATION
+// WORLD CALENDAR GENERATION (calendar pipeline, stage A2)
 // ============================================================================
 
-const WORLD_MODEL_SYSTEM_PROMPT = `Ты — картограф мира романтической визуальной новеллы (romance VN).
+const WORLD_CALENDAR_SYSTEM_PROMPT = `Ты — картограф мира и календаря романтической визуальной новеллы (romance VN).
 
 Получаешь:
-  1. Бриф (brief) — сеттинг, эпоха, конкретика места.
-  2. outline — сюжетные якоря (каждый со свободным текстом location) и рёбра между ними.
+  1. Бриф (brief) — сеттинг, эпоха, конкретика места, каст LI.
+  2. castPlan — агенды персонажей с абстрактными тегами локаций (workplace/hangout/home и т.п.), или null.
+  3. Целевые размеры календаря (targets) — days, daypartsPerDay, acts.
 
-Твоя задача — построить РЕЕСТР ЛОКАЦИЙ мира со связностью и замапить каждый якорь на локацию.
+Твоя задача — построить ТРИ артефакта одним ответом:
+  А. РЕЕСТР ЛОКАЦИЙ мира со связностью (locations).
+  Б. ДИСКРЕТНЫЙ КАЛЕНДАРЬ истории (calendar): дни × части дня, границы актов.
+  В. МАППИНГ агендных тегов на локации (tagMap).
 
-Жёсткие правила:
-  1. 6-12 локаций. Каждая: id (короткий snake_case: "library", "campus_alley"),
+Жёсткие правила для locations:
+  1. 6-10 локаций. Каждая: id (короткий snake_case: "library", "campus_alley"),
      name (по-русски), description (2-3 предложения, СТАБИЛЬНОЕ описание места —
      его будут использовать все генераторы сцен), pointsOfInterest (2-4 ключевые
      точки: "стол у окна", "стеллажи у входа").
-  2. ПЕРЕИСПОЛЬЗУЙ локации: два якоря в библиотеке = ОДНА локация "library".
-     Не плоди дубликаты с разными id для одного и того же места.
-  3. adjacent — физическая связность: из какой локации в какую можно пройти
+  2. adjacent — физическая связность: из какой локации в какую можно пройти
      и КАК ("via": "через аллею кампуса", "по коридору второго этажа").
-     Мир должен быть связным: между локациями любых двух соседних по сюжету
-     якорей должен существовать путь по adjacency (напрямую или через
-     промежуточные локации). Добавляй промежуточные "транзитные" локации
-     (аллея, коридор, двор), если они нужны для естественных путей.
-  4. anchorLocations — маппинг id КАЖДОГО якоря outline на id локации.
-  5. Все тексты — по-русски (кроме id).
-  6. mood — доминирующее НАСТРОЕНИЕ локации (для подбора фоновой музыки-эмбиента).
+     Мир должен быть СВЯЗНЫМ: из любой локации в любую существует путь по
+     adjacency. Добавляй промежуточные "транзитные" локации (аллея, коридор,
+     двор), если они нужны для естественных путей.
+  3. mood — доминирующее НАСТРОЕНИЕ локации (для подбора фоновой музыки-эмбиента).
      Ровно одно значение из фиксированного набора:
        neutral_calm (нейтральная/спокойная), cheerful_warm (весёлая/тёплая),
        cozy_tender (уютная/нежная), romantic (романтическая),
@@ -804,9 +529,26 @@ const WORLD_MODEL_SYSTEM_PROMPT = `Ты — картограф мира рома
        tragic_heavy (трагическая/тяжёлая).
      Выбирай по атмосфере места и его роли в сюжете (дождливый пустой универ → melancholic_sad,
      тёплое кафе свиданий → cozy_tender). Если сомневаешься — neutral_calm.
-  7. specialKind — ТОЛЬКО для локаций с характерным собственным звуком; одно из:
+  4. specialKind — ТОЛЬКО для локаций с характерным собственным звуком; одно из:
      bar_tavern, party_club, sports_stadium, market_street, ceremony. Для обычных
      локаций поле опусти или поставь null.
+
+Жёсткие правила для calendar:
+  5. days, число элементов dayparts и число элементов actBoundaries обязаны
+     ТОЧНО совпадать с targets (days, daypartsPerDay, acts) из сообщения —
+     не придумывай свои размеры.
+  6. dayparts — названия частей дня по-русски (обычно "утро", "день", "вечер").
+  7. actBoundaries — день начала каждого акта: длина = число актов,
+     первый элемент всегда 0, значения СТРОГО возрастают, каждое < days.
+  8. specialDays (опционально) — 0-2 особых дня (фестиваль, экзамен, гроза):
+     колорит для сцен, day в диапазоне [0, days-1].
+
+Жёсткие правила для tagMap:
+  9. КАЖДЫЙ тег из агенд castPlan (ключи locationTags и теги weeklyPattern)
+     обязан быть ключом tagMap и вести к МИНИМУМ ОДНОЙ локации (массив id из
+     locations). Один тег может вести к нескольким локациям.
+  10. Если castPlan = null — выдай tagMap для базовых тегов workplace/hangout/home.
+  11. Все тексты — по-русски (кроме id).
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
@@ -819,22 +561,23 @@ const WORLD_MODEL_SYSTEM_PROMPT = `Ты — картограф мира рома
       "adjacent": [{ "locationId": "campus_alley", "via": "через главные двери на аллею" }],
       "mood": "melancholic_sad",
       "specialKind": null
-    },
-    {
-      "id": "campus_bar",
-      "name": "студенческий бар",
-      "description": "Полутёмный бар с барной стойкой и гулом голосов...",
-      "pointsOfInterest": ["барная стойка", "угловой диван"],
-      "adjacent": [{ "locationId": "campus_alley", "via": "с аллеи через боковую дверь" }],
-      "mood": "cheerful_warm",
-      "specialKind": "bar_tavern"
     }
   ],
-  "anchorLocations": { "library_first_encounter": "library" }
+  "calendar": {
+    "days": 4,
+    "dayparts": ["утро", "день", "вечер"],
+    "actBoundaries": [0, 1, 2, 3],
+    "specialDays": [{ "day": 2, "label": "осенний фестиваль" }]
+  },
+  "tagMap": {
+    "workplace": ["library"],
+    "hangout": ["campus_cafe", "campus_alley"],
+    "home": ["dorm_room"]
+  }
 }`;
 
-export async function processWorldModel(batch: BatchState, body: WorldModelRequest): Promise<void> {
-  const itemId = 'worldModel';
+export async function processWorldCalendar(batch: BatchState, body: WorldCalendarRequest): Promise<void> {
+  const itemId = 'worldCalendar';
   const item = batch.items[itemId];
   item.status = 'processing';
 
@@ -846,7 +589,8 @@ export async function processWorldModel(batch: BatchState, body: WorldModelReque
 
     const parts: string[] = [
       `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
-      `## Outline (якоря и рёбра)\n${JSON.stringify(body.outline, null, 2)}`,
+      `## Агенды персонажей (castPlan)\n${body.castPlan ? JSON.stringify(body.castPlan, null, 2) : 'null'}`,
+      `## Целевые размеры календаря (соблюдать ТОЧНО)\ndays: ${body.targets.days}\ndaypartsPerDay (длина dayparts): ${body.targets.daypartsPerDay}\nslotCount (days × daypartsPerDay): ${body.targets.slotCount}\nacts (длина actBoundaries): ${body.targets.acts}`,
     ];
 
     const hasFeedback =
@@ -856,80 +600,177 @@ export async function processWorldModel(batch: BatchState, body: WorldModelReque
       parts.push(
         `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
       );
-      parts.push('Сгенерируй ИСПРАВЛЕННУЮ модель мира. Те же правила, тот же формат JSON. Только JSON.');
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЕ мир, календарь и маппинг тегов. Те же правила, тот же формат JSON. Только JSON.');
     } else {
-      parts.push('Построй модель мира. Только JSON.');
+      parts.push('Построй мир, календарь и маппинг тегов. Только JSON.');
     }
 
-    logger.log(`[worldModel] batch=${batch.batchId} — mapping world...`);
+    logger.log(`[worldCalendar] batch=${batch.batchId} — mapping world+calendar (days=${body.targets.days}, acts=${body.targets.acts})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: WORLD_MODEL_SYSTEM_PROMPT,
+      model: resolveModel('worldCalendar'),
+      system: WORLD_CALENDAR_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
 
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed.locations) || !parsed.anchorLocations) {
-      throw new Error('Invalid response: missing locations or anchorLocations');
+    if (!Array.isArray(parsed.locations) || !parsed.calendar || !parsed.tagMap) {
+      throw new Error('Invalid response: missing locations, calendar or tagMap');
     }
 
     item.status = 'completed';
     item.result = text;
-    logger.log(`[worldModel] batch=${batch.batchId} — completed (${parsed.locations.length} locations)`);
+    logger.log(
+      `[worldCalendar] batch=${batch.batchId} — completed (${parsed.locations.length} locations, ${parsed.calendar.days} days)`,
+    );
   } catch (err) {
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[worldModel] batch=${batch.batchId} — failed: ${item.error}`);
+    logger.error(`[worldCalendar] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 
 // ============================================================================
-// BEAT PLAN GENERATION
+// SPINE GENERATION (calendar pipeline, stage A3)
 // ============================================================================
 
-const BEAT_PLAN_SYSTEM_PROMPT = `Ты — планировщик романтических арок поверх готового сюжетного скелета (romance VN).
+const SPINE_SYSTEM_PROMPT = `Ты — архитектор сюжетного хребта романтической визуальной новеллы (romance VN) с календарным временем.
 
 Получаешь:
-  1. Бриф (brief) — мир, тон, каст LI с архетипами.
-  2. outline — сюжетные якоря в порядке сюжета (акты, локации, события).
-  3. archetypeProfiles — профили архетипов; их requiredBeats нужно разместить.
-  4. encounterSlots — допустимые пары: в каком якоре какие LI доступны.
+  1. Бриф (brief) — мир, тон, каст LI, профиль концовок (endingsProfile).
+  2. Модель мира (worldModel) — реестр локаций с id.
+  3. Календарь (calendar) — дни × части дня, границы актов.
+  4. Маппинг тегов (tagMap) — где персонажи обычно бывают.
+  5. Целевые бюджеты (targets) — число битов, лимит развилок.
 
-Твоя задача — назначить каждому LI последовательность встреч и разложить
-обязательные биты его архетипа по этим встречам.
+Модель времени:
+  - Слот = (день, часть дня): slot = day × daypartsPerDay + daypartIndex.
+    Нумерация с 0: день 0 утро = слот 0, день 0 день = слот 1, и т.д.
+  - Бит НЕ пришпилен к слоту — он несёт ОКНО {fromSlot, toSlot} (включительно),
+    внутри которого может произойти. Точный слот назначит планировщик.
+
+Твоя задача — хребет истории: биты (beats) с окнами слотов и концовки (endings).
 
 Жёсткие правила:
-  1. Используй ТОЛЬКО пары (liId, anchorId) из encounterSlots. Ничего не выдумывай.
-  2. Каждому LI назначь 3-5 встреч (минимум 2), по возрастанию актов;
-     не более одной встречи одного LI на якорь.
-  3. Для каждого LI размести ВСЕ requiredBeats его архетипа, ровно по одному разу.
-     Соблюдай position: 'obstacle_reveal' и 'after_obstacle_reveal' — середина
-     арки (примерно акт 2 из 4); 'before_crisis' — предпоследняя встреча;
-     'crisis' — последняя встреча перед climax-якорем. beatType бери из профиля.
-  4. Встречи без required beat получают goal-прогрессию по стадиям:
-     знакомство → узнавание → сближение → уязвимость. Первая встреча LI
-     без preExistingRelationship — всегда знакомство.
-  5. goal — 1 конкретное предложение по-русски: что должно произойти между
-     героями в эту встречу. Привяжи к location якоря. НЕ пересказывай
-     requiredBeat.purpose дословно.
-  6. liArcs — 1-2 предложения на LI: общая линия отношений от первой до
-     последней встречи.
-  7. Не сваливай биты всех LI в один якорь; в финальном акте не более
-     1 встречи на LI.
+  1. Число битов — ровно targets.beatCount (допустимо ±1), ВКЛЮЧАЯ развилки
+     и ветвовые биты.
+  2. kind каждого бита: "beat" (рядовое событие), "branchPoint" (глобальная
+     развилка сюжета), "actGate" (переход акта, ставит ключевой флаг) или
+     "finale" (кульминация).
+  2a. Развилки: ровно targets.branchPointBudget битов kind="branchPoint"
+      (при 0 — ни одного). У каждой развилки поле outcomes — 2-3 исхода:
+      [{id, label, setsFlag, summary}], где label — текст ВЫБОРА ИГРОКА в
+      сцене развилки, setsFlag — snake_case спайн-флаг ветки (уникален среди
+      всех флагов), summary — 1 предложение о последствиях исхода.
+      У branchPoint поле establishes — общие флаги (ставятся при ЛЮБОМ
+      исходе); ветвовые флаги живут только в outcomes.
+  2b. Развилка НЕ может быть в последнем акте и НЕ может быть финалом —
+      игрок должен успеть увидеть последствия выбора.
+  2c. Ветвовые биты: бит МОЖЕТ требовать (requires) флаг исхода развилки —
+      такой бит играется только на этой ветке. Биты, не требующие ни одного
+      флага исходов, общие для всех веток. На каждый исход дай 1-3 ветвовых
+      бита в последующих актах — ветки обязаны ощущаться по-разному.
+  2d. Концовки ДОЛЖНЫ различаться по веткам: где это осмысленно сюжетно,
+      дай минимум по одной концовке, требующей (requires) флаги конкретной
+      терминальной комбинации веток. КАЖДАЯ комбинация исходов обязана иметь
+      хотя бы одну выполнимую концовку (флаги которой достижимы на этой ветке).
+  3. Ровно ОДИН бит kind="finale": в последнем акте, window.toSlot = последний
+     слот календаря (кульминация закрывает историю). Финал ОБЩИЙ и
+     БЕЗУСЛОВНЫЙ: requires финала — ПУСТОЙ массив []. Игрок ходит по локациям
+     сам и мог пропустить любой бит, поэтому ЛЮБОЙ флаг в requires финала
+     (не только флаги исходов развилок) делает финал недостижимым для части
+     игроков. Различия веток и судеб выражай в requires КОНЦОВОК, не финала.
+     participants финала — ВСЕ LI брифа: финал сводит героев в одну локацию.
+  4. Окно каждого бита обязано ЦЕЛИКОМ лежать в диапазоне слотов его акта
+     (границы актов в слотах даны в сообщении). fromSlot ≤ toSlot.
+  5. Окна не должны быть пережаты: каждому биту должен доставаться свой слот
+     (не назначай десяти битам одно и то же окно из двух слотов).
+  6. Флаговая логика: establishes — флаги, становящиеся истинными ПОСЛЕ бита
+     (snake_case: "met_kira", "secret_revealed"); requires — флаги, обязательные
+     для допуска бита. КАЖДЫЙ флаг из requires обязан устанавливаться битом
+     с БОЛЕЕ РАННИМ окном (никаких требований в будущее, никаких циклов).
+  7. participants — ТОЛЬКО реальные id LI из брифа. Пустой массив = чисто
+     сюжетный бит без LI. Каждый LI должен участвовать минимум в 2 битах.
+  8. locationId каждого бита — ТОЛЬКО id из worldModel.locations.
+  9. endings обязаны покрывать endingsProfile брифа: для "good" — по концовке
+     на каждого LI (liId = id этого LI); для "normal"/"bad" — liId: null.
+     requires концовки — флаги, устанавливаемые битами (обычно финалом/актгейтами).
+  10. summary бита — 1-2 конкретных предложения: что происходит и что меняется.
+  11. Все тексты — по-русски (кроме id и флагов).
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
-  "encounters": [
-    { "liId": "kira", "anchorId": "school_morning", "beatType": null, "goal": "Первое настороженное знакомство у расписания." }
+  "title": "...",
+  "logline": "...",
+  "beats": [
+    {
+      "id": "meet_kira",
+      "kind": "beat",
+      "act": 1,
+      "window": { "fromSlot": 0, "toSlot": 2 },
+      "locationId": "library",
+      "participants": ["kira"],
+      "summary": "Первая встреча с Кирой среди стеллажей: столкновение из-за одной книги.",
+      "establishes": ["met_kira"],
+      "requires": []
+    },
+    {
+      "id": "festival_dilemma",
+      "kind": "branchPoint",
+      "act": 2,
+      "window": { "fromSlot": 3, "toSlot": 5 },
+      "locationId": "campus_alley",
+      "participants": ["kira"],
+      "summary": "Кира просит помочь скрыть провал клуба — или рассказать всё совету.",
+      "establishes": ["dilemma_faced"],
+      "requires": ["met_kira"],
+      "outcomes": [
+        {
+          "id": "cover_up",
+          "label": "Помочь Кире скрыть провал",
+          "setsFlag": "chose_cover_up",
+          "summary": "Секрет объединяет вас, но ложь начинает расти."
+        },
+        {
+          "id": "tell_truth",
+          "label": "Убедить её рассказать правду",
+          "setsFlag": "chose_truth",
+          "summary": "Кира обижена, но клуб получает шанс на честный перезапуск."
+        }
+      ]
+    },
+    {
+      "id": "secret_meeting",
+      "kind": "beat",
+      "act": 3,
+      "window": { "fromSlot": 6, "toSlot": 8 },
+      "locationId": "library",
+      "participants": ["kira"],
+      "summary": "Тайная встреча: ложь почти раскрыта, Кира на грани.",
+      "establishes": ["lie_strained"],
+      "requires": ["chose_cover_up"]
+    },
+    {
+      "id": "final_confession",
+      "kind": "finale",
+      "act": 4,
+      "window": { "fromSlot": 9, "toSlot": 11 },
+      "locationId": "campus_alley",
+      "participants": ["kira", "yuki"],
+      "summary": "Вечер фестиваля: время признаний и решений.",
+      "establishes": ["story_resolved"],
+      "requires": []
+    }
   ],
-  "liArcs": [
-    { "liId": "kira", "arcSummary": "От соперничества через уязвимость к признанию." }
+  "endings": [
+    { "id": "ending_good_kira", "kind": "good", "liId": "kira", "requires": ["story_resolved", "chose_truth"] },
+    { "id": "ending_normal", "kind": "normal", "liId": null, "requires": ["story_resolved", "chose_cover_up"] },
+    { "id": "ending_bad", "kind": "bad", "liId": null, "requires": [] }
   ]
 }`;
 
-export async function processBeatPlan(batch: BatchState, body: BeatPlanRequest): Promise<void> {
-  const itemId = 'beatPlan';
+export async function processSpine(batch: BatchState, body: SpineRequest): Promise<void> {
+  const itemId = 'spine';
   const item = batch.items[itemId];
   item.status = 'processing';
 
@@ -939,52 +780,66 @@ export async function processBeatPlan(batch: BatchState, body: BeatPlanRequest):
 
     const openai = createOpenAI({ apiKey });
 
+    // Диапазоны слотов актов считаем здесь и отдаём LLM готовыми — модель
+    // стабильно ошибается в арифметике day*daypartsPerDay при пересчёте сама.
+    const cal = body.calendar as { days?: number; dayparts?: string[]; actBoundaries?: number[] };
+    const perDay = Array.isArray(cal?.dayparts) ? cal.dayparts.length : 0;
+    const days = typeof cal?.days === 'number' ? cal.days : 0;
+    const boundaries = Array.isArray(cal?.actBoundaries) ? cal.actBoundaries : [];
+    const lastSlot = days * perDay - 1;
+    const actRanges = boundaries.map((fromDay, i) => {
+      const toDay = i + 1 < boundaries.length ? boundaries[i + 1] - 1 : days - 1;
+      return `акт ${i + 1}: слоты ${fromDay * perDay}..${toDay * perDay + perDay - 1} (дни ${fromDay}..${toDay})`;
+    });
+
     const parts: string[] = [
       `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
-      `## Outline (якоря в порядке сюжета)\n${JSON.stringify(body.outline, null, 2)}`,
-      `## Профили архетипов (requiredBeats)\n${JSON.stringify(body.archetypeProfiles, null, 2)}`,
-      `## Допустимые encounter-слоты\n${JSON.stringify(body.encounterSlots, null, 2)}`,
+      `## Модель мира (locations)\n${JSON.stringify(body.worldModel, null, 2)}`,
+      `## Календарь\n${JSON.stringify(body.calendar, null, 2)}`,
+      `## Маппинг агендных тегов\n${body.tagMap ? JSON.stringify(body.tagMap, null, 2) : 'null'}`,
+      `## Слоты актов (окна битов обязаны лежать внутри своего акта)\nslot = day × ${perDay} + daypartIndex; последний слот календаря = ${lastSlot}\n${actRanges.join('\n')}`,
+      `## Целевые бюджеты\nbeatCount: ${body.targets.beatCount} (допустимо ±1)\nbranchPointBudget: ${body.targets.branchPointBudget} (ровно столько битов kind="branchPoint"${body.targets.branchPointBudget === 0 ? ' — то есть ни одного' : ', не в последнем акте'})`,
     ];
 
     const hasFeedback =
       body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
     if (hasFeedback) {
-      const prevJson = JSON.stringify(body.previousAttempt, null, 2);
-      const issuesList = (body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n');
-      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${prevJson}`);
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
       parts.push(
-        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
       );
-      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ план битов. Те же правила, тот же формат JSON. Только JSON.');
+      parts.push('Сгенерируй ИСПРАВЛЕННЫЙ хребет. Те же правила, тот же формат JSON. Только JSON.');
     } else {
-      parts.push('Составь план битов отношений. Только JSON.');
+      parts.push('Сгенерируй хребет истории (биты с окнами + концовки). Только JSON.');
     }
 
-    logger.log(`[beatPlan] batch=${batch.batchId} — planning (slots=${body.encounterSlots.length})...`);
+    logger.log(`[spine] batch=${batch.batchId} — generating (beatCount=${body.targets.beatCount})...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: BEAT_PLAN_SYSTEM_PROMPT,
+      model: resolveModel('spine'),
+      system: SPINE_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
 
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed.encounters) || !Array.isArray(parsed.liArcs)) {
-      throw new Error('Invalid response: missing encounters or liArcs');
+    if (!Array.isArray(parsed.beats) || !Array.isArray(parsed.endings)) {
+      throw new Error('Invalid response: missing beats or endings');
     }
 
     item.status = 'completed';
     item.result = text;
-    logger.log(`[beatPlan] batch=${batch.batchId} — completed (${parsed.encounters.length} encounters)`);
+    logger.log(
+      `[spine] batch=${batch.batchId} — completed (${parsed.beats.length} beats, ${parsed.endings.length} endings)`,
+    );
   } catch (err) {
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[beatPlan] batch=${batch.batchId} — failed: ${item.error}`);
+    logger.error(`[spine] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }
 
 // ============================================================================
-// ANCHOR BEAT GENERATION
+// BEAT PLAN GENERATION
 // ============================================================================
 
 const ANCHOR_BEAT_SYSTEM_PROMPT = `Ты — сценарист якорных сцен-событий для романтической визуальной новеллы (romance VN).
@@ -1081,7 +936,7 @@ export async function processAnchorBeat(batch: BatchState, body: AnchorBeatReque
     logger.log(`[anchorBeat] batch=${batch.batchId} — generating anchor=${anchorId} (${body.outgoingTargets.length} transitions)...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('anchorBeat'),
       system: ANCHOR_BEAT_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1183,7 +1038,7 @@ export async function processEnding(batch: BatchState, body: EndingRequest): Pro
     logger.log(`[ending] batch=${batch.batchId} — generating kind=${body.kind} li=${liId}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
+      model: resolveModel('ending'),
       system: ENDING_SYSTEM_PROMPT,
       prompt: parts.join('\n\n'),
     });
@@ -1207,7 +1062,7 @@ export async function processEnding(batch: BatchState, body: EndingRequest): Pro
 // DIALOGUE VARIANT GENERATION
 // ============================================================================
 
-const DIALOGUE_VARIANT_SYSTEM_PROMPT = `Ты — сценарист диалогов для романтической визуальной новеллы (romance VN).
+const DIALOGUE_UNIT_SYSTEM_PROMPT = `Ты — сценарист диалогов для романтической визуальной новеллы (romance VN).
 
 Получаешь:
   1. Бриф (brief) — мир, тон, протагонист.
@@ -1217,56 +1072,67 @@ const DIALOGUE_VARIANT_SYSTEM_PROMPT = `Ты — сценарист диалог
   5. bracket — уровень отношений: positive, neutral или negative.
   6. stateRanges — текущие диапазоны state переменных при входе в диалог.
 
-Твоя задача — сгенерировать **короткий диалог** (2-4 сцены) между протагонистом и LI. Тон и содержание определяются bracket-ом.
+Твоя задача — сгенерировать **диалоговый юнит**: небольшой ГРАФ узлов разговора между протагонистом и LI. Тон и содержание определяются bracket-ом.
 
 Brackets:
   - positive (affection ≥ 0.3) — тёплый, приветливый. Персонаж рад видеть игрока.
   - neutral (affection 0–0.3) — вежливый, нейтральный. Обычное знакомство или дежурный разговор.
   - negative (affection < 0) — холодный, напряжённый. Персонаж недоволен, раздражён или избегает.
 
+Модель юнита:
+  - nodes — 4-8 узлов. Каждый узел: narration + реплики LI + choices протагониста.
+  - Граф узлов ОБЯЗАН быть DAG (без циклов); каждый узел достижим из entryNodeId.
+  - closing-узлы (closing: true, choices: []) — прощальные сцены: LI произносит
+    финальную реплику, разговор ЗАВЕРШАЕТСЯ по смыслу (прощание, закрытая тема).
+    Обязателен хотя бы один closing-узел; каждый путь от entry обязан
+    заканчиваться в closing-узле.
+  - У КАЖДОГО choice обязательны два поля:
+      kind — тип реплики протагониста:
+        ask — вопрос. Следующий узел ОБЯЗАН содержать содержательный ответ LI.
+        say — утверждение/предложение, продолжающее разговор.
+        react — эмоциональная реакция (улыбнуться, промолчать, нахмуриться).
+        farewell — завершение разговора. ЕДИНСТВЕННЫЙ kind, который ведёт в closing-узел.
+      next — id следующего узла ВНУТРИ юнита. null/пропуск ЗАПРЕЩЕНЫ:
+        выхода "в никуда" не существует, диалог заканчивается только через
+        farewell → closing-узел.
+  - ask/say/react НИКОГДА не ведут в closing-узел (замаскированный выход запрещён).
+    Текст-вопрос обязан иметь kind: "ask". Текст farewell-выбора читается как
+    закрытие ("Мне пора", "Спасибо за разговор", прощание).
+
 Жёсткие правила:
-  1. 2-4 сцены с диалогом. Формат DraftScene.
-  2. narration — от 2-го лица, 2-3 предложения ("Ты подходишь...", "Она поднимает взгляд...").
-  3. dialogue — реплики ТОЛЬКО LI (не протагониста). Каждая с emotion из канонических: idle, happy, sad, tense, soft, thoughtful, surprised, angry.
-  4. choices — 2-3 варианта ответа протагониста. До 12 слов.
-  5. choice.effects.stateDeltas — изменения relationship vars. Каноничный формат: "relationship[<liId>].affection", "relationship[<liId>].trust", "relationship[<liId>].tension".
-     Шаги небольшие: -0.05...+0.1.
-  6. nextSceneId: id следующей сцены в диалоге, или null (конец диалога, возврат в паутину).
-  7. Хотя бы один choice должен иметь nextSceneId === null (выход из диалога).
-  7а. Выходной choice (nextSceneId = null) — это ЗАВЕРШЕНИЕ разговора: его текст
-      обязан читаться как закрытие ("Мне пора", "Спасибо за разговор", принятая
-      мысль, прощание). Реплика-ВОПРОС никогда не бывает выходом — вопрос ВСЕГДА
-      ведёт к следующей сцене, где персонаж отвечает. Это касается и выборов-
-      намерений: "Спросить...", "Уточнить...", "Поинтересоваться...", "Узнать..."
-      — такие выборы тоже обязаны вести к сцене с ответом (nextSceneId != null).
-      В последней сцене диалога все выборы — только завершающие формулировки.
-  8. Тон и стиль речи персонажа должны соответствовать liCard.speechPattern и bracket-у.
-  9. characterEmotions — ОБЯЗАТЕЛЬНОЕ поле. Маппинг id персонажа → эмоция.
-  10. Все тексты — по-русски.
-  11. Если задан encounterContext:
-      - Это встреча №(encounterIndex+1) из totalPlannedEncounters с этим персонажем.
-        Первая встреча (index 0) при preExistingRelationship = null — знакомство:
-        никаких «как обычно», «снова» и отсылок к прошлым разговорам.
-        Последняя — пик арки отношений.
-      - goal встречи ОБЯЗАН быть достигнут к концу диалога независимо от
-        bracket-а; bracket меняет тон и «цену» достижения, а не сам факт.
-      - Если заданы beatType/beatPurpose — диалог реализует именно этот бит арки.
-      - anchorBeatText — сцена, которую игрок видел минуту назад: продолжай
-        оттуда, не повторяй и не противоречь.
-      - priorEncounters: считай, что предыдущие встречи произошли, но НЕ
-        пересказывай их сюжетно — опирайся на них степенью близости и тоном,
-        без жёстких отсылок к деталям (игрок мог какую-то встречу пропустить).
+  1. narration — от 2-го лица, 2-3 предложения ("Ты подходишь...", "Она поднимает взгляд...").
+  2. dialogue — реплики ТОЛЬКО LI (не протагониста). Каждая с emotion из канонических: idle, happy, sad, tense, soft, thoughtful, surprised, angry.
+  3. У не-closing узла 2-3 choices. Текст choice — до 12 слов.
+  4. choice.effects.stateDeltas — ТОЛЬКО relationship-переменные:
+     "relationship[<liId>].affection", "relationship[<liId>].trust", "relationship[<liId>].tension".
+     Шаги небольшие: -0.05...+0.1. ЗАПРЕЩЕНЫ ключи slot, met[...], beat[...],
+     evt[...], time — перемещением и временем владеет движок снаружи диалога.
+  5. Тон и стиль речи персонажа должны соответствовать liCard.speechPattern и bracket-у.
+  6. characterEmotions — ОБЯЗАТЕЛЬНОЕ поле узла. Маппинг id персонажа → эмоция.
+  7. Все тексты — по-русски.
+  8. Если задан encounterContext:
+     - Это встреча №(encounterIndex+1) из totalPlannedEncounters с этим персонажем.
+       Первая встреча (index 0) при preExistingRelationship = null — знакомство:
+       никаких «как обычно», «снова» и отсылок к прошлым разговорам.
+       Последняя — пик арки отношений.
+     - goal встречи ОБЯЗАН быть достигнут к концу диалога независимо от
+       bracket-а; bracket меняет тон и «цену» достижения, а не сам факт.
+     - Если заданы beatType/beatPurpose — диалог реализует именно этот бит арки.
+     - anchorBeatText — сцена, которую игрок видел минуту назад: продолжай
+       оттуда, не повторяй и не противоречь.
+     - priorEncounters: считай, что предыдущие встречи произошли, но НЕ
+       пересказывай их сюжетно — опирайся на них степенью близости и тоном,
+       без жёстких отсылок к деталям (игрок мог какую-то встречу пропустить).
 
 ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
 {
-  "bracket": "positive",
+  "id": "unit_yuki_positive",
   "liId": "yuki",
-  "entrySceneId": "yuki_warm_1",
-  "scenes": [
+  "bracket": "positive",
+  "entryNodeId": "n1",
+  "nodes": [
     {
-      "id": "yuki_warm_1",
-      "location": "кафе, дальний столик",
-      "timeMarker": "день",
+      "id": "n1",
       "charactersPresent": ["yuki"],
       "characterEmotions": { "yuki": "happy" },
       "narration": "Юки поднимает глаза от книги и улыбается.",
@@ -1276,23 +1142,54 @@ Brackets:
       "choices": [
         {
           "id": "c1",
-          "text": "Сесть рядом",
-          "effects": { "stateDeltas": { "relationship[yuki].affection": 0.05 }, "flagSet": [], "flagClear": [] },
-          "nextSceneId": "yuki_warm_2"
+          "kind": "ask",
+          "text": "Спросить, что она читает",
+          "next": "n2",
+          "effects": { "stateDeltas": { "relationship[yuki].affection": 0.05 }, "flagSet": [], "flagClear": [] }
         },
         {
           "id": "c2",
-          "text": "Извиниться и уйти",
-          "effects": { "stateDeltas": { "relationship[yuki].affection": -0.02 }, "flagSet": [], "flagClear": [] },
-          "nextSceneId": null
+          "kind": "farewell",
+          "text": "Извиниться и попрощаться",
+          "next": "n_bye",
+          "effects": { "stateDeltas": { "relationship[yuki].affection": -0.02 }, "flagSet": [], "flagClear": [] }
         }
       ]
+    },
+    {
+      "id": "n2",
+      "charactersPresent": ["yuki"],
+      "characterEmotions": { "yuki": "soft" },
+      "narration": "Она показывает обложку.",
+      "dialogue": [
+        { "speaker": "yuki", "emotion": "soft", "line": "Сборник старых легенд. Хочешь, почитаю вслух?" }
+      ],
+      "choices": [
+        {
+          "id": "c3",
+          "kind": "farewell",
+          "text": "Поблагодарить и попрощаться до вечера",
+          "next": "n_bye",
+          "effects": { "stateDeltas": { "relationship[yuki].trust": 0.05 }, "flagSet": [], "flagClear": [] }
+        }
+      ]
+    },
+    {
+      "id": "n_bye",
+      "closing": true,
+      "charactersPresent": ["yuki"],
+      "characterEmotions": { "yuki": "happy" },
+      "narration": "Юки машет тебе рукой на прощание.",
+      "dialogue": [
+        { "speaker": "yuki", "emotion": "happy", "line": "До встречи! Забегай ещё." }
+      ],
+      "choices": []
     }
   ]
 }`;
 
-export async function processDialogueVariant(batch: BatchState, body: DialogueVariantRequest): Promise<void> {
-  const itemId = 'dialogueVariant';
+export async function processDialogueUnit(batch: BatchState, body: DialogueUnitRequest): Promise<void> {
+  const itemId = 'dialogueUnit';
   const item = batch.items[itemId];
   item.status = 'processing';
 
@@ -1302,19 +1199,13 @@ export async function processDialogueVariant(batch: BatchState, body: DialogueVa
 
     const openai = createOpenAI({ apiKey });
 
-    const briefJson = JSON.stringify(body.brief, null, 2);
-    const liJson = JSON.stringify(body.liCard, null, 2);
-    const archJson = JSON.stringify(body.archetypeProfile, null, 2);
-    const ctxJson = JSON.stringify(body.storyContext, null, 2);
-    const rangesJson = JSON.stringify(body.stateRanges, null, 2);
-
     const parts: string[] = [
-      `## Бриф\n${briefJson}`,
-      `## Карточка LI\n${liJson}`,
-      `## Профиль архетипа\n${archJson}`,
-      `## Контекст встречи\n${ctxJson}`,
+      `## Бриф\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Карточка LI\n${JSON.stringify(body.liCard, null, 2)}`,
+      `## Профиль архетипа\n${JSON.stringify(body.archetypeProfile, null, 2)}`,
+      `## Контекст встречи\n${JSON.stringify(body.storyContext, null, 2)}`,
       `## Bracket: ${body.bracket}`,
-      `## Текущие диапазоны state\n${rangesJson}`,
+      `## Текущие диапазоны state\n${JSON.stringify(body.stateRanges, null, 2)}`,
     ];
 
     if (body.encounterContext) {
@@ -1331,34 +1222,210 @@ export async function processDialogueVariant(batch: BatchState, body: DialogueVa
         `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${issuesList}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
       );
       parts.push(
-        `Сгенерируй ИСПРАВЛЕННУЮ версию диалога для bracket "${body.bracket}". Те же правила, тот же формат JSON. Только JSON.`,
+        `Сгенерируй ИСПРАВЛЕННЫЙ диалоговый юнит для bracket "${body.bracket}". Те же правила, тот же формат JSON. Только JSON.`,
       );
     } else {
-      parts.push(`Сгенерируй диалог для bracket "${body.bracket}". Только JSON.`);
+      parts.push(`Сгенерируй диалоговый юнит для bracket "${body.bracket}". Только JSON.`);
     }
 
     const userMessage = parts.join('\n\n');
 
     const liId = (body.liCard as { id?: string })?.id ?? '?';
-    logger.log(`[dialogueVariant] batch=${batch.batchId} — generating li=${liId} bracket=${body.bracket}...`);
+    logger.log(`[dialogueUnit] batch=${batch.batchId} — generating li=${liId} bracket=${body.bracket}...`);
 
     const { text } = await generateText({
-      model: openai('gpt-4.1-mini'),
-      system: DIALOGUE_VARIANT_SYSTEM_PROMPT,
+      model: resolveModel('dialogueUnit'),
+      system: DIALOGUE_UNIT_SYSTEM_PROMPT,
       prompt: userMessage,
     });
 
     const parsed = JSON.parse(text);
-    if (!Array.isArray(parsed.scenes) || !parsed.entrySceneId) {
-      throw new Error('Invalid response: missing scenes or entrySceneId');
+    if (!Array.isArray(parsed.nodes) || !parsed.entryNodeId) {
+      throw new Error('Invalid response: missing nodes or entryNodeId');
     }
 
     item.status = 'completed';
     item.result = text;
-    logger.log(`[dialogueVariant] batch=${batch.batchId} — completed (${parsed.scenes.length} scenes, bracket=${body.bracket})`);
+    logger.log(
+      `[dialogueUnit] batch=${batch.batchId} — completed (${parsed.nodes.length} nodes, bracket=${body.bracket})`,
+    );
   } catch (err) {
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
-    logger.error(`[dialogueVariant] batch=${batch.batchId} — failed: ${item.error}`);
+    logger.error(`[dialogueUnit] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// DIALOGUE QA (D1: LLM-критик готового диалогового юнита)
+// ============================================================================
+
+const DIALOGUE_QA_SYSTEM_PROMPT = `Ты — редактор-критик диалогов романтической визуальной новеллы (romance VN).
+
+Получаешь:
+  1. unit — готовый диалоговый юнит: граф узлов (narration, реплики LI, choices
+     с kind: ask|say|react|farewell и переходами next), closing-узлы завершают разговор.
+  2. bracket — уровень отношений (positive/neutral/negative), задающий тон.
+  3. liCardSummary — выжимка карточки персонажа (имя, характер, речевой стиль).
+
+Твоя задача — проверить КАЧЕСТВО диалога (структуру уже проверил код) и вернуть список проблем.
+
+Проверяй ровно три вещи:
+  1. ОТВЕТЫ НА ВОПРОСЫ. Для каждого choice с kind "ask": узел, куда он ведёт (next),
+     обязан содержать СОДЕРЖАТЕЛЬНЫЙ ответ LI по смыслу вопроса — не уход от темы,
+     не пустую реплику, не ответ на другой вопрос.
+  2. ТОН = BRACKET. Реплики LI и narration соответствуют bracket-у:
+     positive — тепло и открытость; neutral — вежливая дистанция;
+     negative — холод/напряжение. Реплики, выбивающиеся из тона, — проблема.
+  3. ЗАВЕРШЁННОСТЬ CLOSING. Каждый closing-узел ЗВУЧИТ как завершение разговора
+     (прощание, закрытая тема, естественная точка), а не как обрыв на полуслове
+     или незаконченная мысль.
+
+Severity:
+  - error — нарушение по существу (вопрос без ответа по смыслу, реплика ломает
+    bracket, closing обрывает разговор).
+  - warning — шероховатость (ответ формально есть, но куцый; тон слегка плавает).
+
+scope — id узла или id choice, к которому относится проблема ("n2", "c1").
+message — 1-2 предложения по-русски: что не так и как исправить.
+Если проблем нет — верни {"issues": []}.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "issues": [
+    { "severity": "error", "scope": "n2", "message": "Игрок спросил про книгу, а Юки отвечает про погоду — вопрос остался без ответа." }
+  ]
+}`;
+
+export async function processDialogueQA(batch: BatchState, body: DialogueQARequest): Promise<void> {
+  const itemId = 'dialogueQA';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const parts: string[] = [
+      `## Диалоговый юнит\n${JSON.stringify(body.unit, null, 2)}`,
+      `## Bracket: ${body.bracket}`,
+      `## Персонаж (выжимка)\n${body.liCardSummary}`,
+      'Проверь юнит по трём критериям и верни issues. Только JSON.',
+    ];
+
+    logger.log(`[dialogueQA] batch=${batch.batchId} — reviewing bracket=${body.bracket}...`);
+
+    const { text } = await generateText({
+      model: resolveModel('dialogueQA'),
+      system: DIALOGUE_QA_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.issues)) {
+      throw new Error('Invalid response: missing issues array');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[dialogueQA] batch=${batch.batchId} — completed (${parsed.issues.length} issues)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[dialogueQA] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// STORY LEAF QA (D4: LLM-критик сюжета одного листа ветвления)
+// ============================================================================
+
+const STORY_LEAF_QA_SYSTEM_PROMPT = `Ты — критик сюжета романтической визуальной новеллы (romance VN).
+
+Получаешь ОДИН лист ветвления истории:
+  1. leafLabel — какая комбинация исходов развилок образует этот лист.
+  2. beatSummariesOrdered — биты сюжета листа в хронологическом порядке,
+     каждый с timeMarker («день N · часть дня»).
+  3. endings — доступные концовки (kind: good/normal/bad) с требованиями.
+  4. briefTone — тон мира из брифа.
+
+Структуру и достижимость уже проверил код. Твоя задача — проверить СЮЖЕТНУЮ
+СВЯЗНОСТЬ ленты и вернуть список проблем.
+
+Проверяй ровно три вещи:
+  1. ПРОТИВОРЕЧИЯ МЕЖДУ БИТАМИ. Факты, время и мотивации персонажей не должны
+     конфликтовать: событие не может опираться на то, что случится позже
+     (timeMarker!); персонаж не может внезапно сменить цель без причины;
+     заявленный факт не должен опровергаться следующим битом.
+  2. НЕПРЕРЫВНОСТЬ ЗНАНИЙ. Персонажи знают только то, что случилось В ЭТОМ
+     листе до текущего бита. Упоминание событий других веток (исходов, не
+     выбранных в leafLabel) или ещё не случившихся — проблема.
+  3. СОГЛАСОВАННОСТЬ ФИНАЛА. Последние биты листа должны логично подводить
+     к перечисленным концовкам; финал, эмоционально или фактически
+     несовместимый с ними или с briefTone, — проблема.
+
+Severity:
+  - error — противоречие по существу (факт/время/знание ломает сюжет).
+  - warning — шероховатость (мотивация слабо обоснована, тон слегка плывёт).
+
+scope — id бита или id концовки, к которому относится проблема.
+message — 1-2 предложения по-русски: что не так и как исправить.
+Если проблем нет — верни {"issues": []}.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json. Структура:
+{
+  "issues": [
+    { "severity": "error", "scope": "beat_confession", "message": "Кира упоминает ссору на фестивале, но в этом листе героиня выбрала исход без фестиваля." }
+  ]
+}`;
+
+export async function processStoryLeafQA(batch: BatchState, body: StoryLeafQARequest): Promise<void> {
+  const itemId = 'storyLeafQA';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) throw new Error('OPENAI_API_KEY is not set');
+
+    const openai = createOpenAI({ apiKey });
+
+    const timeline = body.beatSummariesOrdered
+      .map((b, i) => `${i + 1}. [${b.timeMarker}] (${b.id}) ${b.summary}`)
+      .join('\n');
+    const endings = body.endings
+      .map(e => `- ${e.id} (${e.kind})${e.summary ? `: ${e.summary}` : ''}`)
+      .join('\n');
+
+    const parts: string[] = [
+      `## Лист: ${body.leafLabel}`,
+      `## Лента битов (хронология)\n${timeline}`,
+      `## Концовки\n${endings}`,
+      `## Тон брифа\n${body.briefTone}`,
+      'Проверь лист по трём критериям и верни issues. Только JSON.',
+    ];
+
+    logger.log(`[storyLeafQA] batch=${batch.batchId} — reviewing leaf "${body.leafLabel}"...`);
+
+    const { text } = await generateText({
+      model: resolveModel('storyLeafQA'),
+      system: STORY_LEAF_QA_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.issues)) {
+      throw new Error('Invalid response: missing issues array');
+    }
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[storyLeafQA] batch=${batch.batchId} — completed (${parsed.issues.length} issues)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[storyLeafQA] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }

@@ -154,6 +154,12 @@ export type BriefScale = {
   branchingDensity: BranchingDensity;
   /** Доля игры на common route, в [0, 1]. */
   commonRouteShare: number;
+  /**
+   * Бюджет глобальных развилок хребта (branchPoint-битов), 0..3.
+   * Ветка добавляет guard-ы по спайн-флагам, а не копии контента,
+   * поэтому листьев ≤ 2^3, а объём растёт линейно.
+   */
+  branchPointBudget: number;
 };
 
 export type WorldSetting = {
@@ -375,92 +381,6 @@ export type OutlineAct = {
   tone: string;
 };
 
-export type AnchorPlan = {
-  id: string;
-  type: AnchorType;
-  routeId: string;
-  act: number;
-  /** id LI, на котором сфокусирован якорь (для li_introduction / route_*). null = общая сцена. */
-  characterFocus: string | null;
-  /** Каноническая эмоция персонажа characterFocus в этом якоре. */
-  characterEmotion?: string;
-  /** 1-2 предложения, что происходит в этом якоре. Авторский контекст для branch-генератора. */
-  summary: string;
-  /** Факты, которые становятся истинными после прохождения якоря. */
-  establishes: string[];
-  /** Требование на state при входе. null = нет ограничений (для якорей в начале route). */
-  entryStateRequired: {
-    ranges: StateRanges;
-    flagsRequired: string[];
-  } | null;
-};
-
-export type AnchorEdge = {
-  from: string;
-  to: string;
-};
-
-export type OutlinePlan = {
-  title: string;
-  logline: string;
-  centralConflict: string;
-  acts: OutlineAct[];
-  anchors: AnchorPlan[];
-  anchorEdges: AnchorEdge[];
-};
-
-/**
- * Распарсить и валидировать строковый JSON-ответ от outline-генератора.
- * Бросает Error с диагностикой, если структура не совпадает.
- */
-export function parseOutlinePlan(raw: string): OutlinePlan {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`outline JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('outline must be an object');
-  }
-
-  const obj = parsed as Record<string, unknown>;
-  if (!Array.isArray(obj.anchors) || !Array.isArray(obj.anchorEdges) || !Array.isArray(obj.acts)) {
-    throw new Error('outline missing required arrays: acts/anchors/anchorEdges');
-  }
-
-  const anchors: AnchorPlan[] = obj.anchors.map((a, i) => {
-    const anchor = a as Record<string, unknown>;
-    if (!anchor.id || !anchor.type || !anchor.routeId) {
-      throw new Error(`anchors[${i}] missing required fields (id/type/routeId)`);
-    }
-    return {
-      id: String(anchor.id),
-      type: anchor.type as AnchorType,
-      routeId: String(anchor.routeId),
-      act: typeof anchor.act === 'number' ? anchor.act : 1,
-      characterFocus: anchor.characterFocus ? String(anchor.characterFocus) : null,
-      characterEmotion: anchor.characterEmotion ? String(anchor.characterEmotion) : undefined,
-      summary: String(anchor.summary ?? ''),
-      establishes: Array.isArray(anchor.establishes) ? (anchor.establishes as string[]) : [],
-      entryStateRequired:
-        anchor.entryStateRequired && typeof anchor.entryStateRequired === 'object'
-          ? (anchor.entryStateRequired as AnchorPlan['entryStateRequired'])
-          : null,
-    };
-  });
-
-  return {
-    title: String(obj.title ?? ''),
-    logline: String(obj.logline ?? ''),
-    centralConflict: String(obj.centralConflict ?? ''),
-    acts: obj.acts as OutlineAct[],
-    anchors,
-    anchorEdges: obj.anchorEdges as AnchorEdge[],
-  };
-}
-
 // ============================================================================
 // SEGMENT GENERATION (draft-уровень: что LLM возвращает на стадии branch-gen)
 // ============================================================================
@@ -584,56 +504,6 @@ export type SegmentIssue = {
   message: string;
 };
 
-/**
- * Базовая проверка корректности сгенерированного сегмента:
- *   - все nextSceneId ссылаются на существующую сцену в сегменте, либо null (anchor)
- *   - entrySceneId присутствует в scenes
- *   - есть хотя бы одна ветка, ведущая к anchorTo (nextSceneId == null)
- *
- * State-инвариант anchorTo пока не проверяется (это next iteration).
- */
-export function validateGeneratedSegment(seg: GeneratedSegment): SegmentIssue[] {
-  const issues: SegmentIssue[] = [];
-  const sceneIds = new Set(seg.scenes.map(s => s.id));
-
-  if (!sceneIds.has(seg.entrySceneId)) {
-    issues.push({
-      severity: 'error',
-      scope: 'entry',
-      message: `entrySceneId "${seg.entrySceneId}" не найден среди сцен сегмента`,
-    });
-  }
-
-  let exitCount = 0;
-  for (const scene of seg.scenes) {
-    if (scene.choices.length === 0) {
-      exitCount++;
-      continue;
-    }
-    for (const choice of scene.choices) {
-      if (choice.nextSceneId === null) {
-        exitCount++;
-      } else if (!sceneIds.has(choice.nextSceneId)) {
-        issues.push({
-          severity: 'error',
-          scope: `${scene.id}/choice/${choice.id}`,
-          message: `nextSceneId "${choice.nextSceneId}" не найден среди сцен сегмента`,
-        });
-      }
-    }
-  }
-
-  if (exitCount === 0) {
-    issues.push({
-      severity: 'error',
-      scope: 'exit',
-      message: 'нет ни одной ветки, ведущей в anchorTo (хотя бы один choice.nextSceneId должен быть null)',
-    });
-  }
-
-  return issues;
-}
-
 // ============================================================================
 // STORY OUTLINE (story-layer only, replaces per-LI route outline)
 // ============================================================================
@@ -649,6 +519,11 @@ export type StoryAnchor = {
   summary: string;
   establishes: string[];
   availableLIs: string[];
+};
+
+export type AnchorEdge = {
+  from: string;
+  to: string;
 };
 
 export type StoryOutlinePlan = {
@@ -708,91 +583,6 @@ export function parseStoryOutline(raw: string): StoryOutlinePlan {
     acts: obj.acts as OutlineAct[],
     anchors,
     anchorEdges: obj.anchorEdges as AnchorEdge[],
-  };
-}
-
-// ============================================================================
-// NARRATION WEB (exploration DAG between story anchors)
-// ============================================================================
-
-export type NarrationWebChoice = {
-  id: string;
-  text: string;
-  nextSceneId: string | null;
-  encounterTrigger?: string;
-  effects?: { flagSet?: string[] };
-};
-
-export type NarrationWebScene = {
-  id: string;
-  location: string;
-  /** id локации из WorldModel (пространственный контракт; легаси — без него). */
-  locationId?: string;
-  narration: string;
-  choices: NarrationWebChoice[];
-};
-
-export type NarrationWeb = {
-  fromAnchorId: string;
-  toAnchorId: string;
-  entrySceneId: string;
-  scenes: NarrationWebScene[];
-};
-
-export function parseNarrationWeb(raw: string): NarrationWeb {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    throw new Error(`narration web JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
-  }
-
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('narration web must be an object');
-  }
-
-  const obj = parsed as Record<string, unknown>;
-  if (!Array.isArray(obj.scenes) || !obj.entrySceneId) {
-    throw new Error('narration web missing scenes or entrySceneId');
-  }
-
-  const scenes: NarrationWebScene[] = (obj.scenes as unknown[]).map((s, i) => {
-    const scene = s as Record<string, unknown>;
-    if (!scene.id) throw new Error(`scenes[${i}] missing id`);
-
-    const choices: NarrationWebChoice[] = Array.isArray(scene.choices)
-      ? (scene.choices as unknown[]).map((c, j) => {
-          const ch = c as Record<string, unknown>;
-          return {
-            id: String(ch.id ?? `${scene.id}_c${j}`),
-            text: String(ch.text ?? ''),
-            nextSceneId: ch.nextSceneId ? String(ch.nextSceneId) : null,
-            encounterTrigger: ch.encounterTrigger ? String(ch.encounterTrigger) : undefined,
-            effects: ch.effects
-              ? {
-                  flagSet: Array.isArray((ch.effects as Record<string, unknown>).flagSet)
-                    ? ((ch.effects as Record<string, unknown>).flagSet as string[])
-                    : undefined,
-                }
-              : undefined,
-          };
-        })
-      : [];
-
-    return {
-      id: String(scene.id),
-      location: String(scene.location ?? ''),
-      locationId: scene.locationId ? String(scene.locationId) : undefined,
-      narration: String(scene.narration ?? ''),
-      choices,
-    };
-  });
-
-  return {
-    fromAnchorId: String(obj.fromAnchorId ?? ''),
-    toAnchorId: String(obj.toAnchorId ?? ''),
-    entrySceneId: String(obj.entrySceneId),
-    scenes,
   };
 }
 

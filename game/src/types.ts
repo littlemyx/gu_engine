@@ -18,6 +18,21 @@ export type SpriteEntry = {
 };
 
 /**
+ * Строка сцены с собственным моментальным набором спрайтов. Эмитится
+ * компилятором (client/src/narrative/compileCalendarGame.ts) из пер-строчных
+ * эмоций генератора: спрайт говорящего резолвится по emotion его реплики,
+ * остальные персонажи держат эмоцию узла. Узлы без lines[] рендерятся
+ * по-старому — плоский label целиком.
+ */
+export type SceneLineEntry = {
+  /** Отображаемое имя говорящего; отсутствует — нарративная ремарка. */
+  speaker?: string;
+  text: string;
+  /** Полный набор спрайтов сцены на момент этой строки. */
+  sprites?: SpriteEntry[];
+};
+
+/**
  * Аудио-профиль encounter-сцены. Пороги копируются компилятором мира из
  * bracketCondition-констант — музыкальный тон совпадает с диалоговым
  * bracket-ом по построению. Негатив — по affection (не tension), как в
@@ -37,6 +52,8 @@ export type SceneNodeData = {
   /** @deprecated Use sprites[] for multi-character. Kept for backward compat. */
   sprite?: string;
   sprites?: SpriteEntry[];
+  /** Структурированные строки для пошагового показа со сменой поз. */
+  lines?: SceneLineEntry[];
   outputs: SceneOutput[];
   sceneType?: SceneType;
   audioProfile?: SceneAudioProfile;
@@ -103,6 +120,18 @@ export type WorldManifest = {
   edges: WorldMapEdge[];
 };
 
+/** Календарь игры: слот = (день × часть дня). Эмитится календарным
+ *  компилятором (client/src/narrative/compileCalendarGame.ts) в
+ *  settings.calendar. Отсутствует → HUD календаря скрыт. */
+export type CalendarSettings = {
+  /** Всего слотов; переменная движка slot живёт в [0, slotCount]. */
+  slotCount: number;
+  /** Названия частей дня; длина = слотов в дне. */
+  dayparts: string[];
+  /** День начала каждого акта; actBoundaries[0] === 0. */
+  actBoundaries: number[];
+};
+
 export type ProjectSettings = {
   sceneFadeInMs: number;
   sceneFadeOutMs: number;
@@ -110,6 +139,7 @@ export type ProjectSettings = {
   endFadeInMs: number;
   stateSchema?: StateSchema;
   world?: WorldManifest;
+  calendar?: CalendarSettings;
   /** Базовая мелодия проекта — играет во всех сценах без audioProfile. */
   bgmUrl?: string;
   /**

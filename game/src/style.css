@@ -194,6 +194,8 @@ body {
   gap: 14px;
   max-width: 620px;
   animation: contentIn 500ms ease both;
+  /* Накопление строк в lines-режиме не должно выталкивать контент за экран. */
+  overflow-y: auto;
 }
 
 .scene-speaker {
@@ -212,6 +214,13 @@ body {
 
 .scene-text--narration {
   font-style: italic;
+}
+
+/* Строка lines-режима: плашка говорящего прижата к своей реплике. */
+.scene-line {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .stage-choices {
@@ -590,6 +599,17 @@ body {
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Появление дозагружаемой строки в скролл-контейнере: без transform,
+   иначе сдвиг на время анимации создаёт переполнение и мигает скроллбар. */
+@keyframes lineIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 

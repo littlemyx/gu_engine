@@ -1,0 +1,698 @@
+{
+  "title": "Осенние тени кампуса",
+  "scenes": "./scenes.json",
+  "settings": {
+    "sceneFadeInMs": 600,
+    "sceneFadeOutMs": 400,
+    "choiceAppearDelayMs": 120,
+    "endFadeInMs": 400,
+    "stateSchema": {
+      "vars": {
+        "relationship[kira].affection": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.1
+        },
+        "relationship[kira].trust": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.15
+        },
+        "relationship[kira].tension": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.75
+        },
+        "relationship[yuki].affection": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.2
+        },
+        "relationship[yuki].trust": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.30000000000000004
+        },
+        "relationship[yuki].tension": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.2
+        },
+        "relationship[asel].affection": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.5
+        },
+        "relationship[asel].trust": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.65
+        },
+        "relationship[asel].tension": {
+          "range": [
+            -1,
+            1
+          ],
+          "default": 0.4
+        },
+        "external_pressure": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0.6
+        },
+        "slot": {
+          "range": [
+            0,
+            12
+          ],
+          "default": 0
+        },
+        "beat[first_encounter_kira]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "beat[quiet_moment_yuki]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "beat[asel_family_pressure]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "beat[kira_conflict_branch]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "beat[yuki_slow_burn]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "beat[asel_lab_decision]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "beat[finale_meeting]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_kira_kira_academic_rivalry]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_yuki_yuki_coffee_shop_greeting]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_asel_asel_cautious_greeting]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_kira_kira_campus_alley_confrontation]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_kira_kira_dorm_room_vulnerability]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_yuki_yuki_garden_first_chat]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_asel_asel_share_family_doubts]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_yuki_yuki_invite_rain_walk]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_asel_asel_lab_reflection]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_yuki_yuki_coffee_shop_evening_reflection]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_asel_asel_brief_library_encounter]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_kira_kira_show_notes]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_yuki_yuki_library_confide]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_asel_asel_final_confession]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_asel_asel_difficult_choice]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_kira_kira_confession_campus_garden]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_yuki_yuki_garden_confession]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "unit[evt_kira_kira_confession_dorm_room]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[met_kira]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[met_yuki]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[faced_family_pressure]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[asel_chose_duty]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[asel_chose_freedom]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[kira_conflict_resolved]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[chose_ally_kira]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[chose_rival_kira]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[grew_closer_yuki]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[asel_resolved_path]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[story_concluded]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[kira_first_contact_done]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[met_yuki_coffee_shop]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[asel_initial_politeness]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[kira_trust_built]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[met_yuki_garden]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[asel_shared_fears]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[shared_rain_walk]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[yuki_evening_reflection]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[shared_library_confide]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[asel_choice_made]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[kira_confession_made]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "flag[yuki_confessed]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_kira_kira_academic_rivalry]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_kira_kira_show_notes]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_kira_kira_dorm_room_vulnerability]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_kira_kira_confession_dorm_room]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_yuki_yuki_coffee_shop_greeting]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_yuki_yuki_coffee_shop_evening_reflection]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_asel_asel_brief_library_encounter]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_yuki_yuki_library_confide]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_yuki_yuki_garden_first_chat]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_yuki_yuki_invite_rain_walk]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_asel_asel_difficult_choice]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_kira_kira_confession_campus_garden]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_yuki_yuki_garden_confession]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_asel_asel_lab_reflection]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_asel_asel_cautious_greeting]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_asel_asel_final_confession]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        },
+        "met[evt_kira_kira_campus_alley_confrontation]": {
+          "range": [
+            0,
+            1
+          ],
+          "default": 0
+        }
+      },
+      "flags": []
+    },
+    "world": {
+      "locations": [
+        {
+          "id": "lecture_hall",
+          "name": "аудитория физмат факультета",
+          "mood": "tense_anxious"
+        },
+        {
+          "id": "study_room",
+          "name": "комната для учёбы",
+          "mood": "neutral_calm"
+        },
+        {
+          "id": "campus_alley",
+          "name": "аллея кампуса",
+          "mood": "wistful_nostalgic"
+        },
+        {
+          "id": "dorm_room",
+          "name": "комната в общежитии",
+          "mood": "cozy_tender"
+        },
+        {
+          "id": "coffee_shop",
+          "name": "уютное кафе",
+          "mood": "cozy_tender",
+          "specialKind": "bar_tavern"
+        },
+        {
+          "id": "library",
+          "name": "университетская библиотека",
+          "mood": "melancholic_sad"
+        },
+        {
+          "id": "campus_garden",
+          "name": "садовый уголок кампуса",
+          "mood": "romantic"
+        },
+        {
+          "id": "research_lab",
+          "name": "лаборатория исследований",
+          "mood": "tense_anxious"
+        },
+        {
+          "id": "university_courtyard",
+          "name": "внутренний двор университета",
+          "mood": "neutral_calm"
+        },
+        {
+          "id": "family_home",
+          "name": "дом семьи Асель",
+          "mood": "melancholic_sad"
+        },
+        {
+          "id": "campus_corridor",
+          "name": "коридор кампуса",
+          "mood": "neutral_calm"
+        },
+        {
+          "id": "dorm_corridor",
+          "name": "коридор общежития",
+          "mood": "neutral_calm"
+        },
+        {
+          "id": "campus_street",
+          "name": "улица кампуса",
+          "mood": "cheerful_warm"
+        }
+      ],
+      "edges": [
+        {
+          "from": "lecture_hall",
+          "to": "campus_corridor",
+          "via": "через дверь в коридор физмат факультета"
+        },
+        {
+          "from": "study_room",
+          "to": "campus_corridor",
+          "via": "через дверь в коридор"
+        },
+        {
+          "from": "campus_alley",
+          "to": "campus_corridor",
+          "via": "через выход из корпуса на аллею"
+        },
+        {
+          "from": "campus_alley",
+          "to": "campus_garden",
+          "via": "по тропинке через сад"
+        },
+        {
+          "from": "dorm_room",
+          "to": "dorm_corridor",
+          "via": "через дверь в коридор общежития"
+        },
+        {
+          "from": "coffee_shop",
+          "to": "campus_street",
+          "via": "через вход с улицы кампуса"
+        },
+        {
+          "from": "library",
+          "to": "campus_corridor",
+          "via": "через главный вход библиотеки"
+        },
+        {
+          "from": "campus_garden",
+          "to": "university_courtyard",
+          "via": "через садовый проход"
+        },
+        {
+          "from": "research_lab",
+          "to": "campus_corridor",
+          "via": "через дверь в коридор научного корпуса"
+        },
+        {
+          "from": "university_courtyard",
+          "to": "campus_corridor",
+          "via": "через главный вход в корпус"
+        },
+        {
+          "from": "university_courtyard",
+          "to": "dorm_corridor",
+          "via": "через вход общежития со двора"
+        },
+        {
+          "from": "family_home",
+          "to": "campus_street",
+          "via": "по улице от дома к кампусу"
+        },
+        {
+          "from": "campus_street",
+          "to": "campus_alley",
+          "via": "через переход на аллею"
+        }
+      ]
+    },
+    "calendar": {
+      "slotCount": 12,
+      "dayparts": [
+        "утро",
+        "день",
+        "вечер"
+      ],
+      "actBoundaries": [
+        0,
+        1,
+        2,
+        3
+      ]
+    }
+  }
+}

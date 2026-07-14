@@ -1,43 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type {
-  AnchorBeat,
-  BeatPlan,
-  EndingVariant,
-  WorldModel,
-  WorldLocation,
-  GeneratedSegment,
-  OutlinePlan,
-  StoryOutlinePlan,
-  NarrationWeb,
-  DialogueVariant,
-} from './types';
+import type { AnchorBeat, EndingVariant, WorldModel, WorldLocation } from './types';
 import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
+import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
+import type { DialogueUnit } from './dialogueUnit';
 
 /**
- * Стор для procedural-narrative-пилота.
+ * Стор для procedural-narrative-пилота (календарный пайплайн).
  *
- * Хранит:
- *   - текущий сгенерированный outline (если есть)
- *   - кэш сгенерированных сегментов (key = `${fromId}->${toId}`)
- *   - кэш сгенерированных background-картинок (key = anchorId)
- *   - кэш сгенерированных character-спрайтов (key = liId)
- *
- * Персистится в localStorage: outline стоит ~1 LLM-вызов и десятки секунд,
- * сегменты — десятки LLM-вызовов и до 10 минут, картинки — 3-5 минут на
- * полный outline. Терять при reload контрпродуктивно.
- *
- * Invalidation: setOutline сбрасывает segments и images, потому что id
- * якорей могут не совпадать с прежними. Чтобы переиспользовать кэш при
- * незначительных правках брифа, в будущем можно ввести persist по
- * outline-fingerprint и сравнивать новые/старые id.
- *
- * Размер: ~28 якорей × ~5 KB сегмента + ~70 байт URL фона ≈ 150 KB.
- * localStorage спокойно вмещает.
+ * Хранит артефакты стадий cast → world+calendar → spine → schedule →
+ * eventUnits → unitProse/spineBeatProse → endings, плюс кэши генерации
+ * медиа (фоны, спрайты, аудио). Персистится в localStorage: полный прогон
+ * стоит десятки LLM-вызовов и минуты ожидания — терять при reload
+ * контрпродуктивно.
  */
-
-const segmentKey = (fromId: string, toId: string) => `${fromId}->${toId}`;
-const encounterKey = (anchorId: string, liId: string) => `${anchorId}:${liId}`;
 
 export type ImageGenState =
   | { status: 'pending' }
@@ -70,32 +46,42 @@ export type AudioVariationTone = 'positive' | 'negative';
 export type LiAudioState = Partial<Record<AudioVariationTone, AudioTrackState>>;
 
 type NarrativeState = {
-  outline: OutlinePlan | null;
-  segments: Record<string, GeneratedSegment>;
   /**
    * Картинки фонов, сгенерированные image_gen-сервисом.
-   * Ключ — anchorId. Значение содержит filename (без URL-префикса);
-   * convertToGameProject строит полный URL под IMAGE_SERVER_BASE.
+   * Ключ — loc:<locationId>. Значение содержит filename (без URL-префикса);
+   * компилятор строит полный URL под IMAGE_SERVER_BASE.
    */
   images: Record<string, ImageGenState>;
   /**
-   * Спрайты персонажей. Ключ — id LI из брифа. Не сбрасывается при
-   * setOutline (LI не меняются), но сбрасывается явно если пользователь
-   * меняет каст в брифе. Простая стратегия инвалидации: clearCharacters.
+   * Спрайты персонажей. Ключ — id LI из брифа. Сбрасывается явно, если
+   * пользователь меняет каст в брифе (clearCharacters).
    */
   characters: Record<string, CharacterGenState>;
 
-  storyOutline: StoryOutlinePlan | null;
-  narrationWebs: Record<string, NarrationWeb>;
-  dialogueVariants: Record<string, DialogueVariant[]>;
-  /** Beat-сцены якорей (событие на экране + подписи переходов). Ключ — anchorId. */
-  anchorBeats: Record<string, AnchorBeat>;
-  /** План битов отношений (какая встреча какой бит арки реализует). */
-  beatPlan: BeatPlan | null;
   /** Эпилоги. Ключ: good:<liId> | normal | bad (см. endingKey). */
   endings: Record<string, EndingVariant>;
   /** Модель мира: реестр локаций со связностью + маппинг якорей. */
   worldModel: WorldModel | null;
+
+  // ── Календарный пайплайн (docs/plans/calendar-branching.md) ──────────────
+  // Каскад инвалидации: castPlan → (calendar, tagMap) → spine → schedule →
+  // eventUnits → unitProse/spineBeatProse → endings.
+  /** Проход A1: персоны + цели + weekly-паттерны по тегам локаций. */
+  castPlan: CastPlan | null;
+  /** Дискретный календарь истории (дни × части дня, границы актов). */
+  calendar: Calendar | null;
+  /** Маппинг агендных тегов на id локаций WorldModel. */
+  tagMap: Record<string, string[]> | null;
+  /** Хребет: биты с окнами слотов, развилки, guarded-концовки. */
+  spine: SpinePlan | null;
+  /** char × slot → locationId|null; детерминированно собирается из агенд. */
+  schedule: CharacterSchedule | null;
+  /** Пул событий-storylet-ов (шеллы guard+goal+effects). Ключ — unit id. */
+  eventUnits: Record<string, EventUnit>;
+  /** Проза encounter-юнитов по брекетам (DialogueUnit-графы). Ключ — unit id (enc_<liId>). */
+  unitProse: Record<string, DialogueUnit[]>;
+  /** Проза битов хребта. Ключ — beat id. */
+  spineBeatProse: Record<string, AnchorBeat>;
 
   /** Базовая/фолбэк-подложка проекта (neutral_calm, инструментал). */
   audioBase: AudioTrackState | null;
@@ -113,28 +99,32 @@ type NarrativeState = {
   /** Стейт генерации SFX-набора (результаты пишутся в audioSfx). */
   audioSfxState: AudioTrackState | null;
 
-  setOutline: (outline: OutlinePlan | null) => void;
-  setSegment: (fromId: string, toId: string, segment: GeneratedSegment) => void;
-  clearSegments: () => void;
-  setImage: (anchorId: string, state: ImageGenState) => void;
+  setImage: (locKey: string, state: ImageGenState) => void;
   clearImages: () => void;
   setCharacter: (liId: string, state: CharacterGenState) => void;
   updateCharacterPose: (liId: string, pose: string, filename: string) => void;
   clearCharacters: () => void;
 
-  setStoryOutline: (outline: StoryOutlinePlan | null) => void;
-  setNarrationWeb: (fromId: string, toId: string, web: NarrationWeb) => void;
-  clearNarrationWebs: () => void;
-  setDialogueVariants: (anchorId: string, liId: string, variants: DialogueVariant[]) => void;
-  clearDialogueVariants: () => void;
-  setAnchorBeat: (anchorId: string, beat: AnchorBeat) => void;
-  clearAnchorBeats: () => void;
-  setBeatPlan: (plan: BeatPlan | null) => void;
   setEnding: (key: string, ending: EndingVariant) => void;
   clearEndings: () => void;
   setWorldModel: (world: WorldModel | null) => void;
   /** Гранулярная правка настроения/спец-типа локации (авторский оверрайд). */
   patchLocation: (id: string, patch: Partial<Pick<WorldLocation, 'mood' | 'specialKind'>>) => void;
+
+  setCastPlan: (castPlan: CastPlan | null) => void;
+  /** Стадия worldCalendar: мир + календарь + маппинг тегов одним артефактом. */
+  setWorldCalendar: (
+    world: WorldModel | null,
+    calendar: Calendar | null,
+    tagMap: Record<string, string[]> | null,
+  ) => void;
+  setSpine: (spine: SpinePlan | null) => void;
+  setSchedule: (schedule: CharacterSchedule | null) => void;
+  setEventUnits: (units: EventUnit[]) => void;
+  /** Полная замена пула событий (пере-генерация: старые id не должны выживать). */
+  replaceEventUnits: (units: EventUnit[]) => void;
+  setUnitProse: (unitId: string, units: DialogueUnit[]) => void;
+  setSpineBeatProse: (beatId: string, beat: AnchorBeat) => void;
 
   setAudioBase: (state: AudioTrackState | null) => void;
   selectAudioBase: (index: number) => void;
@@ -147,26 +137,22 @@ type NarrativeState = {
   setAudioSfx: (emotion: string, filename: string) => void;
   setAudioSfxState: (state: AudioTrackState | null) => void;
   clearAudio: () => void;
-
-  getSegment: (fromId: string, toId: string) => GeneratedSegment | undefined;
-  getNarrationWeb: (fromId: string, toId: string) => NarrationWeb | undefined;
-  getDialogueVariants: (anchorId: string, liId: string) => DialogueVariant[] | undefined;
-  getAnchorBeat: (anchorId: string) => AnchorBeat | undefined;
 };
 
 type PersistedNarrativeState = Pick<
   NarrativeState,
-  | 'outline'
-  | 'segments'
   | 'images'
   | 'characters'
-  | 'storyOutline'
-  | 'narrationWebs'
-  | 'dialogueVariants'
-  | 'anchorBeats'
-  | 'beatPlan'
   | 'endings'
   | 'worldModel'
+  | 'castPlan'
+  | 'calendar'
+  | 'tagMap'
+  | 'spine'
+  | 'schedule'
+  | 'eventUnits'
+  | 'unitProse'
+  | 'spineBeatProse'
   | 'audioBase'
   | 'audioMoodBeds'
   | 'audioSpecialBeds'
@@ -174,20 +160,30 @@ type PersistedNarrativeState = Pick<
   | 'audioSfx'
 >;
 
+/** Пустое состояние календарного пайплайна от стадии spine и ниже. */
+const CLEARED_FROM_SPINE = {
+  spine: null,
+  schedule: null,
+  eventUnits: {},
+  unitProse: {},
+  spineBeatProse: {},
+} as const;
+
 export const useNarrativeStore = create<NarrativeState>()(
   persist(
-    (set, get) => ({
-      outline: null,
-      segments: {},
+    set => ({
       images: {},
       characters: {},
-      storyOutline: null,
-      narrationWebs: {},
-      dialogueVariants: {},
-      anchorBeats: {},
-      beatPlan: null,
       endings: {},
       worldModel: null,
+      castPlan: null,
+      calendar: null,
+      tagMap: null,
+      spine: null,
+      schedule: null,
+      eventUnits: {},
+      unitProse: {},
+      spineBeatProse: {},
       audioBase: null,
       audioMoodBeds: {},
       audioSpecialBeds: {},
@@ -195,21 +191,8 @@ export const useNarrativeStore = create<NarrativeState>()(
       audioSfx: {},
       audioSfxState: null,
 
-      setOutline: outline => {
-        // При установке нового outline сбрасываем outline-зависимые кэши:
-        // segments и backgrounds. characters не трогаем — LI принадлежат
-        // брифу, а бриф не меняется при regenerate-outline.
-        set({ outline, segments: {}, images: {} });
-      },
-
-      setSegment: (fromId, toId, segment) => {
-        set(s => ({ segments: { ...s.segments, [segmentKey(fromId, toId)]: segment } }));
-      },
-
-      clearSegments: () => set({ segments: {} }),
-
-      setImage: (anchorId, state) => {
-        set(s => ({ images: { ...s.images, [anchorId]: state } }));
+      setImage: (locKey, state) => {
+        set(s => ({ images: { ...s.images, [locKey]: state } }));
       },
 
       clearImages: () => set({ images: {} }),
@@ -233,38 +216,6 @@ export const useNarrativeStore = create<NarrativeState>()(
 
       clearCharacters: () => set({ characters: {} }),
 
-      setStoryOutline: storyOutline => {
-        set({
-          storyOutline,
-          narrationWebs: {},
-          dialogueVariants: {},
-          anchorBeats: {},
-          beatPlan: null,
-          endings: {},
-          worldModel: null,
-        });
-      },
-
-      setNarrationWeb: (fromId, toId, web) => {
-        set(s => ({ narrationWebs: { ...s.narrationWebs, [segmentKey(fromId, toId)]: web } }));
-      },
-
-      clearNarrationWebs: () => set({ narrationWebs: {}, dialogueVariants: {} }),
-
-      setDialogueVariants: (anchorId, liId, variants) => {
-        set(s => ({ dialogueVariants: { ...s.dialogueVariants, [encounterKey(anchorId, liId)]: variants } }));
-      },
-
-      clearDialogueVariants: () => set({ dialogueVariants: {} }),
-
-      setAnchorBeat: (anchorId, beat) => {
-        set(s => ({ anchorBeats: { ...s.anchorBeats, [anchorId]: beat } }));
-      },
-
-      clearAnchorBeats: () => set({ anchorBeats: {} }),
-
-      setBeatPlan: beatPlan => set({ beatPlan }),
-
       setEnding: (key, ending) => {
         set(s => ({ endings: { ...s.endings, [key]: ending } }));
       },
@@ -272,6 +223,44 @@ export const useNarrativeStore = create<NarrativeState>()(
       clearEndings: () => set({ endings: {} }),
 
       setWorldModel: worldModel => set({ worldModel }),
+
+      setCastPlan: castPlan => {
+        // Агенды определяют теги → календарь/маппинг и всё ниже устаревают.
+        set({ castPlan, calendar: null, tagMap: null, endings: {}, ...CLEARED_FROM_SPINE });
+      },
+
+      setWorldCalendar: (worldModel, calendar, tagMap) => {
+        set({ worldModel, calendar, tagMap, endings: {}, ...CLEARED_FROM_SPINE });
+      },
+
+      setSpine: spine => {
+        set({ ...CLEARED_FROM_SPINE, spine, endings: {} });
+      },
+
+      setSchedule: schedule => {
+        // Пул событий генерируется по выжимкам расписания — устаревает вместе с ним.
+        set({ schedule, eventUnits: {}, unitProse: {} });
+      },
+
+      setEventUnits: units => {
+        set(s => {
+          const eventUnits: Record<string, EventUnit> = { ...s.eventUnits };
+          for (const u of units) eventUnits[u.id] = u;
+          return { eventUnits };
+        });
+      },
+
+      replaceEventUnits: units => {
+        set({ eventUnits: Object.fromEntries(units.map(u => [u.id, u])) });
+      },
+
+      setUnitProse: (unitId, units) => {
+        set(s => ({ unitProse: { ...s.unitProse, [unitId]: units } }));
+      },
+
+      setSpineBeatProse: (beatId, beat) => {
+        set(s => ({ spineBeatProse: { ...s.spineBeatProse, [beatId]: beat } }));
+      },
 
       patchLocation: (id, patch) => {
         set(s => {
@@ -352,33 +341,28 @@ export const useNarrativeStore = create<NarrativeState>()(
           audioSfx: {},
           audioSfxState: null,
         }),
-
-      getSegment: (fromId, toId) => get().segments[segmentKey(fromId, toId)],
-
-      getNarrationWeb: (fromId, toId) => get().narrationWebs[segmentKey(fromId, toId)],
-
-      getDialogueVariants: (anchorId, liId) => get().dialogueVariants[encounterKey(anchorId, liId)],
-
-      getAnchorBeat: anchorId => get().anchorBeats[anchorId],
     }),
     {
       name: 'gu-narrative-state',
-      // v8: у локаций появились mood/specialKind (банк эмбиентов) + audioMoodBeds.
-      version: 8,
+      // v10: снос легаси (outline/segments/storyOutline/narrationWebs/
+      // dialogueVariants/anchorBeats/beatPlan выброшены). v9: календарный
+      // пайплайн. v8: mood/specialKind локаций.
+      version: 10,
       // Персистим только данные, не действия. audioSfxState — транзиентный
       // прогресс, не персистится (batchId протухает при рестарте audio_gen).
       partialize: state => ({
-        outline: state.outline,
-        segments: state.segments,
         images: state.images,
         characters: state.characters,
-        storyOutline: state.storyOutline,
-        narrationWebs: state.narrationWebs,
-        dialogueVariants: state.dialogueVariants,
-        anchorBeats: state.anchorBeats,
-        beatPlan: state.beatPlan,
         endings: state.endings,
         worldModel: state.worldModel,
+        castPlan: state.castPlan,
+        calendar: state.calendar,
+        tagMap: state.tagMap,
+        spine: state.spine,
+        schedule: state.schedule,
+        eventUnits: state.eventUnits,
+        unitProse: state.unitProse,
+        spineBeatProse: state.spineBeatProse,
         audioBase: state.audioBase,
         audioMoodBeds: state.audioMoodBeds,
         audioSpecialBeds: state.audioSpecialBeds,
@@ -403,18 +387,31 @@ export const useNarrativeStore = create<NarrativeState>()(
               })),
             }
           : null;
+        // v9→v10: легаси-ключи (outline/segments/storyOutline/narrationWebs/
+        // dialogueVariants/anchorBeats/beatPlan) просто не переносятся.
         return {
-          outline: prev.outline ?? null,
-          segments: prev.segments ?? {},
           images: prev.images ?? {},
           characters: prev.characters ?? {},
-          storyOutline: prev.storyOutline ?? null,
-          narrationWebs: prev.narrationWebs ?? {},
-          dialogueVariants: prev.dialogueVariants ?? {},
-          anchorBeats: prev.anchorBeats ?? {},
-          beatPlan: prev.beatPlan ?? null,
           endings: prev.endings ?? {},
           worldModel,
+          // v8→v9: календарный пайплайн — новые поля, кэши прежних стадий не трогаем.
+          castPlan: prev.castPlan ?? null,
+          calendar: prev.calendar ?? null,
+          tagMap: prev.tagMap ?? null,
+          spine: prev.spine ?? null,
+          schedule: prev.schedule ?? null,
+          eventUnits: prev.eventUnits ?? {},
+          // Фаза 3: unitProse хранит DialogueUnit[] (узловые графы). Записи
+          // старой DialogueVariant-формы (без nodes) выбрасываются — поле
+          // никогда не наполнялось «в дикой природе», а компилятор формы
+          // без nodes не понимает.
+          unitProse: Object.fromEntries(
+            Object.entries(prev.unitProse ?? {}).filter(
+              ([, units]) =>
+                Array.isArray(units) && units.every(u => Array.isArray((u as Partial<DialogueUnit>)?.nodes)),
+            ),
+          ),
+          spineBeatProse: prev.spineBeatProse ?? {},
           audioBase: prev.audioBase ?? null,
           audioMoodBeds: prev.audioMoodBeds ?? {},
           audioSpecialBeds: prev.audioSpecialBeds ?? {},

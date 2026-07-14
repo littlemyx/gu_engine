@@ -628,12 +628,68 @@ async function removeChromakey(
     data[off + 3] = Math.round(outAlpha * 255);
   }
 
-  await sharp(data, { raw: { width, height, channels: 4 } })
-    .png()
-    .toFile(inputPath + ".tmp");
+  // Запись с валидацией: наблюдался разовый сбой, когда sharp записал PNG с
+  // валидными CRC чанков, но битым zlib-потоком IDAT. Такой файл молча уезжал
+  // на image_server и дальше ронял ВСЕ генерации поз этого персонажа
+  // (Gemini: «Unable to process input image»). Перечитываем written-файл;
+  // битая запись ретраится один раз, повторный фейл — громкая ошибка.
+  for (let attempt = 0; ; attempt++) {
+    await sharp(data, { raw: { width, height, channels: 4 } })
+      .png()
+      .toFile(inputPath + ".tmp");
+    try {
+      await sharp(inputPath + ".tmp").stats();
+      break;
+    } catch (err) {
+      if (attempt >= 1) {
+        throw new Error(
+          `removeChromakey: written PNG failed decode validation (${(err as Error).message})`
+        );
+      }
+      logger.error(
+        `[removeChromakey] ${inputPath} — written PNG is corrupt, retrying write`
+      );
+    }
+  }
 
   fs.renameSync(inputPath + ".tmp", inputPath);
 }
+
+/**
+ * Полная проверка декодируемости референса перед отправкой в Gemini.
+ * Битый референс иначе даёт непрозрачное `400 Unable to process input image`.
+ */
+async function assertReferenceDecodable(
+  base64Data: string,
+  context: string
+): Promise<void> {
+  try {
+    await sharp(Buffer.from(base64Data, "base64")).stats();
+  } catch (err) {
+    throw new Error(
+      `${context}: reference image is corrupt or undecodable (${(err as Error).message}). ` +
+        `Перегенерируйте idle-спрайт персонажа целиком.`
+    );
+  }
+}
+
+/**
+ * Развёртка канонических эмоций (client emotionResolver.CANONICAL_POSES) в
+ * выразительные описания мимики и языка тела. Голое слово («soft») модель
+ * почти игнорирует — позы выходили одинаково-меланхоличными и различались
+ * только реквизитом, а не эмоцией. Ключ — то, что приходит в poses[];
+ * незнакомая поза падает в старое поведение (слово как есть).
+ */
+const POSE_EXPRESSIONS: Record<string, string> = {
+  idle: 'neutral relaxed stance, calm open face, arms at ease',
+  happy: 'bright genuine smile with slightly squinted joyful eyes, lifted posture, open energetic body language',
+  sad: 'downcast eyes, drooping shoulders, corners of the mouth turned down, withdrawn closed-off posture',
+  tense: 'tight jaw, worried furrowed brows, stiff shoulders, guarded posture with arms drawn close',
+  soft: 'warm gentle smile, tender affectionate half-lidded gaze, relaxed open shoulders, head slightly tilted toward the viewer',
+  thoughtful: 'pensive gaze directed aside and upward, a finger near the chin or lips, weight shifted onto one leg',
+  surprised: 'wide-open eyes and raised eyebrows, slightly parted lips, hands raised in a startled gesture',
+  angry: 'sharp glare with knitted brows, clenched fists, confrontational squared stance',
+};
 
 function buildCharacterPosePrompt(
   masterPrompt: string,
@@ -650,7 +706,7 @@ function buildCharacterPosePrompt(
   }
   parts.push(
     characterDescription,
-    `Generate exactly ONE character — one body, one head, one pair of arms, one pair of legs — in a "${pose}" pose/emotion as a full-body shot, centered in the frame. STRICTLY FORBIDDEN: multiple characters, duplicates, copies, turnaround sheets, character sheets, multiple views, side-by-side variations, or any layout containing more than one figure. The image contains exactly one figure. The character must be rendered on a solid bright chromakey ${chromaKey.name} (${chromaKey.hex}) background. The entire background must be uniform pure ${chromaKey.name} with no gradients, no shadows, no environment, no ground. Do NOT draw any outline, border, stroke, or halo around the character — even if a reference image shows a white outline, do not reproduce it; the outline is added later in post-processing. Render the character directly against the ${chromaKey.name} background with clean edges. Maintain consistent character design, proportions, and art style.`
+    `Generate exactly ONE character — one body, one head, one pair of arms, one pair of legs — in a "${pose}" pose/emotion (${POSE_EXPRESSIONS[pose] ?? pose}) as a full-body shot, centered in the frame. The emotion must be clearly readable in BOTH the facial expression and the body language; poses of the same character must be visually distinct from each other primarily through emotion, not props. STRICTLY FORBIDDEN: multiple characters, duplicates, copies, turnaround sheets, character sheets, multiple views, side-by-side variations, or any layout containing more than one figure. The image contains exactly one figure. The character must be rendered on a solid bright chromakey ${chromaKey.name} (${chromaKey.hex}) background. The entire background must be uniform pure ${chromaKey.name} with no gradients, no shadows, no environment, no ground. Do NOT draw any outline, border, stroke, or halo around the character — even if a reference image shows a white outline, do not reproduce it; the outline is added later in post-processing. Render the character directly against the ${chromaKey.name} background with clean edges. Maintain consistent character design, proportions, and art style.`
   );
   return parts.join("\n\n");
 }
@@ -747,6 +803,19 @@ export async function processCharacterBatch(
   );
 
   const idleImageBase64 = fs.readFileSync(idleLocalPath);
+  try {
+    await assertReferenceDecodable(
+      idleImageBase64.toString("base64"),
+      `processCharacterBatch batch=${batch.batchId} idle reference`
+    );
+  } catch (err: any) {
+    logger.error(`[processCharacterBatch] batch=${batch.batchId} — ${err.message ?? err}`);
+    for (const pose of uniquePoses) {
+      batch.items[pose].status = "failed";
+      batch.items[pose].error = err.message ?? String(err);
+    }
+    return;
+  }
   const idleDataUri = `data:image/png;base64,${idleImageBase64.toString("base64")}`;
 
   const posePromises = uniquePoses.map(async pose => {
@@ -803,6 +872,10 @@ export async function processRegeneratePose(
   try {
     // Fetch existing idle image and convert to data URI for reference
     const refImage = await fetchImageAsBase64(referenceImageUrl);
+    await assertReferenceDecodable(
+      refImage.data,
+      `processRegeneratePose pose=${poseId} ref=${referenceImageUrl}`
+    );
     const refDataUri = `data:${refImage.mimeType};base64,${refImage.data}`;
 
     // Pick the chromakey that clashes least with the character's palette

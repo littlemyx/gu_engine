@@ -1,4 +1,4 @@
-import type { DraftScene, GeneratedSegment, OutlinePlan } from './types';
+import type { DraftScene } from './types';
 import type { CharacterGenState } from './narrativeStore';
 
 export const IMAGE_SERVER_BASE = 'http://localhost:3007';
@@ -87,43 +87,6 @@ export function pickCharacterEmotion(scene: DraftScene, charId: string): string 
     if (line.speaker === charId && line.emotion) return line.emotion;
   }
   return undefined;
-}
-
-export function collectUsedEmotions(
-  segments: Record<string, GeneratedSegment>,
-  outline: OutlinePlan,
-): Map<string, Set<string>> {
-  const result = new Map<string, Set<string>>();
-
-  const ensure = (charId: string) => {
-    if (!result.has(charId)) result.set(charId, new Set());
-  };
-
-  for (const anchor of outline.anchors) {
-    if (anchor.characterFocus && anchor.characterEmotion) {
-      ensure(anchor.characterFocus);
-      result.get(anchor.characterFocus)!.add(anchor.characterEmotion);
-    }
-  }
-
-  for (const seg of Object.values(segments)) {
-    for (const scene of seg.scenes) {
-      if (scene.characterEmotions) {
-        for (const [charId, emotion] of Object.entries(scene.characterEmotions)) {
-          ensure(charId);
-          result.get(charId)!.add(emotion);
-        }
-      }
-      for (const line of scene.dialogue) {
-        if (line.emotion) {
-          ensure(line.speaker);
-          result.get(line.speaker)!.add(line.emotion);
-        }
-      }
-    }
-  }
-
-  return result;
 }
 
 export function findMissingPoses(
