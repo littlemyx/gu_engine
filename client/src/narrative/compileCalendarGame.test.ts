@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { compileCalendarGameProject, lintRouters, scheduleRuns } from './compileCalendarGame';
-import { guardFromRequires } from './calendarTypes';
+import { compileCalendarGameProject, lintAnchorCoverage, lintRouters, scheduleRuns } from './compileCalendarGame';
+import type { AnchorTransitionsInput } from './compileCalendarGame';
+import { PHASES_PER_SLOT, guardFromRequires } from './calendarTypes';
 import type { Calendar, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
 import { SAMPLE_BRIEF } from './sampleBrief';
 import { DEFAULT_LOCATION_MOOD, endingKey } from './types';
@@ -154,31 +155,95 @@ const endings: Record<string, EndingVariant> = {
   [endingKey('bad')]: endingVariant('bad', null),
 };
 
-const compile = (unitProse: Record<string, DialogueUnit[]> = {}, eventUnits: Record<string, EventUnit> = {}) =>
-  compileCalendarGameProject(brief, spine, cal, schedule, worldModel, {}, unitProse, eventUnits, endings);
+const compile = (
+  unitProse: Record<string, DialogueUnit[]> = {},
+  eventUnits: Record<string, EventUnit> = {},
+  anchors: AnchorTransitionsInput = {},
+) =>
+  compileCalendarGameProject(
+    brief,
+    spine,
+    cal,
+    schedule,
+    worldModel,
+    {},
+    unitProse,
+    eventUnits,
+    endings,
+    {},
+    {},
+    undefined,
+    anchors,
+  );
 
 const edgesFrom = (scenes: GameSceneGraph, source: string) => scenes.edges.filter(e => e.source === source);
 const hasCond = (conds: GameStateCondition[] | undefined, c: GameStateCondition) =>
   (conds ?? []).some(x => x.path === c.path && x.gte === c.gte && x.lte === c.lte);
 
 describe('compileCalendarGameProject', () => {
-  it('slot-переменная в схеме: [0, slotCount], default 0', () => {
+  it('обе стрелки времени в схеме: slot [0, slotCount], phase [0, P], обе с нуля', () => {
     const { project } = compile();
     expect(project.settings.stateSchema?.vars['slot']).toEqual({ range: [0, 12], default: 0 });
-    expect(project.settings.calendar).toEqual({ slotCount: 12, dayparts: cal.dayparts, actBoundaries: [0, 1, 2, 3] });
+    // Нижняя граница фазы — она же механизм сброса: парная дельта −P на
+    // slot-двигающем выходе клампится к нулю (правок движка не нужно).
+    expect(project.settings.stateSchema?.vars['phase']).toEqual({ range: [0, PHASES_PER_SLOT], default: 0 });
+    expect(project.settings.calendar).toEqual({
+      slotCount: 12,
+      dayparts: cal.dayparts,
+      actBoundaries: [0, 1, 2, 3],
+      phasesPerSlot: PHASES_PER_SLOT,
+    });
   });
 
-  it('каждый hub имеет «Подождать» (slot+1) с возвратом через enter той же локации', () => {
+  it('«Подождать» не существует: время нельзя промотать вхолостую', () => {
     const { scenes } = compile();
+    const wait = scenes.nodes.flatMap(n => n.data.outputs).filter(o => /подожд/i.test(o.text));
+    expect(wait).toEqual([]);
+  });
+
+  it('в каждом хабе и каждом слоте есть якорный переход — иначе игрок застревает', () => {
+    const { scenes } = compile();
+    // Тот же инвариант доказывает и линт; здесь — явная проверка топологии.
+    expect(lintAnchorCoverage(scenes, cal.slotCount)).toEqual([]);
+
     for (const l of worldModel.locations) {
       const hub = scenes.nodes.find(n => n.id === `hub_${l.id}`)!;
-      const wait = hub.data.outputs.find(o => o.text === 'Подождать');
-      expect(wait, `hub_${l.id} без «Подождать»`).toBeTruthy();
-      expect(wait!.effects?.stateDeltas).toEqual({ slot: 1 });
-      const edge = scenes.edges.find(e => e.source === hub.id && e.sourceHandle === wait!.id)!;
-      expect(edge.target).toBe(`enter_${l.id}`);
-      expect(edge.condition).toBeUndefined();
+      const anchors = hub.data.outputs.filter(o =>
+        scenes.edges.some(e => e.source === hub.id && e.sourceHandle === o.id && e.target.startsWith('anchor_')),
+      );
+      expect(anchors.length, `hub_${l.id} без якорей`).toBe(cal.dayparts.length);
+      // В каждом слоте активен РОВНО один якорь — тот, чья часть дня сейчас.
+      for (let v = 0; v < cal.slotCount; v++) {
+        const active = scenes.edges.filter(
+          e =>
+            e.source === hub.id &&
+            anchors.some(a => a.id === e.sourceHandle) &&
+            (e.condition ?? []).every(c => (c.gte == null || v >= c.gte) && (c.lte == null || v <= c.lte)),
+        );
+        expect(active.length, `слот ${v} в hub_${l.id}`).toBe(1);
+      }
     }
+  });
+
+  it('якорь двигает большую стрелку и СБРАСЫВАЕТ фазу; последний уводит спать домой', () => {
+    const { scenes } = compile();
+    const anchorNodes = scenes.nodes.filter(n => n.id.startsWith('anchor_loc_a_'));
+    expect(anchorNodes).toHaveLength(cal.dayparts.length);
+    for (const n of anchorNodes) {
+      expect(n.data.sceneType).toBe('narration'); // это сцена, а не кнопка-промотка
+      expect(n.data.label.length).toBeGreaterThan(0);
+      expect(n.data.outputs[0].effects?.stateDeltas).toEqual({ slot: 1, phase: -PHASES_PER_SLOT });
+    }
+    // Сон (последняя часть дня) уводит в домашнюю локацию; фолбэк дома —
+    // стартовая локация, когда тега 'home' нет.
+    const sleep = scenes.nodes.find(n => n.id === `anchor_loc_a_${cal.dayparts.length - 1}`)!;
+    expect(scenes.edges.find(e => e.source === sleep.id)!.target).toBe('enter_loc_a');
+  });
+
+  it('якорь ведёт домой, когда tagMap объявляет home', () => {
+    const { scenes } = compile(undefined, undefined, { tagMap: { home: ['loc_b'] } });
+    const sleep = scenes.nodes.find(n => n.id === `anchor_loc_a_${cal.dayparts.length - 1}`)!;
+    expect(scenes.edges.find(e => e.source === sleep.id)!.target).toBe('enter_loc_b');
   });
 
   it('ребро бита в enter-роутере: окно слотов + flag-условия requires + одноразовость', () => {
@@ -191,11 +256,18 @@ describe('compileCalendarGameProject', () => {
     expect(hasCond(edge.condition, { path: 'beat[b2]', lte: 0 })).toBe(true);
   });
 
-  it('выход бита ставит beat[id], establishes-флаги и двигает slot', () => {
+  it('выход бита ставит beat[id], establishes-флаги, двигает slot и СБРАСЫВАЕТ фазу', () => {
     const { scenes } = compile();
     const b1 = scenes.nodes.find(n => n.id === 'b1')!;
     expect(b1.data.outputs).toHaveLength(1);
-    expect(b1.data.outputs[0].effects?.stateDeltas).toEqual({ 'beat[b1]': 1, 'flag[met_all]': 1, slot: 1 });
+    // Бит — сюжет, а сюжет двигает большую стрелку. Парная дельта phase:−P
+    // обязательна: в новой части дня персонажи снова восприимчивы.
+    expect(b1.data.outputs[0].effects?.stateDeltas).toEqual({
+      'beat[b1]': 1,
+      'flag[met_all]': 1,
+      slot: 1,
+      phase: -PHASES_PER_SLOT,
+    });
     // Возврат в хаб своей локации.
     expect(edgesFrom(scenes, 'b1')[0].target).toBe('hub_loc_a');
   });
@@ -245,13 +317,15 @@ describe('compileCalendarGameProject', () => {
     expect(hasCond(meetEdge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
     expect(project.settings.stateSchema?.vars['met[kira].0']).toEqual({ range: [0, 1], default: 0 });
 
-    // Выход из диалога: met=1 и slot+1 на auto-advance closing-узла
-    // (терминальная narration-сцена с прощальной репликой).
+    // Выход из диалога: met=1 и phase+1 на auto-advance closing-узла
+    // (терминальная narration-сцена). Слот разговор НЕ двигает — иначе
+    // вечерняя беседа заканчивалась бы утром, как в репортнутом плейтесте.
     const closingScenes = scenes.nodes.filter(n => n.id.endsWith('_d3'));
     expect(closingScenes.length).toBe(2); // по closing-сцене на каждый диапазон
     const exitOut = closingScenes[0].data.outputs[0];
     expect(exitOut.text).toBe('');
-    expect(exitOut.effects?.stateDeltas?.slot).toBe(1);
+    expect(exitOut.effects?.stateDeltas?.phase).toBe(1);
+    expect(exitOut.effects?.stateDeltas?.slot).toBeUndefined();
     expect(Object.keys(exitOut.effects?.stateDeltas ?? {}).some(k => k.startsWith('met[kira].'))).toBe(true);
   });
 
@@ -282,22 +356,25 @@ describe('compileCalendarGameProject', () => {
           expect(edge.target.startsWith('hub_'), `выбор "${out.text}" (${node.id}) ведёт в ${edge.target}`).toBe(false);
           // Собственные эффекты выбора не трогают движение.
           const deltas = Object.keys(out.effects?.stateDeltas ?? {});
-          expect(deltas.some(k => k === 'slot' || k.startsWith('met['))).toBe(false);
+          expect(deltas.some(k => k === 'slot' || k === 'phase' || k.startsWith('met['))).toBe(false);
         }
 
-        // 2. Эффекты движения (slot/met) — ТОЛЬКО на auto-advance closing-узла:
-        //    narration-сцена с единственным пустым output, ребро в hub_*.
+        // 2. Эффекты движения (phase/met) — ТОЛЬКО на auto-advance closing-узла:
+        //    narration-сцена с единственным пустым output, ребро в enter_*
+        //    (не в хаб: созревший за разговор бит обязан выстрелить сразу).
         const deltas = Object.keys(out.effects?.stateDeltas ?? {});
-        const touchesMovement = deltas.some(k => k === 'slot' || k.startsWith('met['));
-        const isWaitButton = out.text === 'Подождать'; // хаб-кнопка тоже двигает slot
+        const touchesMovement = deltas.some(k => k === 'slot' || k === 'phase' || k.startsWith('met['));
         const isBeatExit = spine.beats.some(b => b.id === node.id); // биты двигают slot сами
-        if (touchesMovement && !isWaitButton && !isBeatExit) {
+        const isAnchor = node.id.startsWith('anchor_'); // якорь и есть двигатель большой стрелки
+        if (touchesMovement && !isBeatExit && !isAnchor) {
           movementOutputs++;
           const src = nodeById.get(node.id)!;
           expect(src.data.sceneType, `движение вне closing-narration: ${node.id}`).toBe('narration');
           expect(src.data.outputs).toHaveLength(1);
           expect(out.text).toBe('');
-          expect(edge.target.startsWith('hub_'), `closing-переход ${node.id} ведёт в ${edge.target}`).toBe(true);
+          expect(edge.target.startsWith('enter_'), `closing-переход ${node.id} ведёт в ${edge.target}`).toBe(true);
+          // Разговор большую стрелку не двигает — это ядро реформы времени.
+          expect(deltas).not.toContain('slot');
         }
       }
     }
@@ -311,6 +388,25 @@ describe('compileCalendarGameProject', () => {
     expect(stats.encountersWired).toBe(0);
     const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
     expect(hubA.data.outputs.some(o => o.text.startsWith('Поговорить'))).toBe(false);
+  });
+
+  it('цепочка порядка: ребро бита требует сыгранного предшественника линии', () => {
+    // b1(слот 0-2) → b2(3-5) → b3(6-8) — общая линия $plot (битов без LI).
+    const { scenes } = compile();
+    expect(
+      hasCond(edgesFrom(scenes, 'enter_loc_b').find(e => e.target === 'b2')!.condition, { path: 'beat[b1]', gte: 1 }),
+    ).toBe(true);
+    expect(
+      hasCond(edgesFrom(scenes, 'enter_loc_c').find(e => e.target === 'b3')!.condition, { path: 'beat[b2]', gte: 1 }),
+    ).toBe(true);
+  });
+
+  it('голова линии и finale цепочкой не гейтятся', () => {
+    const { scenes } = compile();
+    const head = edgesFrom(scenes, 'enter_loc_a').find(e => e.target === 'b1')!;
+    const fin = edgesFrom(scenes, 'enter_loc_a').find(e => e.target === 'fin')!;
+    expect((head.condition ?? []).some(c => c.path.startsWith('beat[') && c.gte === 1)).toBe(false);
+    expect((fin.condition ?? []).some(c => c.path.startsWith('beat[') && c.gte === 1)).toBe(false);
   });
 
   it('stats: слоты и проведённые биты', () => {
@@ -352,15 +448,25 @@ const unitDeep = eventUnit({
   arcStage: 2,
 });
 
+/** Вершина арки Киры (ступень 3 = верх легаси-лестницы): ставит arc_peak. */
+const unitPeak = eventUnit({
+  id: 'evt_kira_peak',
+  at: { slot: { fromSlot: 9, toSlot: 11 }, locationId: 'loc_c' },
+  guard: { all: [{ fired: 'evt_kira_deep' }] },
+  arcStage: 3,
+});
+
 const eventUnits: Record<string, EventUnit> = {
   [unitTalk.id]: unitTalk,
   [unitDeep.id]: unitDeep,
+  [unitPeak.id]: unitPeak,
 };
 
-/** Проза обоих юнитов — одна и та же валидная фикстура DialogueUnit. */
+/** Проза юнитов — одна и та же валидная фикстура DialogueUnit. */
 const unitProseByUnit: Record<string, DialogueUnit[]> = {
   [unitTalk.id]: [dialogueUnit],
   [unitDeep.id]: [dialogueUnit],
+  [unitPeak.id]: [dialogueUnit],
 };
 
 describe('compileCalendarGameProject: юниты пула событий', () => {
@@ -390,21 +496,26 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
     expect(hasCond(edge.condition, { path: 'slot', lte: 8 })).toBe(true);
   });
 
-  it('closing-переход ставит met[unit] + unit[<id>] + establishes-флаги и двигает slot', () => {
+  it('closing-переход ставит met[unit] + unit[<id>] + establishes-флаги, гейн ступени и тратит ФАЗУ', () => {
     const { scenes } = compileUnits();
     // Closing-сцены (d3) обоих юнитов; talk несёт establishes likes_books.
     const closings = scenes.nodes.filter(n => n.id.includes('evt_kira_talk') && n.id.endsWith('_d3'));
     expect(closings.length).toBe(1);
     const deltas = closings[0].data.outputs[0].effects?.stateDeltas ?? {};
-    expect(deltas).toEqual({
+    expect(deltas).toMatchObject({
       'met[evt_kira_talk]': 1,
       'unit[evt_kira_talk]': 1,
       'flag[likes_books]': 1,
-      slot: 1,
+      phase: 1,
     });
-    // Возврат — в хаб локации юнита.
+    // Большая стрелка разговору не подчиняется: её двигает только сюжет.
+    expect(deltas.slot).toBeUndefined();
+    // Валюта арки: closing несёт ДЕТЕРМИНИРОВАННУЮ половину шага ступени —
+    // не relEffects от LLM (жирные фармились бы, нулевые запирали бы лестницу).
+    expect(deltas['relationship[kira].affection']).toBeGreaterThan(0);
+    // Возврат — через enter-роутер: созревший за разговор бит стреляет сразу.
     const edge = scenes.edges.find(e => e.source === closings[0].id)!;
-    expect(edge.target).toBe('hub_loc_a');
+    expect(edge.target).toBe('enter_loc_a');
   });
 
   it('юнит без прозы пропускается; расписаний-диапазонов при юнитах нет', () => {
@@ -431,6 +542,73 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
     expect(checked).toBeGreaterThanOrEqual(4); // 2 юнита × ≥2 выбора
   });
 
+  it('rel-порог ступени доезжает до кнопки встречи (раньше молча выбрасывался)', () => {
+    // unitDeep — ступень 2: вход требует накопленной близости, а не только флагов.
+    const { scenes } = compileUnits();
+    const hubB = scenes.nodes.find(n => n.id === 'hub_loc_b')!;
+    const meet = hubB.data.outputs.find(o => /Поговорить/.test(o.text))!;
+    const edge = scenes.edges.find(e => e.source === 'hub_loc_b' && e.sourceHandle === meet.id)!;
+    const rel = (edge.condition ?? []).find(c => c.path === 'relationship[kira].affection');
+    expect(rel).toBeTruthy();
+    expect(rel!.gte).toBeGreaterThan(0);
+  });
+
+  it('ступень 1 порога не несёт — точка входа в линию остаётся открытой', () => {
+    const { scenes } = compileUnits();
+    const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
+    const meet = hubA.data.outputs.find(o => /Поговорить/.test(o.text))!;
+    const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
+    expect((edge.condition ?? []).some(c => c.path.startsWith('relationship['))).toBe(false);
+  });
+
+  it('вершина арки ставит arc_peak-флаг, good-концовка его требует', () => {
+    const { scenes, project } = compileUnits();
+    // unitDeep — последняя ступень (N=3 при легаси-пуле) → closing ставит флаг.
+    const setsPeak = scenes.nodes
+      .flatMap(n => n.data.outputs)
+      .some(o => o.effects?.stateDeltas?.['flag[arc_peak_kira]'] === 1);
+    expect(setsPeak).toBe(true);
+    expect(project.settings.stateSchema?.vars['flag[arc_peak_kira]']).toBeTruthy();
+
+    // Концовка: affection можно накопить болтовнёй, вершину арки — только сыграв.
+    const goodEdge = scenes.edges.find(e => e.source === 'ending_router' && e.id.includes('e_good'));
+    expect(hasCond(goodEdge?.condition, { path: 'flag[arc_peak_kira]', gte: 1 })).toBe(true);
+  });
+
+  it('РЕГРЕСС «стартуем влюблёнными»: тёплый архетип на старте читается НЕЙТРАЛЬНО', () => {
+    // Асель — forbidden, старт affection 0.5 («интерес есть сразу»). Пороги тона
+    // были абсолютными (warm ≥ 0.3), поэтому в слоте 0, до единого выбора игрока,
+    // роутер уводил в positive-ветку: персонаж звучал влюблённым с первой сцены.
+    // Относительный порог (старт + 0.15 = 0.65) возвращает нейтраль.
+    const aselUnit = eventUnit({
+      id: 'evt_asel_intro',
+      participants: ['asel'],
+      scene: { kind: 'dialogue', anchorId: 'evt_asel_intro', liId: 'asel' },
+    });
+    const aselProse: DialogueUnit[] = [
+      { ...dialogueUnit, id: 'u_asel_neutral', liId: 'asel', bracket: 'neutral' },
+      { ...dialogueUnit, id: 'u_asel_positive', liId: 'asel', bracket: 'positive' },
+    ];
+    const { scenes, project } = compile({ [aselUnit.id]: aselProse }, { [aselUnit.id]: aselUnit });
+
+    const start = project.settings.stateSchema?.vars['relationship[asel].affection']?.default ?? 0;
+    expect(start).toBeCloseTo(0.5);
+
+    const posEdge = scenes.edges.find(e => e.id.includes('__positive'))!;
+    const gte = (posEdge.condition ?? []).find(c => c.path === 'relationship[asel].affection')?.gte ?? 0;
+    expect(gte).toBeCloseTo(0.65);
+    expect(start).toBeLessThan(gte); // на старте тёплая ветка ЗАКРЫТА
+  });
+
+  it('РЕГРЕСС: без проведённой вершины арки концовка её НЕ требует', () => {
+    // Юнит вершины без прозы компилятор пропускает — гейт на его флаг сделал бы
+    // good-концовку молча недостижимой. Гейтим только реально проведённые.
+    const noPeakProse = { [unitTalk.id]: [dialogueUnit], [unitDeep.id]: [dialogueUnit] };
+    const { scenes } = compile(noPeakProse, eventUnits);
+    const goodEdge = scenes.edges.find(e => e.source === 'ending_router' && e.id.includes('e_good'));
+    expect((goodEdge?.condition ?? []).some(c => c.path === 'flag[arc_peak_kira]')).toBe(false);
+  });
+
   it('пустой пул → фаза-3 фолбэк: диапазоны расписания с ключом enc_<liId>', () => {
     const { scenes, stats } = compile({ enc_kira: [dialogueUnit] }, {});
     expect(stats.encountersWired).toBe(2);
@@ -438,6 +616,212 @@ describe('compileCalendarGameProject: юниты пула событий', () =>
     const meet = hubA.data.outputs.find(o => o.text === 'Поговорить: Кира')!;
     const edge = scenes.edges.find(e => e.source === 'hub_loc_a' && e.sourceHandle === meet.id)!;
     expect(hasCond(edge.condition, { path: 'met[kira].0', lte: 0 })).toBe(true);
+  });
+});
+
+// ── Продолжение разговора внутри посиделки ─────────────────────────────────
+
+/**
+ * Ступени пула разнесены по окнам, поэтому «разговор пошёл хорошо» не значило
+ * ничего: следующая ступень ждала своего дня. Здесь две ступени Киры стоят в
+ * одной локации с пересекающимися окнами — значит разговор можно продолжить
+ * сразу, а стрелка частей дня при этом стоит.
+ */
+describe('продолжение разговора: время идёт минутами, а не частями дня', () => {
+  const s1 = eventUnit({
+    id: 'evt_kira_s1',
+    arcStage: 1,
+    at: { slot: { fromSlot: 0, toSlot: 5 }, locationId: 'loc_a' },
+  });
+  const s2 = eventUnit({
+    id: 'evt_kira_s2',
+    arcStage: 2,
+    at: { slot: { fromSlot: 0, toSlot: 5 }, locationId: 'loc_a' },
+    guard: { all: [{ fired: 'evt_kira_s1' }] },
+  });
+  const units = { [s1.id]: s1, [s2.id]: s2 };
+  const prose = { [s1.id]: [dialogueUnit], [s2.id]: [dialogueUnit] };
+  const compileCont = () => compile(prose, units);
+
+  const contNode = (scenes: GameSceneGraph) => scenes.nodes.find(n => n.id.startsWith('cont_evt_kira_s1'))!;
+
+  it('после первой ступени предлагается «Продолжить разговор» и «Попрощаться»', () => {
+    const { scenes } = compileCont();
+    const cont = contNode(scenes);
+    expect(cont).toBeTruthy();
+    expect(cont.data.outputs.map(o => o.text)).toEqual(['Продолжить разговор', 'Попрощаться']);
+    // Кнопки видны игроку — рендерер показывает выборы у не-narration сцен.
+    expect(cont.data.sceneType).toBe('branch');
+  });
+
+  it('посиделка НЕ двигает большую стрелку: каждая ступень тратит фазу', () => {
+    // Ядро реформы. Раньше посиделка стоила ровно один слот — и живой плейтест
+    // показал абсурд: разговор начинался вечером, а после прощания наступало
+    // утро следующего дня. Ночь исчезала как побочный эффект прощания.
+    const { scenes } = compileCont();
+    const cont = contNode(scenes);
+    const at = (deltas?: Record<string, number>) => ({ slot: deltas?.slot ?? 0, phase: deltas?.phase ?? 0 });
+
+    // Закрытие первой ступени: фаза потрачена, часть дня та же.
+    const firstClosing = scenes.nodes.find(n => n.id.startsWith('enc_evt_kira_s1_') && n.id.endsWith('_d3'))!;
+    expect(at(firstClosing.data.outputs[0].effects?.stateDeltas)).toEqual({ slot: 0, phase: 1 });
+
+    // Продолжение тратит СВОЮ фазу — кап «ступеней за присест» стал
+    // арифметическим (запас фаз слота), а не структурным.
+    const contClosing = scenes.nodes.find(n => n.id.startsWith('enc_cont_evt_kira_s2_') && n.id.endsWith('_d3'))!;
+    expect(at(contClosing.data.outputs[0].effects?.stateDeltas)).toEqual({ slot: 0, phase: 1 });
+
+    // Ни развилка, ни прощание времени не двигают вовсе.
+    const goOn = cont.data.outputs.find(o => o.text === 'Продолжить разговор')!;
+    const bye = cont.data.outputs.find(o => o.text === 'Попрощаться')!;
+    expect(at(goOn.effects?.stateDeltas)).toEqual({ slot: 0, phase: 0 });
+    expect(at(bye.effects?.stateDeltas)).toEqual({ slot: 0, phase: 0 });
+  });
+
+  it('вход в продолжение гейтится незакончившимся слотом, а не свежей фазой', () => {
+    // Правило продолжения: восприимчивость гейтит ЗАВЕДЕНИЕ разговора, а не
+    // идущий. Требуй тут окно at.phase ступени 2 (early = фаза 0) — и
+    // продолжение стало бы невозможным: первая ступень уже потратила фазу.
+    const { scenes } = compileCont();
+    const cont = contNode(scenes);
+    const goOn = cont.data.outputs.find(o => o.text === 'Продолжить разговор')!;
+    const edge = scenes.edges.find(e => e.source === cont.id && e.sourceHandle === goOn.id)!;
+    expect(hasCond(edge.condition, { path: 'phase', lte: PHASES_PER_SLOT - 1 })).toBe(true);
+    expect((edge.condition ?? []).some(c => c.path === 'phase' && c.gte != null)).toBe(false);
+  });
+
+  it('«Продолжить» несёт полные условия входа следующей ступени, включая порог близости', () => {
+    const { scenes } = compileCont();
+    const cont = contNode(scenes);
+    const goOn = cont.data.outputs.find(o => o.text === 'Продолжить разговор')!;
+    const edge = scenes.edges.find(e => e.source === cont.id && e.sourceHandle === goOn.id)!;
+    expect(hasCond(edge.condition, { path: 'met[evt_kira_s2]', lte: 0 })).toBe(true);
+    // Порог ступени 2: тёплый разговор откроет его тут же, холодный — нет.
+    expect((edge.condition ?? []).some(c => c.path === 'relationship[kira].affection' && (c.gte ?? 0) > 0)).toBe(true);
+    // fired-деп на саму первую встречу — тавтология, его тут быть не должно.
+    expect((edge.condition ?? []).some(c => c.path === 'unit[evt_kira_s1]')).toBe(false);
+  });
+
+  it('кап: у продолжения своего продолжения нет — каскад ступеней структурно невозможен', () => {
+    const { scenes } = compileCont();
+    expect(scenes.nodes.filter(n => n.id.startsWith('cont_'))).toHaveLength(1);
+    const contClosing = scenes.nodes.find(n => n.id.startsWith('enc_cont_evt_kira_s2_') && n.id.endsWith('_d3'))!;
+    // Возврат — через enter-роутер, как у любого закрытия встречи.
+    expect(scenes.edges.find(e => e.source === contClosing.id)!.target).toBe('enter_loc_a');
+  });
+
+  it('met общий: сыграв продолжением, игрок закрывает и свежую кнопку той же встречи', () => {
+    const { scenes } = compileCont();
+    const setsMet = scenes.nodes
+      .flatMap(n => n.data.outputs)
+      .filter(o => o.effects?.stateDeltas?.['met[evt_kira_s2]'] === 1);
+    expect(setsMet.length).toBeGreaterThanOrEqual(2); // свежий и продолженный экземпляры
+  });
+
+  it('прощание безусловно и последнее; lintRouters чист', () => {
+    const { scenes } = compileCont();
+    const cont = contNode(scenes);
+    const byeEdge = scenes.edges.find(e => e.source === cont.id && e.id.includes('__bye'))!;
+    expect(byeEdge.condition).toBeUndefined();
+    expect(lintRouters(scenes)).toEqual([]);
+  });
+
+  it('в разных локациях продолжения нет — разговор не телепортирует', () => {
+    const far = { ...s2, at: { slot: { fromSlot: 0, toSlot: 5 }, locationId: 'loc_b' } };
+    const { scenes } = compile({ [s1.id]: [dialogueUnit], [far.id]: [dialogueUnit] }, { [s1.id]: s1, [far.id]: far });
+    expect(scenes.nodes.filter(n => n.id.startsWith('cont_'))).toHaveLength(0);
+  });
+
+  it('непересекающиеся окна продолжения не дают', () => {
+    const late = { ...s2, at: { slot: { fromSlot: 8, toSlot: 11 }, locationId: 'loc_a' } };
+    const { scenes } = compile(
+      { [s1.id]: [dialogueUnit], [late.id]: [dialogueUnit] },
+      { [s1.id]: s1, [late.id]: late },
+    );
+    expect(scenes.nodes.filter(n => n.id.startsWith('cont_'))).toHaveLength(0);
+  });
+});
+
+// ── Регрессия репортнутого бага: признание без единого разговора ───────────
+
+/**
+ * Топология из плейтеста: Юки стоит в кафе по расписанию (бита там НЕТ), а её
+ * ЕДИНСТВЕННЫЙ сюжетный бит — интимное признание в парке. Цепочка beat→beat
+ * тут бессильна (предшественника нет) — держит гейт головы линии на встречу,
+ * запланированную строго раньше.
+ */
+describe('регрессия: интимный бит не стреляет до разговора', () => {
+  const parkSpine: SpinePlan = {
+    title: 'Осенние тени',
+    logline: '',
+    beats: [
+      beat({
+        id: 'park_confession',
+        act: 3,
+        window: { fromSlot: 6, toSlot: 8 },
+        locationId: 'loc_c',
+        participants: ['yuki'],
+        summary: 'Юки признаётся в своих страхах',
+      }),
+      beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, locationId: 'loc_a' }),
+    ],
+    endings: [{ id: 'e_normal', kind: 'normal', liId: null, guard: { all: [] } }],
+  };
+
+  // Юки в кафе (loc_a) слоты 0-2, в парке (loc_c) слоты 6-8.
+  const yukiSchedule: CharacterSchedule = {
+    yuki: ['loc_a', 'loc_a', 'loc_a', null, null, null, 'loc_c', 'loc_c', 'loc_c', null, null, null],
+  };
+
+  const cafeUnit = eventUnit({
+    id: 'filler_yuki_loc_a_0',
+    at: { slot: { fromSlot: 0, toSlot: 2 }, locationId: 'loc_a' },
+    participants: ['yuki'],
+    scene: { kind: 'dialogue', anchorId: 'filler_yuki_loc_a_0', liId: 'yuki' },
+    source: 'filler',
+    goal: 'знакомство',
+  });
+
+  const compilePark = () =>
+    compileCalendarGameProject(
+      brief,
+      parkSpine,
+      cal,
+      yukiSchedule,
+      worldModel,
+      {},
+      { [cafeUnit.id]: [dialogueUnit] },
+      { [cafeUnit.id]: cafeUnit },
+      endings,
+    );
+
+  it('ребро признания требует сыгранной кафе-встречи', () => {
+    const { scenes } = compilePark();
+    const edge = edgesFrom(scenes, 'enter_loc_c').find(e => e.target === 'park_confession')!;
+    expect(edge).toBeTruthy();
+    expect(hasCond(edge.condition, { path: 'unit[filler_yuki_loc_a_0]', gte: 1 })).toBe(true);
+  });
+
+  it('в кафе есть кнопка «Поговорить: Юки», её closing ставит unit[…] = 1', () => {
+    const { scenes } = compilePark();
+    const hubA = scenes.nodes.find(n => n.id === 'hub_loc_a')!;
+    const meet = hubA.data.outputs.find(o => o.text === 'Поговорить: Юки');
+    expect(meet).toBeTruthy();
+    // Ключ разблокировки признания ставится именно закрытием разговора.
+    const setsUnit = scenes.nodes
+      .flatMap(n => n.data.outputs)
+      .some(o => o.effects?.stateDeltas?.['unit[filler_yuki_loc_a_0]'] === 1);
+    expect(setsUnit).toBe(true);
+  });
+
+  it('без кафе-встречи признание остаётся негейтнутым (дедлока не создаём)', () => {
+    const { scenes } = compileCalendarGameProject(brief, parkSpine, cal, yukiSchedule, worldModel, {}, {}, {}, endings);
+    const edge = edgesFrom(scenes, 'enter_loc_c').find(e => e.target === 'park_confession')!;
+    expect((edge.condition ?? []).some(c => c.path.startsWith('unit['))).toBe(false);
+  });
+
+  it('lintRouters чист при гейтнутой голове', () => {
+    expect(lintRouters(compilePark().scenes)).toEqual([]);
   });
 });
 
@@ -571,5 +955,61 @@ describe('compileCalendarGameProject: ветки (фаза 5)', () => {
     // Ветвовой бит гейтится флагом исхода в enter-роутере своей локации.
     const edge = scenes.edges.find(e => e.source === 'enter_loc_a' && e.target === 'br_cover')!;
     expect(hasCond(edge.condition, { path: 'flag[chose_cover]', gte: 1 })).toBe(true);
+  });
+});
+
+describe('прощание — не конец ступени, а отдельная сцена ухода', () => {
+  // Живой плейтест: Асель говорит «Спасибо за разговор. Надеюсь, скоро
+  // увидимся» — и следом «Асель не спешит уходить». Она попрощалась и не ушла,
+  // потому что у посиделки есть продолжение. Прощальная проза обязана звучать
+  // ТОЛЬКО при реальном уходе.
+  const withFarewell: DialogueUnit = {
+    ...dialogueUnit,
+    farewell: { narration: 'Она собирает вещи.', dialogue: [{ speaker: 'kira', line: 'До встречи!' }] },
+  };
+  const s1 = eventUnit({
+    id: 'evt_kira_s1',
+    arcStage: 1,
+    at: { slot: { fromSlot: 0, toSlot: 5 }, locationId: 'loc_a' },
+  });
+  const s2 = eventUnit({
+    id: 'evt_kira_s2',
+    arcStage: 2,
+    at: { slot: { fromSlot: 0, toSlot: 5 }, locationId: 'loc_a' },
+    guard: { all: [{ fired: 'evt_kira_s1' }] },
+  });
+  const compileF = (prose: DialogueUnit) =>
+    compile({ [s1.id]: [prose], [s2.id]: [prose] }, { [s1.id]: s1, [s2.id]: s2 });
+
+  it('«Попрощаться» ведёт в прощальную сцену, а «Продолжить» — нет', () => {
+    const { scenes } = compileF(withFarewell);
+    const cont = scenes.nodes.find(n => n.id.startsWith('cont_evt_kira_s1'))!;
+    const bye = cont.data.outputs.find(o => o.text === 'Попрощаться')!;
+    const goOn = cont.data.outputs.find(o => o.text === 'Продолжить разговор')!;
+
+    const byeTarget = scenes.edges.find(e => e.source === cont.id && e.sourceHandle === bye.id)!.target;
+    expect(byeTarget.startsWith('farewell_')).toBe(true);
+
+    // Продолжение прощальную сцену не задевает — разговор идёт дальше.
+    const goOnTarget = scenes.edges.find(e => e.source === cont.id && e.sourceHandle === goOn.id)!.target;
+    expect(goOnTarget.startsWith('farewell_')).toBe(false);
+  });
+
+  it('прощальная сцена несёт свою прозу и уводит через enter', () => {
+    const { scenes } = compileF(withFarewell);
+    const scene = scenes.nodes.find(n => /^farewell_.*_neutral$/.test(n.id))!;
+    expect(scene.data.sceneType).toBe('narration');
+    expect(scene.data.label).toContain('До встречи!');
+    expect(scenes.edges.find(e => e.source === scene.id)!.target).toBe('enter_loc_a');
+  });
+
+  it('роутер прощания кончается безусловным ребром — старая проза без farewell уходит молча', () => {
+    const { scenes } = compileF(dialogueUnit); // без поля farewell
+    expect(lintRouters(scenes)).toEqual([]);
+    const router = scenes.nodes.find(n => n.id.startsWith('farewell_'))!;
+    const outs = router.data.outputs;
+    const lastEdge = scenes.edges.find(e => e.source === router.id && e.sourceHandle === outs[outs.length - 1].id)!;
+    expect(lastEdge.condition).toBeUndefined();
+    expect(lastEdge.target).toBe('enter_loc_a');
   });
 });

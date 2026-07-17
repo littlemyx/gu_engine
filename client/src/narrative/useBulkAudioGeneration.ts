@@ -387,7 +387,8 @@ export function useBulkAudioGeneration() {
 }
 
 /** Поллит батч до done, возвращает файлы в порядке itemIds (variant_1, variant_2). */
-async function pollBatch(batchId: string): Promise<string[]> {
+/** Дожать аудио-батч до файлов. Экспортируется для initNarrative (resume после reload). */
+export async function pollBatch(batchId: string): Promise<string[]> {
   const byId = await pollBatchById(batchId);
   const files = Object.entries(byId)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -396,7 +397,7 @@ async function pollBatch(batchId: string): Promise<string[]> {
   return files;
 }
 
-async function pollBatchById(batchId: string): Promise<Record<string, string>> {
+export async function pollBatchById(batchId: string): Promise<Record<string, string>> {
   const startedAt = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {

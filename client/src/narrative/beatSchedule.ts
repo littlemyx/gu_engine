@@ -25,7 +25,7 @@ function flagsOfGuard(g: Guard): string[] {
 }
 
 /** setsFlag → {развилка, исход}: какой исход какой развилки ставит флаг. */
-function outcomeFlagIndex(spine: SpinePlan): Map<string, { bp: string; outcome: string }> {
+export function outcomeFlagIndex(spine: SpinePlan): Map<string, { bp: string; outcome: string }> {
   const idx = new Map<string, { bp: string; outcome: string }>();
   for (const b of spine.beats) {
     if (b.kind !== 'branchPoint') continue;
@@ -35,28 +35,52 @@ function outcomeFlagIndex(spine: SpinePlan): Map<string, { bp: string; outcome: 
 }
 
 /**
+ * Ветка-селекторы бита: развилка → исход, которого бит требует своим guard-ом.
+ * Пустая карта = бит общий (играется на любом листе). Реюз: beatsExclusive
+ * здесь и подмножественное правило цепочки (beatChain).
+ */
+export function beatSelectors(beat: SpineBeat, idx: Map<string, { bp: string; outcome: string }>): Map<string, string> {
+  const sel = new Map<string, string>();
+  for (const f of flagsOfGuard(beat.guard)) {
+    const s = idx.get(f);
+    if (s) sel.set(s.bp, s.outcome);
+  }
+  return sel;
+}
+
+/**
  * Взаимоисключающие биты: оба требуют РАЗНЫХ исходов ОДНОЙ развилки, значит
  * никогда не играются на одном листе — могут делить слот (истинные ветки не
  * множат таймлайн). Биты из разных развилок или общие — co-play, им нужны
  * разные слоты.
  */
 function beatsExclusive(a: SpineBeat, b: SpineBeat, idx: Map<string, { bp: string; outcome: string }>): boolean {
-  const selA = new Map<string, string>();
-  for (const f of flagsOfGuard(a.guard)) {
-    const sel = idx.get(f);
-    if (sel) selA.set(sel.bp, sel.outcome);
-  }
-  for (const f of flagsOfGuard(b.guard)) {
-    const sel = idx.get(f);
-    if (sel && selA.has(sel.bp) && selA.get(sel.bp) !== sel.outcome) return true;
+  const selA = beatSelectors(a, idx);
+  for (const [bp, outcome] of beatSelectors(b, idx)) {
+    if (selA.has(bp) && selA.get(bp) !== outcome) return true;
   }
   return false;
 }
 
 /**
+ * Пины расписания совместимы: расписание держит ОДНУ локацию на (персонаж,
+ * слот), поэтому биты с общим участником могут делить слот только при одной
+ * локации — иначе пины затирают друг друга и валидатор расписания флагует
+ * «проигравший» бит. Плейсхолдеры "$role" сравниваем как строки: один
+ * плейсхолдер может резолвиться в одного персонажа, консервативно считаем
+ * его общим участником.
+ */
+function pinsCompatible(a: SpineBeat, b: SpineBeat): boolean {
+  if (a.locationId === b.locationId) return true;
+  const pa = new Set(a.participants);
+  return !b.participants.some(p => pa.has(p));
+}
+
+/**
  * Назначение битов на слоты: жадный по дедлайну (toSlot), branch-aware — слот
  * делят только взаимоисключающие биты (разные исходы одной развилки, никогда не
- * на одном листе). Детерминирован. Окна берутся как есть: расширение до окна
+ * на одном листе) с совместимыми пинами (общие участники — только при одной
+ * локации). Детерминирован. Окна берутся как есть: расширение до окна
  * акта делает normalizeSpineWindows ДО сохранения хребта, так что здесь окна уже
  * проигрываемые. Биты без слота (реальная коллизия co-play) в результат не
  * попадают — валидатор хребта репортит это как error.
@@ -75,7 +99,7 @@ export function assignBeatSlots(spine: SpinePlan, calendar: Calendar): Record<st
   for (const b of ordered) {
     for (let s = Math.max(0, b.window.fromSlot); s <= Math.min(lastSlot, b.window.toSlot); s++) {
       const occ = slotOccupants.get(s) ?? [];
-      if (occ.every(o => beatsExclusive(b, o, idx))) {
+      if (occ.every(o => beatsExclusive(b, o, idx) && pinsCompatible(b, o))) {
         assigned[b.id] = s;
         slotOccupants.set(s, [...occ, b]);
         break;

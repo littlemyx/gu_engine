@@ -1,35 +1,36 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback } from 'react';
 import { generateStoryLeafQa, getBatchStatus, type BatchStatus } from '@root/text_gen/generated_client';
 import type { Brief, SegmentIssue } from './types';
-import type { PolicyReport, StoryQAInputs } from './storyQA';
+import type { StoryQAInputs, StoryQAStatus } from './storyQA';
 import { buildStoryLeafQARequests, runStoryQAStructural, simulatePolicies, summarizePolicyReports } from './storyQA';
 import { useNarrativeStore } from './narrativeStore';
+
+export type { StoryQAState, StoryQAStatus } from './storyQA';
 
 /**
  * Оркестрация story QA (фаза 6): структурный отчёт (D2, sync) + симуляция
  * политик (D3, sync) + LLM-критик листьев (D4, async через text_gen,
  * ≤MAX_LEAF_QA_CALLS вызовов). Недоступность text_gen НЕ валит прогон —
  * детерминированные проверки ценны сами по себе, критик деградирует в warning.
+ *
+ * Отчёт живёт в narrativeStore (персистится): переходы между секциями,
+ * уход на канвас и reload его не теряют. Зависший state='running' после
+ * reload санитизирует initNarrative. Хук — тонкий view-адаптер.
  */
 
 const POLL_INTERVAL_MS = 2000;
 const POLL_TIMEOUT_MS = 180_000;
 
-export type StoryQAState = 'idle' | 'running' | 'done';
+const IDLE_STATUS: StoryQAStatus = { state: 'idle', issues: [], policyReports: [] };
 
-export type StoryQAStatus = {
-  state: StoryQAState;
-  issues: SegmentIssue[];
-  policyReports: PolicyReport[];
-};
+/** Прогон QA идёт в этой вкладке — второй запуск игнорируется. */
+let running = false;
 
-export function useStoryQA() {
-  const [status, setStatus] = useState<StoryQAStatus>({ state: 'idle', issues: [], policyReports: [] });
-  const runningRef = useRef(false);
-
-  const run = useCallback(async (brief: Brief) => {
-    if (runningRef.current) return;
-    runningRef.current = true;
+export async function runStoryQA(brief: Brief): Promise<void> {
+  if (running) return;
+  running = true;
+  const setStatus = (status: StoryQAStatus) => useNarrativeStore.getState().setStoryQA(status);
+  try {
     setStatus({ state: 'running', issues: [], policyReports: [] });
 
     const s = useNarrativeStore.getState();
@@ -45,7 +46,6 @@ export function useStoryQA() {
         ],
         policyReports: [],
       });
-      runningRef.current = false;
       return;
     }
 
@@ -84,9 +84,14 @@ export function useStoryQA() {
     }
 
     setStatus({ state: 'done', issues, policyReports });
-    runningRef.current = false;
-  }, []);
+  } finally {
+    running = false;
+  }
+}
 
+export function useStoryQA() {
+  const status = useNarrativeStore(s => s.storyQA ?? IDLE_STATUS);
+  const run = useCallback((brief: Brief) => runStoryQA(brief), []);
   return { run, status };
 }
 

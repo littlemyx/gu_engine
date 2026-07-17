@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   evaluateSlice,
+  matchesSlice,
   createSliceState,
   bracketOfAffection,
   evalGuard,
@@ -257,5 +258,49 @@ describe('форматирование для UI', () => {
     expect(formatEffect({ move: { char: 'kira', to: 'library' } })).toBe('move(kira → library)');
     expect(formatEffect({ rel: { char: 'kira', var: 'tension', delta: -0.05 } })).toBe('rel(kira, tension, −0.05)');
     expect(formatEffect({ setFlag: 'kira_left' })).toBe('setFlag(kira_left)');
+  });
+});
+
+describe('matchesSlice: малая стрелка (окно фаз)', () => {
+  const unit = (phase?: { fromPhase: number; toPhase: number }): EventDef => ({
+    id: 'u',
+    kind: 'dialogue',
+    at: { slot: { fromSlot: 0, toSlot: 11 }, ...(phase ? { phase } : {}) },
+    participants: ['yuki'],
+    guard: { all: [] },
+    effects: [],
+    priority: 10,
+  });
+  const at = (slot: number, phase?: number): TimeSlice => ({ z: slot, slot, ...(phase != null ? { phase } : {}) });
+
+  it('окна фаз нет — событие фаза-агностично (так живут биты хребта)', () => {
+    expect(matchesSlice(unit(), at(3, 0))).toBe(true);
+    expect(matchesSlice(unit(), at(3, 1))).toBe(true);
+  });
+
+  it('early-окно закрывается, когда фаза потрачена', () => {
+    const early = unit({ fromPhase: 0, toPhase: 0 });
+    expect(matchesSlice(early, at(3, 0))).toBe(true);
+    expect(matchesSlice(early, at(3, 1))).toBe(false);
+  });
+
+  it('late-окно открыто ТОЛЬКО поздно: «подбодрить вымотанную» рано не играется', () => {
+    const late = unit({ fromPhase: 1, toPhase: 1 });
+    expect(matchesSlice(late, at(3, 0))).toBe(false);
+    expect(matchesSlice(late, at(3, 1))).toBe(true);
+  });
+
+  it('фазы нет у среза — читается как свежая (0)', () => {
+    expect(matchesSlice(unit({ fromPhase: 0, toPhase: 0 }), at(3))).toBe(true);
+    expect(matchesSlice(unit({ fromPhase: 1, toPhase: 1 }), at(3))).toBe(false);
+  });
+
+  it('слот и фаза — независимые оси: вне слота не спасает свежая фаза', () => {
+    const u: EventDef = {
+      ...unit({ fromPhase: 0, toPhase: 0 }),
+      at: { slot: { fromSlot: 5, toSlot: 5 }, phase: { fromPhase: 0, toPhase: 0 } },
+    };
+    expect(matchesSlice(u, at(4, 0))).toBe(false);
+    expect(matchesSlice(u, at(5, 0))).toBe(true);
   });
 });

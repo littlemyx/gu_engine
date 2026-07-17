@@ -7,10 +7,11 @@ import type {
   StateVarPath,
   WorldModel,
 } from './types';
-import type { Calendar, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
-import { slotLabel } from './calendarTypes';
+import type { CastAgenda, Calendar, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
+import { slotLabel, windowTimeMarker } from './calendarTypes';
 import { ARCHETYPES } from './archetypes';
 import { computeBracketRanges } from './buildDialogueVariantRequest';
+import type { DialogueEncounterContext } from './buildDialogueVariantRequest';
 
 /**
  * Payload стадии dialogueUnit (фаза 3 calendar-branching): те же контекстные
@@ -32,6 +33,8 @@ export function buildDialogueUnitRequestPayload(
   worldModel: WorldModel,
   spine?: SpinePlan | null,
   unitGoal?: EventUnit | null,
+  liUnits: EventUnit[] = [],
+  agenda?: CastAgenda | null,
 ): {
   brief: Brief;
   liCard: LoveInterestCard;
@@ -39,6 +42,7 @@ export function buildDialogueUnitRequestPayload(
   storyContext: { location: string; timeMarker: string; recentEvents: string };
   bracket: DialogueVariantBracket;
   stateRanges: Record<StateVarPath, Range>;
+  encounterContext?: DialogueEncounterContext;
 } {
   const archetypeProfile = ARCHETYPES[li.archetype];
 
@@ -54,11 +58,20 @@ export function buildDialogueUnitRequestPayload(
         loc.pointsOfInterest.length ? ` Ключевые точки: ${loc.pointsOfInterest.join(', ')}.` : ''
       }`
     : brief.world.setting.place;
-  const contextSlot = unitGoal?.at.slot?.fromSlot ?? (firstSlot >= 0 ? firstSlot : -1);
-  const timeMarker = contextSlot >= 0 ? slotLabel(contextSlot, calendar) : '';
+  // Маркер — по ВСЕМУ окну юнита, а не по его первому слоту: окно шире части
+  // дня, и проза, знавшая только начало, здоровалась «Доброе утро» в вечерней
+  // сцене (живой плейтест). Промпт обязан видеть, что время суток не одно.
+  const unitWindow = unitGoal?.at.slot;
+  const timeMarker = unitWindow
+    ? windowTimeMarker(unitWindow, calendar)
+    : firstSlot >= 0
+    ? slotLabel(firstSlot, calendar)
+    : '';
 
   // Цель юнита ведёт разговор; logline хребта — фолбэк-колорит.
   const recentEvents = unitGoal?.goal?.trim() ? `Цель встречи: ${unitGoal.goal.trim()}` : spine?.logline?.trim() || '';
+
+  const encounterContext = buildEncounterContext(li, unitGoal, liUnits, agenda);
 
   return {
     brief,
@@ -71,6 +84,54 @@ export function buildDialogueUnitRequestPayload(
     },
     bracket,
     stateRanges: computeBracketRanges(bracket, archetypeProfile),
+    ...(encounterContext ? { encounterContext } : {}),
+  };
+}
+
+/**
+ * Порядковый номер встречи в арке LI — статически, из окон юнитов.
+ *
+ * Зачем: все три брекета генерятся заранее, поэтому рантайм-affection модели
+ * недоступен, и «positive» она писала как уже сложившуюся близость — отсюда
+ * признание от незнакомки. Индекс встречи промпт уже умеет читать (rule 8):
+ * первая встреча при preExistingRelationship = null — знакомство, без «как
+ * обычно». Тон, а не гейт: порядок держит цепочка битов.
+ */
+function buildEncounterContext(
+  li: LoveInterestCard,
+  unitGoal: EventUnit | null | undefined,
+  liUnits: EventUnit[],
+  agenda?: CastAgenda | null,
+): DialogueEncounterContext | undefined {
+  if (!unitGoal || liUnits.length === 0) return undefined;
+  const ordered = [...liUnits]
+    .filter(u => u.kind === 'dialogue' && u.at.slot != null)
+    .sort(
+      (a, b) =>
+        (a.arcStage ?? 1) - (b.arcStage ?? 1) ||
+        a.at.slot!.fromSlot - b.at.slot!.fromSlot ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+  const index = ordered.findIndex(u => u.id === unitGoal.id);
+  if (index < 0) return undefined;
+
+  // Ступень лестницы и её ПЕРСОНАЛЬНЫЙ смысл: без них модель пишет «встречу
+  // вообще» и в positive-брекете сползает в уже сложившуюся близость — отсюда
+  // и брались признания от почти незнакомых.
+  const stage = unitGoal.arcStage ?? 1;
+  const stageCount = Math.max(...liUnits.map(u => u.arcStage ?? 1), 1);
+  const stepMeaning = agenda?.goals?.find(g => g.arcStage === stage)?.description;
+
+  return {
+    encounterIndex: index,
+    totalPlannedEncounters: ordered.length,
+    goal: unitGoal.goal,
+    priorEncounters: [],
+    preExistingRelationship: li.preExistingRelationship,
+    stageIndex: stage,
+    stageCount,
+    ...(stepMeaning ? { stepMeaning } : {}),
+    ...(agenda?.idealRelationship ? { idealRelationship: agenda.idealRelationship } : {}),
   };
 }
 

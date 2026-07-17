@@ -1,6 +1,6 @@
 import type { Brief, SegmentIssue } from './types';
 import type { CastPlan } from './calendarTypes';
-import { DEFAULT_DAYPARTS } from './calendarTypes';
+import { DEFAULT_DAYPARTS, requiredArcStages } from './calendarTypes';
 
 /**
  * Валидация castPlan (стадия A1) против брифа.
@@ -10,11 +10,16 @@ import { DEFAULT_DAYPARTS } from './calendarTypes';
  * members[{id, isLI, agenda:{goals, weeklyPattern, locationTags}}].
  */
 
-/** Стадии арки, которые обязаны покрывать цели каждого персонажа. */
+/** Легаси-лестница: три ступени. Дефолт для вызовов без stageCount. */
 export const REQUIRED_ARC_STAGES = [1, 2, 3];
 
-export function validateCastPlan(plan: CastPlan, brief: Brief): SegmentIssue[] {
+export function validateCastPlan(
+  plan: CastPlan,
+  brief: Brief,
+  stageCount: number = REQUIRED_ARC_STAGES.length,
+): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
+  const stages = requiredArcStages(stageCount);
 
   // Состав: ровно id LI брифа — ни пропущенных, ни лишних.
   const briefIds = new Set(brief.loveInterests.map(li => li.id));
@@ -38,19 +43,50 @@ export function validateCastPlan(plan: CastPlan, brief: Brief): SegmentIssue[] {
     const scope = `members/${member.id}`;
     const { goals, weeklyPattern, locationTags } = member.agenda;
 
-    // Цели: непусты и покрывают стадии арки 1..3.
+    // Цели: непусты и покрывают КАЖДУЮ ступень лестницы 1..N. Число ступеней
+    // считается от длины истории: на трёх ступенях «знакомство → уязвимость →
+    // признание» соседние сцены расходятся на пропасть, и близость возникает
+    // рывком. Промежуточные ступени и есть плавность.
+    //
+    // Пустые цели — ОШИБКА (арки нет вовсе), а дыра в лестнице — ЗАМЕЧАНИЕ.
+    // Живой прогон объяснил почему: модель уверенно даёт 4 ступени из 5 и
+    // спотыкается на последней. Пока это была ошибка, три такие попытки роняли
+    // стадию в стаб — а у стаба целей НОЛЬ. Из-за одной недостающей ступени
+    // терялась вся арка. Лестница из 4 ступеней несравнимо лучше пустоты, и
+    // движок с ней работает штатно: высота берётся по факту (effectiveStageCount).
+    // Дожимать до N — дело фидбека ретрая (замечания в него тоже уходят).
     if (goals.length === 0) {
       issues.push({ severity: 'error', scope: `${scope}/goals`, message: `у "${member.id}" нет ни одной цели` });
     } else {
-      const stages = new Set(goals.map(g => g.arcStage));
-      for (const stage of REQUIRED_ARC_STAGES) {
-        if (!stages.has(stage)) {
+      const present = new Set(goals.map(g => g.arcStage));
+      for (const stage of stages) {
+        if (!present.has(stage)) {
           issues.push({
-            severity: 'error',
+            severity: 'warning',
             scope: `${scope}/goals`,
-            message: `цели "${member.id}" не покрывают стадию арки ${stage} (нужны 1=знакомство, 2=сближение, 3=кульминация)`,
+            message: `цели "${member.id}" не покрывают ступень близости ${stage} из ${stageCount} — лестница с пропуском: отношения прыгнут через ступень`,
           });
         }
+      }
+    }
+
+    // Своё представление персонажа об идеале/худшем — не украшение: на нём
+    // строится и тон поздних ступеней, и проза концовок. У каждого персонажа
+    // оно СВОЁ (в этом смысл per-LI арки), поэтому пустое поле — дефект.
+    if (member.isLI) {
+      if (!member.agenda.idealRelationship?.trim()) {
+        issues.push({
+          severity: 'warning',
+          scope: `${scope}/idealRelationship`,
+          message: `у "${member.id}" не описано, какие отношения он считает идеальными — концовки и поздние ступени останутся обезличенными`,
+        });
+      }
+      if (!member.agenda.worstRelationship?.trim()) {
+        issues.push({
+          severity: 'warning',
+          scope: `${scope}/worstRelationship`,
+          message: `у "${member.id}" не описано, какие отношения он считает худшими — плохая концовка останется обезличенной`,
+        });
       }
     }
 

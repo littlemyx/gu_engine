@@ -23,10 +23,20 @@ export type FlagId = string;
  * (anchorId/timeMarker); в календарной модели z = slot — глобальный индекс
  * (день × часть дня), а anchorId/timeMarker остаются для легаси-потребителей.
  */
-export type TimeSlice = { z: number; anchorId?: string; timeMarker?: string; slot?: number };
+export type TimeSlice = {
+  z: number;
+  anchorId?: string;
+  timeMarker?: string;
+  slot?: number;
+  /** Малая стрелка: фаза ВНУТРИ части дня (см. PHASES_PER_SLOT). Нет → 0. */
+  phase?: number;
+};
 
 /** Окно слотов [fromSlot, toSlot] включительно. */
 export type SlotWindow = { fromSlot: number; toSlot: number };
+
+/** Окно фаз [fromPhase, toPhase] внутри части дня — окно восприимчивости. */
+export type PhaseWindow = { fromPhase: number; toPhase: number };
 
 export type RelationshipState = {
   /** Спектр −1..1, как relationship[li].affection в game-компиляторе. */
@@ -72,6 +82,20 @@ export type Guard =
   | { slot: { op: '>=' | '<='; value: number } }
   | { at: { char: CharacterId; loc: LocationId } };
 
+/**
+ * id fired-зависимостей guard-а. Живёт рядом с Guard, а не в parseEventPool:
+ * обход нужен и цепочке битов (beatChain), а parseEventPool тянет guardFlags из
+ * validateSpine — импорт оттуда замкнул бы validateSpine → beatChain →
+ * parseEventPool → validateSpine.
+ */
+export function guardFiredIds(guard: Guard): string[] {
+  if ('all' in guard) return guard.all.flatMap(guardFiredIds);
+  if ('any' in guard) return guard.any.flatMap(guardFiredIds);
+  if ('not' in guard) return guardFiredIds(guard.not);
+  if ('fired' in guard) return [guard.fired];
+  return [];
+}
+
 export type Effect =
   | { rel: { char: CharacterId; var: string; delta: number; clamp?: [number, number] } }
   | { setFlag: FlagId }
@@ -81,8 +105,11 @@ export type Effect =
 export type EventDef = {
   id: string;
   kind: EventKind;
-  /** Маска привязки к y/z: событие рассматривается только в подходящем срезе. */
-  at: { anchorId?: string; locationId?: LocationId; slot?: SlotWindow };
+  /**
+   * Маска привязки к y/z: событие рассматривается только в подходящем срезе.
+   * `phase` — окно восприимчивости внутри части дня (нет → фаза любая).
+   */
+  at: { anchorId?: string; locationId?: LocationId; slot?: SlotWindow; phase?: PhaseWindow };
   participants: CharacterId[];
   /** «Если» — чистый предикат над EventContext. */
   guard: Guard;
@@ -218,6 +245,11 @@ export function matchesSlice(def: EventDef, slice: TimeSlice, sliceLocationId?: 
   if (def.at.slot) {
     const current = slice.slot ?? slice.z;
     if (current < def.at.slot.fromSlot || current > def.at.slot.toSlot) return false;
+  }
+  // Малая стрелка: окна фаз нет → событие фаза-агностично (биты хребта).
+  if (def.at.phase) {
+    const phase = slice.phase ?? 0;
+    if (phase < def.at.phase.fromPhase || phase > def.at.phase.toPhase) return false;
   }
   if (def.at.locationId && !def.at.anchorId && def.at.locationId !== sliceLocationId) return false;
   return true;

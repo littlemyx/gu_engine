@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryLeafQaData, GenerateStoryLeafQaResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateAnchorTransitionData, GenerateAnchorTransitionResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryLeafQaData, GenerateStoryLeafQaResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -95,6 +95,18 @@ export const generateSpine = <ThrowOnError extends boolean = false>(options: Opt
  */
 export const generateAnchorBeat = <ThrowOnError extends boolean = false>(options: Options<GenerateAnchorBeatData, ThrowOnError>) => (options.client ?? client).post<GenerateAnchorBeatResponses, unknown, ThrowOnError>({
     url: '/generate/anchorBeat',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Generate diegetic daypart-transition scenes (go to class, go to sleep)
+ */
+export const generateAnchorTransition = <ThrowOnError extends boolean = false>(options: Options<GenerateAnchorTransitionData, ThrowOnError>) => (options.client ?? client).post<GenerateAnchorTransitionResponses, unknown, ThrowOnError>({
+    url: '/generate/anchorTransition',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -1,7 +1,7 @@
 import type { EndingKind } from './types';
-import type { EventDef, Guard, SlotWindow } from './events';
+import type { EventDef, Guard, PhaseWindow, SlotWindow } from './events';
 
-export type { SlotWindow } from './events';
+export type { PhaseWindow, SlotWindow } from './events';
 
 /**
  * Календарная модель истории: время как первоклассная дискретная ось.
@@ -46,6 +46,27 @@ export const daypartOfSlot = (slot: number, cal: Calendar): string => cal.daypar
 /** «день 3 · вечер» (день 1-based для человека). */
 export const slotLabel = (slot: number, cal: Calendar): string =>
   `день ${dayOfSlot(slot, cal) + 1} · ${daypartOfSlot(slot, cal)}`;
+
+/**
+ * Маркер времени по ВСЕМУ окну встречи — то, что честно знает про неё проза.
+ *
+ * Живой плейтест: Асель говорила «Доброе утро» в ДЕНЬ 1 · ВЕЧЕР. Причина не в
+ * модели — маркер строился по ПЕРВОМУ слоту окна, и про остальные проза просто
+ * не знала. Окно шире одной части дня → время суток не определено, и приветствие
+ * по нему писать нельзя; об этом промпт и предупреждаем явно.
+ */
+export function windowTimeMarker(window: SlotWindow, cal: Calendar): string {
+  const from = Math.max(0, Math.trunc(window.fromSlot));
+  const to = Math.max(from, Math.trunc(window.toSlot));
+  const dayparts = new Set<string>();
+  for (let s = from; s <= to; s++) dayparts.add(daypartOfSlot(s, cal));
+  if (dayparts.size === 1) return slotLabel(from, cal);
+
+  const dayFrom = dayOfSlot(from, cal) + 1;
+  const dayTo = dayOfSlot(to, cal) + 1;
+  const days = dayFrom === dayTo ? `день ${dayFrom}` : `дни ${dayFrom}–${dayTo}`;
+  return `${days} · время суток РАЗНОЕ (${[...dayparts].join('/')}) — точный момент неизвестен`;
+}
 
 /** Акт слота по границам дней; акты 1-based. */
 export function actOfSlot(slot: number, cal: Calendar): number {
@@ -120,6 +141,158 @@ export function computeCalendarTargets(targetDurationMinutes: number): CalendarT
 }
 
 // ============================================================================
+// ЛЕСТНИЦА ОТНОШЕНИЙ (чистая математика + балансовые константы)
+// ============================================================================
+//
+// Арка LI — лестница из N ступеней близости вместо жёсткой тройки
+// «знакомство → уязвимость → признание»: трёхступенчатая арка на коротком
+// календаре давала скачок «вчера познакомились — сегодня романтический
+// конфликт». Ступени гейтятся движком по f(z, R, H): полы окон (z),
+// rel-пороги (R), fired-цепочки и one-shot встречи (H).
+//
+// Все балансовые константы живут здесь одной точкой — тюнинг после живого
+// плейтеста должен быть правкой одной строки, а не раскопками по модулям.
+
+/** Потолок rel-порогов лестницы: выше только клампы движка. */
+export const LADDER_AFFECTION_CEIL = 0.85;
+/** Доля шага ступени, которую гарантирует closing встречи (детерминированно). */
+export const LADDER_CLOSING_SHARE = 0.5;
+/** Жёсткий кламп |дельты| одного выбора в диалоге (parser + валидатор). */
+export const CHOICE_DELTA_BOUND = 0.1;
+/** Кап суммы дельт по ЛЮБОМУ пути root→closing (на var) — анти-гринд. */
+export const CHOICE_PATH_DELTA_CAP = 0.15;
+/** Гейн филлера-восстановления (догоняющий канал холодного пути). */
+export const FILLER_RECOVERY_DELTA = 0.04;
+
+// ── Малые часы: фазы внутри части дня ───────────────────────────────────────
+//
+// Большая стрелка (slot = день × часть дня) двигается ТОЛЬКО сюжетом: битами
+// хребта и якорными переходами («пойти спать»). Разговоры её не крутят —
+// плейтест показал, во что это выливается: беседа начиналась вечером, а после
+// прощания наступало утро, и ночь исчезала как побочный эффект.
+//
+// Малая стрелка — часы САМОГО СЛОТА, а не бюджет действий игрока. Разговор
+// расходует фазу; к поздней фазе персонаж «менее восприимчив» — глубокие ветки
+// закрываются, остаются сюжетные. Дефицит создаёт мир (люди заняты), а не
+// счётчик очков: игрок не видит числа, он видит, что человек уже не тот.
+
+/** Фаз в одной части дня: «первая половина / вторая половина». */
+export const PHASES_PER_SLOT = 2;
+
+/** Когда в пределах части дня уместен разговор — семантика от смысла сцены. */
+export type UnitTiming = 'early' | 'late' | 'any';
+
+/**
+ * Окно фаз по семантике контента.
+ *
+ * Восприимчивость — свойство СЦЕНЫ, а не позиции в слоте: «подбодрить
+ * вымотанную к концу смены» обязано открываться именно поздно, и жёсткое
+ * «глубокое — только на свежую голову» такую арку бы запретило. Поэтому окно
+ * выбирает генерация (поле timing у юнита), а лестница даёт лишь дефолт.
+ */
+export function phaseWindowForTiming(timing: UnitTiming): PhaseWindow {
+  const last = Math.max(0, PHASES_PER_SLOT - 1);
+  if (timing === 'early') return { fromPhase: 0, toPhase: 0 };
+  if (timing === 'late') return { fromPhase: last, toPhase: last };
+  return { fromPhase: 0, toPhase: last };
+}
+
+/**
+ * ДЕФОЛТ окна фаз для ступени s — когда генерация timing не указала.
+ *
+ * Ступень 1 и филлеры («поболтать») уместны в любой момент части дня; глубокий
+ * разговор ступени ≥2 по умолчанию требует свежей фазы. Это именно дефолт:
+ * собственный timing юнита его не перетирает (см. applyLadderGuards).
+ */
+export function phaseWindowForStage(stage: number): PhaseWindow {
+  return phaseWindowForTiming(stage >= 2 ? 'early' : 'any');
+}
+
+/** Подпись кнопки + нарация якорного перехода (ключ — индекс части дня). */
+export type AnchorNarration = { label: string; narration: string };
+export type AnchorNarrations = Record<number, AnchorNarration>;
+
+/**
+ * Парсер стадии anchorTransition. Терпим: мусорная запись отбрасывается, а не
+ * роняет стадию — у компилятора есть статичные фолбэки, и история играбельна
+ * даже с пустым результатом.
+ */
+export function parseAnchorTransitions(rawText: string, daypartCount: number): AnchorNarrations {
+  const parsed = JSON.parse(rawText) as { transitions?: unknown };
+  if (!Array.isArray(parsed.transitions)) throw new Error('anchorTransition missing transitions[]');
+  const out: AnchorNarrations = {};
+  for (const t of parsed.transitions as Record<string, unknown>[]) {
+    const idx = Number(t?.daypartIndex);
+    const label = String(t?.label ?? '').trim();
+    const narration = String(t?.narration ?? '').trim();
+    if (!Number.isInteger(idx) || idx < 0 || idx >= daypartCount || !label || !narration) continue;
+    out[idx] = { label, narration };
+  }
+  return out;
+}
+
+/** Число ступеней арки от длины истории: 3 дня → 4, 4 → 5, 12 → 9 (потолок). */
+export function arcStageCount(days: number): number {
+  return Math.min(9, Math.max(3, Math.trunc(days) + 1));
+}
+
+/** Обязательные ступени 1..N (контракт castPlan/eventPool). */
+export function requiredArcStages(stageCount: number): number[] {
+  return Array.from({ length: Math.max(1, Math.trunc(stageCount)) }, (_, i) => i + 1);
+}
+
+/**
+ * Rel-порог входа на ступень s: линейный подъём от старта архетипа (A0 =
+ * середина initialState.affection — то же значение, что дефолт stateSchema)
+ * к потолку. Headroom-relative: у «тёплых» архетипов (forbidden 0.5,
+ * mutual_pining 0.6) ступени НЕ вырождаются у потолка — шаг равномерно
+ * делит оставшийся запас, а не глобальную шкалу.
+ */
+export function ladderThreshold(a0: number, stage: number, stageCount: number): number {
+  if (stageCount <= 1) return a0;
+  const step = Math.max(0, LADDER_AFFECTION_CEIL - a0) / (stageCount - 1);
+  return Math.min(LADDER_AFFECTION_CEIL, a0 + (Math.max(1, stage) - 1) * step);
+}
+
+/**
+ * Пол дня ступени: раньше этого дня ступень s не играется, сколько бы
+ * affection ни набрали. «Надо переспать с мыслью» — статикой по календарю,
+ * без расширения Guard-грамматики. floor(((s−1)/N)·days): ступени 1-2 —
+ * день 0, дальше ~по ступени в день; последняя ступень — последний день.
+ */
+export function stageFloorDay(stage: number, stageCount: number, days: number): number {
+  if (stageCount <= 0 || days <= 0) return 0;
+  return Math.max(0, Math.floor(((Math.max(1, stage) - 1) / stageCount) * days));
+}
+
+/** Пол в слотах (первый слот дня-пола). */
+export function stageFloorSlot(stage: number, stageCount: number, cal: Calendar): number {
+  return stageFloorDay(stage, stageCount, cal.days) * cal.dayparts.length;
+}
+
+/**
+ * Детерминированный гейн closing-а встречи ступени s.
+ *
+ * Валюта арки НЕ доверяется LLM: жирные значения фармились бы холодной
+ * прогонкой, нулевые запирали бы лестницу навсегда. Гейн держит ДВА инварианта:
+ *
+ *   closing + CHOICE_PATH_DELTA_CAP ≥ шаг — тёплый разговор ОТКРЫВАЕТ следующую
+ *     ступень. Фиксированной доли для этого мало: при крупных шагах (N=3,
+ *     A0=0.2 → шаг 0.325) половина + выборы дают 0.31 < 0.325, и прилежный
+ *     игрок упирался бы в стену;
+ *   closing < шаг — холодная прогонка ОДНИМИ встречами не поднимает: подъём
+ *     обязан стоить игроку тёплых выборов, иначе ступень берётся молчанием.
+ */
+export function ladderClosingGain(a0: number, stage: number, stageCount: number): number {
+  const s = Math.max(1, Math.min(stage, stageCount));
+  const next = Math.min(s + 1, stageCount);
+  const step = ladderThreshold(a0, next, stageCount) - ladderThreshold(a0, s, stageCount);
+  if (step <= 0) return 0;
+  // Верхняя граница строго ниже шага — иначе холодный игрок поднимался бы даром.
+  return Math.min(step * 0.99, Math.max(LADDER_CLOSING_SHARE * step, step - CHOICE_PATH_DELTA_CAP));
+}
+
+// ============================================================================
 // CAST PLAN (проход A1: персоны + цели + weekly-паттерны по тегам локаций)
 // ============================================================================
 
@@ -134,6 +307,14 @@ export type CastGoal = {
 
 export type CastAgenda = {
   goals: CastGoal[];
+  /**
+   * Каким ЭТОТ персонаж видит идеал отношений и что для него — худший исход.
+   * У каждого своё: арка близости персонализирована, а не общая лестница.
+   * Кормит прозу концовок и тон поздних ступеней. Опционально — персистнутые
+   * агенды без этих полей грузятся как есть.
+   */
+  idealRelationship?: string;
+  worstRelationship?: string;
   /**
    * daypart → взвешенные теги локаций («где персонаж обычно бывает утром»).
    * Теги абстрактные (workplace/hangout/home) — на конкретные локации их
@@ -380,7 +561,13 @@ export function parseCastPlan(rawText: string): CastPlan {
     return {
       id: String(member.id),
       isLI: Boolean(member.isLI),
-      agenda: { goals, weeklyPattern, locationTags },
+      agenda: {
+        goals,
+        weeklyPattern,
+        locationTags,
+        ...(agendaRaw.idealRelationship ? { idealRelationship: String(agendaRaw.idealRelationship) } : {}),
+        ...(agendaRaw.worstRelationship ? { worstRelationship: String(agendaRaw.worstRelationship) } : {}),
+      },
     };
   });
 

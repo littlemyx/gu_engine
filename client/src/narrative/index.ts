@@ -134,6 +134,8 @@ export { validateCalendar } from './validateCalendar';
 export { validateCastPlan, REQUIRED_ARC_STAGES } from './validateCastPlan';
 export { buildCastPlanRequestPayload } from './buildCastPlanRequest';
 export { assignBeatSlots, buildScheduleStub } from './beatSchedule';
+export { applyBeatChain, deriveBeatChain, gatingUnitFor, storylineKeys, PLOT_LINE } from './beatChain';
+export type { BeatChain } from './beatChain';
 export { buildSchedule, validateSchedule } from './buildSchedule';
 export {
   parseEventPool,
@@ -153,7 +155,7 @@ export type { BulkCalendarPhase, BulkCalendarProgress, BulkCalendarRunOptions } 
 export { deriveCalendarMontage } from './calendarSliceModel';
 export type { CalendarMontageModel } from './calendarSliceModel';
 export { deriveLegacyOutline } from './deriveLegacyOutline';
-export { liLineColor, LI_LINE_PALETTE } from './sliceModel';
+export { liLineColor, LI_LINE_PALETTE, truncate } from './sliceModel';
 export type {
   MontageModel,
   MontageSlice,

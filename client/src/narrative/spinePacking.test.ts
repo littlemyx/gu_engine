@@ -183,6 +183,89 @@ describe('spine packing (branch-aware)', () => {
     expect(slots.path_a).toBe(slots.path_b);
   });
 
+  // Хребет для проверок совместимости пинов: одна развилка, два outcome-бита
+  // с настраиваемыми участниками/локациями в широком окне.
+  const pinSpine = (a: Partial<SpineBeat>, b: Partial<SpineBeat>, window = { fromSlot: 3, toSlot: 5 }): SpinePlan => ({
+    title: 't',
+    logline: '',
+    beats: [
+      beat({
+        id: 'bp',
+        kind: 'branchPoint',
+        act: 1,
+        window: { fromSlot: 0, toSlot: 0 },
+        establishes: ['faced'],
+        outcomes: [
+          { id: 'a', label: 'a', setsFlag: 'chose_a', summary: '' },
+          { id: 'b', label: 'b', setsFlag: 'chose_b', summary: '' },
+        ],
+      }),
+      beat({ id: 'path_a', act: 2, window, guard: guardFromRequires(['chose_a']), ...a }),
+      beat({ id: 'path_b', act: 2, window, guard: guardFromRequires(['chose_b']), ...b }),
+      beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 } }),
+    ],
+    endings: [{ id: 'n', kind: 'normal', liId: null, guard: guardFromRequires([]) }],
+  });
+
+  it('эксклюзивные биты с общим участником и РАЗНЫМИ локациями НЕ делят слот', () => {
+    // Регрессия: пины расписания затирали друг друга → «участник не в его локации».
+    const spine = pinSpine(
+      { participants: ['asel'], locationId: 'family_home' },
+      { participants: ['asel'], locationId: 'quiet_cafe' },
+    );
+    const slots = assignBeatSlots(spine, cal);
+    expect(slots.path_a).toBeDefined();
+    expect(slots.path_b).toBeDefined();
+    expect(slots.path_a).not.toBe(slots.path_b);
+  });
+
+  it('эксклюзивные биты с общим участником и ОДНОЙ локацией делят слот', () => {
+    const spine = pinSpine(
+      { participants: ['asel'], locationId: 'quiet_cafe' },
+      { participants: ['asel'], locationId: 'quiet_cafe' },
+    );
+    const slots = assignBeatSlots(spine, cal);
+    expect(slots.path_a).toBe(slots.path_b);
+  });
+
+  it('эксклюзивные биты без общих участников делят слот при разных локациях', () => {
+    const spine = pinSpine(
+      { participants: ['asel'], locationId: 'family_home' },
+      { participants: ['kira'], locationId: 'quiet_cafe' },
+    );
+    const slots = assignBeatSlots(spine, cal);
+    expect(slots.path_a).toBe(slots.path_b);
+  });
+
+  it('ошибка упаковки подсказывает ВЫХОД: назвать соперника и правило одной локации', () => {
+    // Сообщение уходит в фидбек ретрая. Живой прогон показал: без подсказки
+    // модель раз за разом разводит ветвевые биты одной развилки по разным
+    // локациям (правило живёт в планировщике, а промпт о нём молчал) — и три
+    // попытки подряд роняют стадию хребта.
+    const spine = pinSpine(
+      { participants: ['asel'], locationId: 'family_home' },
+      { participants: ['asel'], locationId: 'quiet_cafe' },
+      { fromSlot: 4, toSlot: 4 },
+    );
+    const [err] = packingErrors(spine);
+    expect(err).toBeTruthy();
+    expect(err.message).toContain('ОДНОЙ локации');
+    expect(err.message).toMatch(/path_a|path_b/); // назван конкретный бит-соперник
+    expect(err.message).toContain('family_home');
+  });
+
+  it('конфликт пинов в вырожденном окне → бит не размещён, ошибка упаковки', () => {
+    const spine = pinSpine(
+      { participants: ['asel'], locationId: 'family_home' },
+      { participants: ['asel'], locationId: 'quiet_cafe' },
+      { fromSlot: 4, toSlot: 4 },
+    );
+    const slots = assignBeatSlots(spine, cal);
+    const placed = ['path_a', 'path_b'].filter(id => slots[id] != null);
+    expect(placed.length).toBe(1);
+    expect(packingErrors(spine).length).toBeGreaterThan(0);
+  });
+
   it('переполненный акт (co-play битов больше, чем слотов) → ошибка даже после расширения', () => {
     // 4 ОБЩИХ (не ветвевых) бита в акт3 [6,8] = 3 слота → один не помещается.
     const spine: SpinePlan = {

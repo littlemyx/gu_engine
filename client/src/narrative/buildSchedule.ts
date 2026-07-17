@@ -64,11 +64,14 @@ function tagLocation(
   return locs[hash32(`${charId}:${tag}`, slot, seed) % locs.length];
 }
 
-/** Слот → id бита, назначенного на него (обратный индекс assignBeatSlots). */
-function beatBySlot(spine: SpinePlan, calendar: Calendar): Map<number, string> {
-  const bySlot = new Map<number, string>();
+/** Слот → id битов, назначенных на него (обратный индекс assignBeatSlots).
+ * Битов может быть несколько: взаимоисключающие исходы развилки делят слот. */
+function beatBySlot(spine: SpinePlan, calendar: Calendar): Map<number, string[]> {
+  const bySlot = new Map<number, string[]>();
   const assigned = assignBeatSlots(spine, calendar);
-  for (const [beatId, slot] of Object.entries(assigned)) bySlot.set(slot, beatId);
+  for (const [beatId, slot] of Object.entries(assigned)) {
+    bySlot.set(slot, [...(bySlot.get(slot) ?? []), beatId]);
+  }
   return bySlot;
 }
 
@@ -145,9 +148,10 @@ export function buildSchedule(
         const loc = schedule[liId][s];
         if (loc) set.add(loc);
       }
-      const beatId = bySlotBeat.get(s);
-      const beatLoc = beatId ? beatById.get(beatId)?.locationId : null;
-      if (beatLoc) set.add(beatLoc);
+      for (const beatId of bySlotBeat.get(s) ?? []) {
+        const beatLoc = beatById.get(beatId)?.locationId;
+        if (beatLoc) set.add(beatLoc);
+      }
       return set;
     };
 
@@ -266,18 +270,19 @@ export function validateSchedule(
       const loc = schedule[liId][s];
       if (loc) occupied.add(loc);
     }
-    const beatId = bySlotBeat.get(s);
-    const beat = beatId ? beatById.get(beatId) : null;
-    const beatLoc = beat?.locationId ?? null;
-    if (beatLoc) occupied.add(beatLoc);
+    const beatsAtSlot = (bySlotBeat.get(s) ?? [])
+      .map(id => beatById.get(id))
+      .filter((b): b is NonNullable<typeof b> => b != null);
+    const beatLocs = new Set(beatsAtSlot.map(b => b.locationId));
+    for (const loc of beatLocs) occupied.add(loc);
 
     // Конвергентные биты (finale/actGate) — скриптовая сходка: история сводит
     // персонажей в одну локацию, игрок туда ведётся, «куда пойти» не выбирает.
     // Требовать ≥2 локации на таком слоте неверно (иначе финал, где все LI
     // встречаются, всегда «пережат»).
-    const isConvergence = beat?.kind === 'finale' || beat?.kind === 'actGate';
+    const isConvergence = beatsAtSlot.some(b => b.kind === 'finale' || b.kind === 'actGate');
 
-    const maxOccupants = liIds.length + (beatLoc ? 1 : 0);
+    const maxOccupants = liIds.length + beatLocs.size;
     const required = Math.min(2, available.size, maxOccupants);
     if (!isConvergence && occupied.size < required) {
       issues.push({

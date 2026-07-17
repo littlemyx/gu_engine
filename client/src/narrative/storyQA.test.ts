@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Calendar, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
-import { guardFromRequires } from './calendarTypes';
+import { PHASES_PER_SLOT, guardFromRequires, ladderClosingGain } from './calendarTypes';
+import { archetypeAffectionStart } from './ladderGuards';
 import type { DialogueUnit } from './dialogueUnit';
 import type { DialogueVariantBracket, SegmentIssue } from './types';
 import { SAMPLE_BRIEF } from './sampleBrief';
@@ -189,6 +190,149 @@ describe('runStoryQAStructural (D2)', () => {
   });
 });
 
+describe('simulatePolicies: цепочка порядка', () => {
+  it('цепочка доезжает до симуляции: биты сыграны по порядку, нарушений нет', () => {
+    // Ловушка remap-а: evaluateSlice пишет в fired id ДЕФА (beat:<id>), а
+    // evalGuard сравнивает с сырым {fired}. Без remap ни одно звено цепочки не
+    // выполнимо → b2/b3 не сыграют и финал не будет достигнут.
+    const [report] = simulatePolicies(mkInputs(simSpine(), []), ['spine-only']);
+    expect(report.orderViolations).toEqual([]);
+    expect(report.reachedFinale).toBe(true);
+    expect(report.firedBeats.indexOf('b1')).toBeLessThan(report.firedBeats.indexOf('b2'));
+    expect(report.firedBeats).toContain('b3');
+    expect(summarizePolicyReports([report]).filter(i => i.severity === 'error')).toEqual([]);
+  });
+
+  it('нарушение порядка в отчёте → error в summary', () => {
+    const broken = { ...simulatePolicies(mkInputs(simSpine(), []), ['spine-only'])[0], orderViolations: ['b2 до b1'] };
+    const errs = summarizePolicyReports([broken]).filter(i => i.severity === 'error');
+    expect(errs.some(i => i.message.includes('порядок битов нарушен'))).toBe(true);
+  });
+
+  it('РЕПОРТНУТЫЙ БАГ: признание не стреляет до кафе-разговора, финал достижим', () => {
+    // Юки в кафе (loc_c) слоты 0-5, в парке (loc_b) слоты 6-8; её единственный
+    // бит — признание в парке. Гейт головы = кафе-встреча строго раньше.
+    const parkSpine: SpinePlan = {
+      title: 't',
+      logline: 'l',
+      beats: [
+        beat({
+          id: 'park_confession',
+          act: 3,
+          window: { fromSlot: 6, toSlot: 8 },
+          locationId: 'loc_b',
+          participants: ['yuki'],
+        }),
+        beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, locationId: 'loc_b' }),
+      ],
+      endings: [{ id: 'e1', kind: 'normal', liId: null, guard: { all: [] } }],
+    };
+    const cafeUnit = unit('filler_yuki_loc_c_0', 'loc_c', {
+      participants: ['yuki'],
+      at: { locationId: 'loc_c', slot: { fromSlot: 0, toSlot: 5 } },
+      effects: [],
+    });
+    const yukiSched: CharacterSchedule = {
+      ...schedule,
+      yuki: [
+        'loc_c',
+        'loc_c',
+        'loc_c',
+        'loc_c',
+        'loc_c',
+        'loc_c',
+        'loc_b',
+        'loc_b',
+        'loc_b',
+        'loc_b',
+        'loc_b',
+        'loc_b',
+      ],
+    };
+
+    // Игрок ходит за Юки: кафе → парк. Разговор случается РАНЬШЕ признания.
+    const [followsYuki] = simulatePolicies({ ...mkInputs(parkSpine, [cafeUnit]), schedule: yukiSched }, [
+      'greedy-li:yuki',
+    ]);
+    expect(followsYuki.firedUnits).toContain('filler_yuki_loc_c_0');
+    expect(followsYuki.firedBeats).toContain('park_confession');
+    expect(followsYuki.orderViolations).toEqual([]);
+    expect(followsYuki.reachedFinale).toBe(true);
+
+    // Без кафе-встречи в пуле признание недостижимо, но финал безусловен —
+    // история всё равно завершается (гейт не создаёт дедлока).
+    const [noTalk] = simulatePolicies({ ...mkInputs(parkSpine, []), schedule: yukiSched }, ['greedy-li:yuki']);
+    expect(noTalk.reachedFinale).toBe(true);
+  });
+
+  it('гейт головы не даёт ложной ошибки spine-only (та в кафе не заходит)', () => {
+    // spine-only ходит ТОЛЬКО по локациям битов, поэтому кафе-встречу зажечь не
+    // может и признание у неё не сыграет. Но финал безусловен и конвергентен —
+    // достижимость финала не страдает, значит освобождать spine-only от
+    // unit-гейтов не нужно: ложного «не достигает финала» нет.
+    const parkSpine: SpinePlan = {
+      title: 't',
+      logline: 'l',
+      beats: [
+        beat({
+          id: 'park_confession',
+          act: 3,
+          window: { fromSlot: 6, toSlot: 8 },
+          locationId: 'loc_b',
+          participants: ['yuki'],
+        }),
+        beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, locationId: 'loc_b' }),
+      ],
+      endings: [{ id: 'e1', kind: 'normal', liId: null, guard: { all: [] } }],
+    };
+    const cafeUnit = unit('filler_yuki_loc_c_0', 'loc_c', {
+      participants: ['yuki'],
+      at: { locationId: 'loc_c', slot: { fromSlot: 0, toSlot: 5 } },
+      effects: [],
+    });
+    const [report] = simulatePolicies(mkInputs(parkSpine, [cafeUnit]), ['spine-only']);
+    expect(report.reachedFinale).toBe(true);
+    expect(report.orderViolations).toEqual([]);
+    expect(summarizePolicyReports([report]).filter(i => i.severity === 'error')).toEqual([]);
+  });
+});
+
+describe('simulatePolicies: лестница отношений', () => {
+  /** Пул Юки: ступень 1 (кафе, рано) → ступень 2 (кафе, позже). */
+  const ladderUnits = (): EventUnit[] => [
+    unit('y1', 'loc_b', {
+      participants: ['yuki'],
+      at: { locationId: 'loc_b', slot: { fromSlot: 0, toSlot: 2 } },
+      effects: [],
+      arcStage: 1,
+    }),
+    unit('y2', 'loc_b', {
+      participants: ['yuki'],
+      at: { locationId: 'loc_b', slot: { fromSlot: 3, toSlot: 11 } },
+      effects: [],
+      arcStage: 2,
+    }),
+  ];
+
+  it('отношения стартуют с АРХЕТИПНЫХ значений, а не с нуля', () => {
+    // Слепое пятно: forbidden-архетип (Асель) начинает игру на 0.5, а симуляция
+    // считала с нуля — то есть проверяла игру, которой не существует.
+    const [r] = simulatePolicies(mkInputs(simSpine(), []), ['spine-only']);
+    expect(r.relFinal.asel).toBeCloseTo(archetypeAffectionStart(SAMPLE_BRIEF, 'asel'));
+    expect(r.relFinal.asel).toBeGreaterThan(0.4);
+  });
+
+  it('холодный прогон НЕ поднимается на ступень 2, тёплый — поднимается', () => {
+    // Ровно то, ради чего лестница: близость нельзя набрать одним присутствием.
+    const inputs = { ...mkInputs(simSpine(), ladderUnits()), unitProse: {} };
+    const [cold] = simulatePolicies(inputs, ['greedy-li:yuki']); // choiceBias 0
+    const [warm] = simulatePolicies(inputs, ['warm-li:yuki']);
+    expect(cold.firedUnits).toContain('y1');
+    expect(cold.firedUnits).not.toContain('y2'); // порог ступени 2 не взят
+    expect(warm.firedUnits).toContain('y2'); // тёплые выборы открыли ступень
+  });
+});
+
 describe('simulatePolicies (D3)', () => {
   it('spine-only достигает финала и концовки первой ветки', () => {
     const inputs = mkInputs(simSpine(), [unit('u1', 'loc_c'), unit('u2', 'loc_a')], {
@@ -202,7 +346,13 @@ describe('simulatePolicies (D3)', () => {
     expect(report.firedBeats).toEqual(['b1', 'b2', 'b3', 'bp', 'fin']);
     expect(report.firedUnits).toContain('u2'); // u2 в loc_a срабатывает по пути
     expect(report.deadSlots).toEqual([]);
-    expect(report.relFinal.kira).toBeCloseTo(0.2); // rel-эффект u2
+    // Отношения = архетипный старт Киры + детерминированный гейн ступени.
+    // Раньше симуляция считала с НУЛЯ, зато применяла rel-эффекты пула, которых
+    // собранная игра НИКОГДА не применяла: QA валидировал не ту игру. Теперь
+    // валюта арки одна и та же по обе стороны, поэтому +0.2 от LLM здесь нет.
+    const kiraStart = archetypeAffectionStart(SAMPLE_BRIEF, 'kira');
+    expect(kiraStart).toBeCloseTo(0.1);
+    expect(report.relFinal.kira).toBeCloseTo(kiraStart + ladderClosingGain(kiraStart, 1, 3));
   });
 
   it('финал, зависящий от юнита в непосещаемой локации, валит spine-only; summarize даёт error', () => {
@@ -263,5 +413,62 @@ describe('buildStoryLeafQARequests (D4)', () => {
     spine.endings = [{ id: 'e_ghost', kind: 'normal', liId: null, guard: guardFromRequires(['never_set']) }];
     const payloads = buildStoryLeafQARequests(mkInputs(spine, []));
     expect(payloads[0].endings.map(e => e.id)).toEqual(['e_ghost']);
+  });
+});
+
+describe('simulatePolicies: малая стрелка внутри слота', () => {
+  const twoUnits = (
+    phaseA?: { fromPhase: number; toPhase: number },
+    phaseB?: { fromPhase: number; toPhase: number },
+  ) => [
+    unit('u_early', 'loc_a', {
+      participants: ['kira'],
+      at: { locationId: 'loc_a', slot: { fromSlot: 0, toSlot: 11 }, ...(phaseA ? { phase: phaseA } : {}) },
+      effects: [],
+    }),
+    unit('u_second', 'loc_a', {
+      participants: ['kira'],
+      at: { locationId: 'loc_a', slot: { fromSlot: 0, toSlot: 11 }, ...(phaseB ? { phase: phaseB } : {}) },
+      effects: [],
+    }),
+  ];
+  const kiraAllDay: CharacterSchedule = { ...schedule, kira: new Array(12).fill('loc_a') };
+
+  it('за один слот играется несколько разговоров — тариф «встреча = слот» отменён', () => {
+    const [r] = simulatePolicies({ ...mkInputs(simSpine(), twoUnits()), schedule: kiraAllDay }, ['greedy-li:kira']);
+    expect(r.firedUnits).toContain('u_early');
+    expect(r.firedUnits).toContain('u_second');
+    expect(r.actsPlayed).toBeGreaterThanOrEqual(2);
+  });
+
+  it('late-юнит не стреляет, пока фаза свежая: восприимчивость — свойство сцены', () => {
+    // Один юнит в слоте открыт только поздно. Он обязан дождаться, пока фазу
+    // потратит другой разговор, — иначе «подбодрить вымотанного» игралось бы
+    // с порога, и смысл окна терялся.
+    const last = PHASES_PER_SLOT - 1;
+    const [r] = simulatePolicies(
+      {
+        ...mkInputs(simSpine(), twoUnits({ fromPhase: 0, toPhase: 0 }, { fromPhase: last, toPhase: last })),
+        schedule: kiraAllDay,
+      },
+      ['greedy-li:kira'],
+    );
+    // Оба сыграли, но поздний — только после того, как ранний выжег фазу.
+    expect(r.firedUnits).toContain('u_early');
+    expect(r.firedUnits).toContain('u_second');
+    expect(r.firedUnits.indexOf('u_early')).toBeLessThan(r.firedUnits.indexOf('u_second'));
+  });
+
+  it('late-юнит в одиночку недостижим: фазу сжечь нечем', () => {
+    const last = PHASES_PER_SLOT - 1;
+    const lateOnly = [
+      unit('u_late', 'loc_a', {
+        participants: ['kira'],
+        at: { locationId: 'loc_a', slot: { fromSlot: 0, toSlot: 11 }, phase: { fromPhase: last, toPhase: last } },
+        effects: [],
+      }),
+    ];
+    const [r] = simulatePolicies({ ...mkInputs(simSpine(), lateOnly), schedule: kiraAllDay }, ['greedy-li:kira']);
+    expect(r.firedUnits).not.toContain('u_late');
   });
 });

@@ -56,6 +56,11 @@ export interface CastPlanRequest {
   /** Только профили архетипов, использованных LI брифа. */
   archetypeProfiles: Record<string, unknown>;
   /**
+   * arcStageCount — высота лестницы близости (число целей на персонажа).
+   * Зеркало client/src/narrative/buildCastPlanRequest.ts — менять синхронно.
+   */
+  targets?: { arcStageCount: number };
+  /**
    * Previously generated cast plan that failed validation. Present together
    * with previousIssues during retry-with-feedback flow.
    */
@@ -177,6 +182,16 @@ export interface DialogueUnitRequest {
     liArcSummary?: string;
     priorEncounters: { anchorId: string; location: string; timeMarker: string; goal: string }[];
     anchorBeatText?: string;
+    /**
+     * Знакомы ли герои до начала истории. Зеркало
+     * client/src/narrative/buildDialogueVariantRequest.ts — менять синхронно.
+     */
+    preExistingRelationship?: string | null;
+    /** Ступень лестницы близости, её высота и персональный смысл ступени. */
+    stageIndex?: number;
+    stageCount?: number;
+    stepMeaning?: string;
+    idealRelationship?: string;
   };
   /**
    * Previously generated unit that failed validation. Present together
@@ -257,4 +272,12 @@ export interface BatchState {
   batchId: string;
   createdAt: string;
   items: Record<string, ItemState>;
+}
+
+export interface AnchorTransitionRequest {
+  brief: unknown;
+  /** Части дня календаря по порядку; последняя — та, из которой уходят спать. */
+  dayparts: string[];
+  /** Имя домашней локации героя — куда ведёт сон. */
+  homeLocationName: string;
 }

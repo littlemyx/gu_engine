@@ -8,14 +8,21 @@ import type { Brief } from './types';
 
 const brief: Brief = SAMPLE_BRIEF; // LI: kira, yuki, asel
 
-const goals = (memberId: string) =>
-  [1, 2, 3].map(stage => ({ id: `${memberId}_g${stage}`, description: `цель ${stage}`, arcStage: stage }));
+/** Лестница из N ступеней без пропусков. */
+const goals = (memberId: string, stageCount = 3) =>
+  Array.from({ length: stageCount }, (_, i) => i + 1).map(stage => ({
+    id: `${memberId}_g${stage}`,
+    description: `цель ${stage}`,
+    arcStage: stage,
+  }));
 
 const member = (id: string, patch?: Partial<CastMember['agenda']>): CastMember => ({
   id,
   isLI: true,
   agenda: {
     goals: goals(id),
+    idealRelationship: 'идеал этого персонажа',
+    worstRelationship: 'худший исход для него',
     weeklyPattern: {
       [DEFAULT_DAYPARTS[0]]: [{ tag: 'workplace', weight: 2 }],
       [DEFAULT_DAYPARTS[1]]: [{ tag: 'hangout', weight: 1 }],
@@ -38,6 +45,38 @@ describe('validateCastPlan', () => {
     expect(validateCastPlan(validPlan(), brief)).toEqual([]);
   });
 
+  it('дыра в лестнице — ЗАМЕЧАНИЕ, не ошибка: 4 ступени лучше стаба с нулём', () => {
+    // Регресс живого прогона: пока это была ошибка, модель (она уверенно даёт
+    // 4 из 5 и спотыкается на последней) трижды проваливала стадию, и та
+    // роняла каст в стаб — а у стаба целей НЕТ ВООБЩЕ. Из-за одной ступени
+    // терялась вся арка. Дожимать до N — дело фидбека, а не ультиматума.
+    const issues = validateCastPlan(validPlan(), brief, 5);
+    expect(issues.filter(i => i.severity === 'error')).toEqual([]);
+
+    const warns = issues.filter(i => i.severity === 'warning' && i.scope === 'members/kira/goals');
+    expect(warns.some(i => i.message.includes('ступень близости 4'))).toBe(true);
+    expect(warns.some(i => i.message.includes('ступень близости 5'))).toBe(true);
+  });
+
+  it('целей нет вовсе — ошибка: арки не существует', () => {
+    const plan = validPlan();
+    plan.members[0] = member('kira', { goals: [] });
+    expect(errorsOf(plan).some(i => i.scope === 'members/kira/goals')).toBe(true);
+  });
+
+  it('план на 5 ступеней против N=5 проходит', () => {
+    const plan: CastPlan = { members: brief.loveInterests.map(li => member(li.id, { goals: goals(li.id, 5) })) };
+    expect(validateCastPlan(plan, brief, 5).filter(i => i.severity === 'error')).toEqual([]);
+  });
+
+  it('без ideal/worst — warning: концовки останутся обезличенными', () => {
+    const plan = validPlan();
+    plan.members[0] = member('kira', { idealRelationship: '', worstRelationship: undefined });
+    const warns = validateCastPlan(plan, brief).filter(i => i.severity === 'warning');
+    expect(warns.some(i => i.scope === 'members/kira/idealRelationship')).toBe(true);
+    expect(warns.some(i => i.scope === 'members/kira/worstRelationship')).toBe(true);
+  });
+
   it('пропущенный LI брифа — error', () => {
     const plan = validPlan();
     plan.members = plan.members.filter(m => m.id !== 'yuki');
@@ -57,14 +96,18 @@ describe('validateCastPlan', () => {
     expect(errorsOf(plan).some(i => i.scope === 'members/kira/goals')).toBe(true);
   });
 
-  it('непокрытая стадия арки — error на каждую дыру', () => {
+  it('непокрытая ступень лестницы — warning на каждую дыру (в фидбек, но не в блок)', () => {
     const plan = validPlan();
     plan.members[0] = member('kira', {
       goals: [{ id: 'g1', description: 'только знакомство', arcStage: 1 }],
     });
-    const errs = errorsOf(plan).filter(i => i.scope === 'members/kira/goals');
-    expect(errs.some(i => i.message.includes('стадию арки 2'))).toBe(true);
-    expect(errs.some(i => i.message.includes('стадию арки 3'))).toBe(true);
+    const warns = validateCastPlan(plan, brief).filter(
+      i => i.severity === 'warning' && i.scope === 'members/kira/goals',
+    );
+    expect(warns.some(i => i.message.includes('ступень близости 2'))).toBe(true);
+    expect(warns.some(i => i.message.includes('ступень близости 3'))).toBe(true);
+    // Но план принимаем: одна ступень — плохая арка, ноль ступеней — никакой.
+    expect(errorsOf(plan)).toEqual([]);
   });
 
   it('часть дня без записей weeklyPattern — error', () => {
@@ -90,9 +133,11 @@ describe('validateCastPlan', () => {
     expect(issues.some(i => i.severity === 'warning' && i.message.includes('вес'))).toBe(true);
   });
 
-  it('стаб-план валиден по всем проверкам, кроме пустых goals', () => {
-    // Стаб остаётся фолбэком LLM-стадии: паттерны и теги полны, но целей нет.
+  it('стаб-план валиден по всем проверкам, кроме пустых goals и ideal/worst', () => {
+    // Стаб остаётся фолбэком LLM-стадии: паттерны и теги полны, но целей и
+    // персонального представления об отношениях у него нет — их даёт LLM.
     const issues = validateCastPlan(buildStubCastPlan(brief), brief);
-    expect(issues.every(i => i.scope.endsWith('/goals'))).toBe(true);
+    expect(issues.every(i => /\/(goals|idealRelationship|worstRelationship)$/.test(i.scope))).toBe(true);
+    expect(issues.filter(i => i.severity === 'error').every(i => i.scope.endsWith('/goals'))).toBe(true);
   });
 });

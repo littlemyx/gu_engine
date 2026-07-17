@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { DialogueUnit, DialogueUnitChoice, DialogueUnitNode } from './dialogueUnit';
-import { breakDialogueCycles, parseDialogueUnit, validateDialogueUnit } from './dialogueUnit';
+import {
+  breakDialogueCycles,
+  normalizeChoicePathDeltas,
+  lintTimeOfDay,
+  lintFarewellInBody,
+  parseDialogueUnit,
+  validateDialogueUnit,
+} from './dialogueUnit';
+import { CHOICE_PATH_DELTA_CAP } from './calendarTypes';
 
 const LI = 'kira';
 
@@ -207,6 +215,117 @@ describe('parseDialogueUnit', () => {
     expect(() => parseDialogueUnit('{"bracket": "neutral"}')).toThrow(/nodes or entryNodeId/);
     expect(() => parseDialogueUnit('not json')).toThrow(/JSON parse failed/);
   });
+
+  it('щедрая дельта от LLM клампится на входе (±0.1)', () => {
+    // Промпт просит -0.05..+0.1, но численно это не проверялось: одна дельта
+    // +0.5 брала бы ступень лестницы за один выбор.
+    const u = validUnit() as unknown as {
+      nodes: { choices: { effects: { stateDeltas: Record<string, number> } }[] }[];
+    };
+    u.nodes[1].choices[0].effects.stateDeltas[`relationship[${LI}].affection`] = 0.5;
+    u.nodes[1].choices[0].effects.stateDeltas[`relationship[${LI}].trust`] = -0.9;
+    const parsed = parseDialogueUnit(JSON.stringify(u));
+    const d = parsed.nodes[1].choices[0].effects.stateDeltas;
+    expect(d[`relationship[${LI}].affection`]).toBe(0.1);
+    expect(d[`relationship[${LI}].trust`]).toBe(-0.1);
+  });
+});
+
+describe('validateDialogueUnit: анти-гринд по пути', () => {
+  /** Цепочка из n выборов по delta, все ведут к closing. */
+  const chainUnit = (steps: number, delta: number): DialogueUnit => {
+    const key = `relationship[${LI}].affection`;
+    const nodes: DialogueUnitNode[] = [];
+    for (let i = 1; i <= steps; i++) {
+      nodes.push(
+        node({
+          id: `n${i}`,
+          dialogue: [{ speaker: LI, emotion: 'soft', line: 'Понимаю.' }],
+          choices: [
+            choice({
+              id: `c${i}`,
+              kind: 'say',
+              text: 'Продолжить',
+              next: i === steps ? `n${steps + 1}` : `n${i + 1}`,
+              effects: { stateDeltas: { [key]: delta }, flagSet: [], flagClear: [] },
+            }),
+            choice({ id: `bye${i}`, kind: 'farewell', text: 'Попрощаться', next: 'nc' }),
+          ],
+        }),
+      );
+    }
+    nodes.push(
+      node({ id: `n${steps + 1}`, choices: [choice({ id: 'cf', kind: 'farewell', text: 'Пора', next: 'nc' })] }),
+    );
+    nodes.push(
+      node({ id: 'nc', closing: true, dialogue: [{ speaker: LI, emotion: 'happy', line: 'Пока!' }], choices: [] }),
+    );
+    return { id: 'u', liId: LI, bracket: 'neutral', entryNodeId: 'n1', nodes };
+  };
+
+  const errs = (u: DialogueUnit) => validateDialogueUnit(u, LI).filter(i => i.severity === 'error');
+
+  it('умеренный путь проходит', () => {
+    expect(errs(chainUnit(2, 0.05))).toEqual([]); // сумма +0.10 ≤ 0.15
+  });
+
+  it('длинная цепочка мелких плюсов ловится (кламп на одну дельту тут бессилен)', () => {
+    // 4 × 0.1 = +0.4 за один разговор — перепрыгивает ступень с наскока.
+    const e = errs(chainUnit(4, 0.1));
+    expect(e.some(i => i.scope === 'deltas' && i.message.includes('+0.40'))).toBe(true);
+  });
+
+  it('холодный путь ограничен симметрично', () => {
+    const e = errs(chainUnit(4, -0.1));
+    expect(e.some(i => i.scope === 'deltas' && i.message.includes('−0.40'))).toBe(true);
+  });
+
+  describe('normalizeChoicePathDeltas', () => {
+    const key = `relationship[${LI}].affection`;
+    const deltasOf = (u: DialogueUnit) =>
+      u.nodes.flatMap(n => n.choices.map(c => c.effects.stateDeltas[key]).filter(d => d != null));
+
+    it('ужимает перебор до капа — и юнит становится валидным', () => {
+      // Живой прогон: ВСЕ 34 юнита падали здесь. Модель писала ровно то, что
+      // просит промпт (шаг −0.05…+0.1), а 4 шага подряд дают +0.4.
+      const { unit, scaled } = normalizeChoicePathDeltas(chainUnit(4, 0.1));
+      expect(scaled).toEqual([`${key}: ±0.40 → ±0.15`]);
+      expect(errs(unit)).toEqual([]);
+    });
+
+    it('сохраняет пропорции выборов: сжатие — не уравниловка', () => {
+      const u: DialogueUnit = {
+        ...chainUnit(2, 0.1),
+      };
+      // Первый выбор вдвое «теплее» второго — после нормировки должен им и остаться.
+      u.nodes[0].choices[0].effects.stateDeltas[key] = 0.2;
+      u.nodes[1].choices[0].effects.stateDeltas[key] = 0.1;
+      const { unit } = normalizeChoicePathDeltas(u);
+      const [a, b] = deltasOf(unit);
+      expect(a / b).toBeCloseTo(2, 2);
+      expect(a + b).toBeLessThanOrEqual(CHOICE_PATH_DELTA_CAP + 1e-9);
+    });
+
+    it('умеренный путь не трогает вовсе (идемпотентность на валидном)', () => {
+      const src = chainUnit(2, 0.05);
+      const { unit, scaled } = normalizeChoicePathDeltas(src);
+      expect(scaled).toEqual([]);
+      expect(unit).toBe(src);
+    });
+
+    it('повторный вызов ничего не меняет', () => {
+      const once = normalizeChoicePathDeltas(chainUnit(4, 0.1)).unit;
+      const twice = normalizeChoicePathDeltas(once);
+      expect(twice.scaled).toEqual([]);
+      expect(deltasOf(twice.unit)).toEqual(deltasOf(once));
+    });
+
+    it('холодный путь ужимается симметрично, знак сохраняется', () => {
+      const { unit } = normalizeChoicePathDeltas(chainUnit(4, -0.1));
+      expect(errs(unit)).toEqual([]);
+      expect(deltasOf(unit).every(d => d < 0)).toBe(true);
+    });
+  });
 });
 
 describe('breakDialogueCycles', () => {
@@ -278,5 +397,116 @@ describe('breakDialogueCycles', () => {
     const { unit: same, broken } = breakDialogueCycles(u);
     expect(broken).toEqual([]);
     expect(errorsOf(same).some(e => e.message.includes('цикл'))).toBe(true);
+  });
+});
+
+describe('lintTimeOfDay: проза не врёт про время суток', () => {
+  const withLine = (line: string): DialogueUnit => ({
+    id: 'u',
+    liId: LI,
+    bracket: 'neutral',
+    entryNodeId: 'n1',
+    nodes: [
+      node({
+        id: 'n1',
+        dialogue: [{ speaker: LI, emotion: 'idle', line }],
+        choices: [choice({ id: 'c', kind: 'farewell', text: 'Пора', next: 'nc' })],
+      }),
+      node({ id: 'nc', closing: true, dialogue: [], choices: [] }),
+    ],
+  });
+
+  it('окно шире части дня — приветствие запрещено: в половине слотов оно ложь', () => {
+    // Живой плейтест: Асель говорит «Доброе утро» в ДЕНЬ 1 · ВЕЧЕР.
+    const e = lintTimeOfDay(withLine('Доброе утро. Рада видеть тебя.'), ['утро', 'день', 'вечер']);
+    expect(e.some(i => i.severity === 'error' && i.scope === 'timeOfDay/n1')).toBe(true);
+  });
+
+  it('окно в одной части дня — совпадающее приветствие проходит', () => {
+    expect(lintTimeOfDay(withLine('Доброе утро.'), ['утро'])).toEqual([]);
+  });
+
+  it('окно в одной части дня — НЕсовпадающее приветствие ловится', () => {
+    const e = lintTimeOfDay(withLine('Доброе утро.'), ['вечер']);
+    expect(e[0]?.severity).toBe('error');
+    expect(e[0]?.message).toContain('утро');
+  });
+
+  it('время-нейтральная реплика проходит при любом окне', () => {
+    expect(lintTimeOfDay(withLine('Рада тебя видеть.'), ['утро', 'вечер'])).toEqual([]);
+  });
+
+  it('е-написание ловится наравне с ё: LLM пишет «днем», а не «днём»', () => {
+    // Без ё-нормализации маркер «сегодня днём» не совпал бы с выводом модели,
+    // и линт молча пропустил бы привязку к части дня.
+    const e = lintTimeOfDay(withLine('Сегодня днем ты выглядишь усталой.'), ['вечер']);
+    expect(e[0]?.severity).toBe('error');
+  });
+
+  it('голое наречие времени НЕ считается привязкой сцены: воспоминание — не «сейчас»', () => {
+    // «Я утром видела тебя в библиотеке» — воспоминание, а не приветствие.
+    // Ложный error жёг бы ретраи (автор платит за генерацию).
+    expect(lintTimeOfDay(withLine('Я утром видела тебя в библиотеке.'), ['вечер'])).toEqual([]);
+    expect(lintTimeOfDay(withLine('Позвони мне вечером, если освободишься.'), ['утро'])).toEqual([]);
+  });
+});
+
+describe('lintFarewellInBody: прощание — не конец ступени', () => {
+  const body = (line: string): DialogueUnit => ({
+    id: 'u',
+    liId: LI,
+    bracket: 'neutral',
+    entryNodeId: 'n1',
+    nodes: [
+      node({
+        id: 'n1',
+        dialogue: [{ speaker: LI, emotion: 'idle', line }],
+        choices: [choice({ id: 'c', kind: 'farewell', text: 'Пора', next: 'nc' })],
+      }),
+      node({ id: 'nc', closing: true, dialogue: [], choices: [] }),
+    ],
+  });
+
+  it('ловит прощание в теле: иначе персонаж попрощается и не уйдёт', () => {
+    // Живой плейтест: «Спасибо за разговор. Надеюсь, скоро увидимся» — и следом
+    // «Асель не спешит уходить», потому что у посиделки есть продолжение.
+    const e = lintFarewellInBody(body('Спасибо за разговор. Надеюсь, скоро увидимся.'));
+    expect(e.some(i => i.severity === 'error' && i.scope === 'farewell/n1')).toBe(true);
+  });
+
+  it('пауза без прощальных слов проходит', () => {
+    expect(lintFarewellInBody(body('Асель задумчиво крутит чашку. За окном темнеет.'))).toEqual([]);
+  });
+
+  it('границы слова Unicode-осознанные: «увидимся» ловится, «увидимся» внутри слова — нет', () => {
+    // \b в JS кириллицу не видит вовсе (линт был бы вечно зелёным), а без
+    // границ маркер ловился бы внутри других слов.
+    expect(lintFarewellInBody(body('Скоро увидимся.')).length).toBeGreaterThan(0);
+    expect(lintFarewellInBody(body('Свидимся-ка мы нескоро, думает она.'))).toEqual([]);
+  });
+
+  it('двусмысленное «пока» прощанием НЕ считается — ложная отбраковка дороже пропуска', () => {
+    // Линт кормит ретраи: ложное срабатывание жжёт деньги на хорошей прозе.
+    expect(lintFarewellInBody(body('Пока не знаю, что думать.'))).toEqual([]);
+    expect(lintFarewellInBody(body('Давай покажу, что я нашла в архиве.'))).toEqual([]);
+  });
+});
+
+describe('parseDialogueUnit: farewell', () => {
+  const base = { bracket: 'neutral', entryNodeId: 'n1', nodes: [{ id: 'n1' }] };
+
+  it('farewell парсится в отдельную сцену', () => {
+    const u = parseDialogueUnit(
+      JSON.stringify({
+        ...base,
+        farewell: { narration: 'Она машет.', dialogue: [{ speaker: LI, line: 'До встречи!' }] },
+      }),
+    );
+    expect(u.farewell?.narration).toBe('Она машет.');
+    expect(u.farewell?.dialogue[0].line).toBe('До встречи!');
+  });
+
+  it('старая проза без farewell парсится как раньше — поле опционально', () => {
+    expect(parseDialogueUnit(JSON.stringify(base)).farewell).toBeUndefined();
   });
 });

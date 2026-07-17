@@ -269,6 +269,20 @@ export type SpineRequest = {
     previousIssues?: Array<string>;
 };
 
+export type AnchorTransitionRequest = {
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Calendar dayparts in order; the last one is where the hero goes to sleep.
+     */
+    dayparts: Array<string>;
+    /**
+     * Name of the hero's home location — where sleep leads.
+     */
+    homeLocationName: string;
+};
+
 export type AnchorBeatRequest = {
     /**
      * Brief context (world, tone, protagonist).
@@ -586,6 +600,22 @@ export type GenerateAnchorBeatResponses = {
 };
 
 export type GenerateAnchorBeatResponse = GenerateAnchorBeatResponses[keyof GenerateAnchorBeatResponses];
+
+export type GenerateAnchorTransitionData = {
+    body: AnchorTransitionRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/anchorTransition';
+};
+
+export type GenerateAnchorTransitionResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateAnchorTransitionResponse = GenerateAnchorTransitionResponses[keyof GenerateAnchorTransitionResponses];
 
 export type GenerateEndingData = {
     body: EndingRequest;

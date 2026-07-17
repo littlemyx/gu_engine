@@ -59,6 +59,23 @@ export type DialogueEncounterContext = {
   liArcSummary?: string;
   priorEncounters: { anchorId: string; location: string; timeMarker: string; goal: string }[];
   anchorBeatText?: string;
+  /**
+   * Знакомы ли уже герои до начала истории (карточка LI). Первая встреча при
+   * null — знакомство: никаких «как обычно» и отсылок к прошлым разговорам.
+   * Зеркалится в text_gen/src/types.ts — поля обязаны меняться синхронно, иначе
+   * значение молча теряется на границе JSON.
+   */
+  preExistingRelationship?: string | null;
+  /**
+   * Ступень лестницы близости и её ПЕРСОНАЛЬНЫЙ для этого персонажа смысл.
+   * Без них модель пишет «встречу вообще» и в тёплом брекете сползает в уже
+   * сложившуюся близость. Зеркалится в text_gen/src/types.ts.
+   */
+  stageIndex?: number;
+  stageCount?: number;
+  stepMeaning?: string;
+  /** Каким ЭТОТ персонаж видит идеал отношений — куда он движется. */
+  idealRelationship?: string;
 };
 
 /**

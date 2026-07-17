@@ -211,7 +211,8 @@ export function useBulkCharacterGeneration() {
   return { status, start, cancel, reset };
 }
 
-async function pollUntilAllDone(
+/** Дожать батч спрайтов до idle+поз. Экспортируется для initNarrative (resume после reload). */
+export async function pollUntilAllDone(
   batchId: string,
 ): Promise<{ idleFilename: string; poseFilenames: Record<string, string> }> {
   const startedAt = Date.now();

@@ -121,7 +121,13 @@ export type GameProjectFile = {
     stateSchema?: GameStateSchema;
     world?: GameWorldManifest;
     /** Календарь для HUD рантайма (game/src/calendarState.ts): «День N · часть дня». */
-    calendar?: { slotCount: number; dayparts: string[]; actBoundaries: number[] };
+    calendar?: {
+      slotCount: number;
+      dayparts: string[];
+      actBoundaries: number[];
+      /** Фаз внутри части дня (малая стрелка) — HUD показывает их словом. */
+      phasesPerSlot?: number;
+    };
     bgmUrl?: string;
     /** Банк эмбиентов: LocationMood → URL. Рендерер выбирает по mood локации. */
     ambientByMood?: Record<string, string>;
@@ -213,13 +219,43 @@ export const BRACKET_WIRE_ORDER: Record<DialogueVariantBracket, number> = {
 export const BRACKET_POSITIVE_GTE = 0.3;
 export const BRACKET_NEGATIVE_LTE = 0;
 
-export function bracketCondition(liId: string, bracket: DialogueVariantBracket): GameStateCondition[] {
+/** Пороги тона: абсолютные (легаси) либо относительные старту архетипа. */
+export type BracketThresholds = { positiveGte: number; negativeLte: number };
+
+export const LEGACY_BRACKET_THRESHOLDS: BracketThresholds = {
+  positiveGte: BRACKET_POSITIVE_GTE,
+  negativeLte: BRACKET_NEGATIVE_LTE,
+};
+
+/** Отступ тона от старта архетипа: ровно легаси-случай при A0 = 0.15. */
+export const BRACKET_OFFSET = 0.15;
+
+/**
+ * Пороги тона ОТНОСИТЕЛЬНО старта архетипа (A0 = середина initialState.affection,
+ * она же дефолт stateSchema).
+ *
+ * Зачем: пороги были абсолютными (warm ≥ 0.3), а старт — архетипным. У
+ * forbidden (A0=0.5) и mutual_pining (A0=0.6) игра открывалась УЖЕ за тёплым
+ * порогом: персонаж читался влюблённым в слот 0, до единого выбора игрока.
+ * Условия концовок при этом всегда были относительными (mid±offset) — тон и
+ * прогресс жили в разных шкалах. Относительный порог их мирит: на старте любой
+ * архетип нейтрален, а «теплее/холоднее» означает «сдвинулся от своей точки».
+ */
+export function bracketThresholdsFor(a0: number): BracketThresholds {
+  return { positiveGte: a0 + BRACKET_OFFSET, negativeLte: a0 - BRACKET_OFFSET };
+}
+
+export function bracketCondition(
+  liId: string,
+  bracket: DialogueVariantBracket,
+  thresholds: BracketThresholds = LEGACY_BRACKET_THRESHOLDS,
+): GameStateCondition[] {
   const path = `relationship[${liId}].affection`;
   switch (bracket) {
     case 'positive':
-      return [{ path, gte: BRACKET_POSITIVE_GTE }];
+      return [{ path, gte: thresholds.positiveGte }];
     case 'negative':
-      return [{ path, lte: BRACKET_NEGATIVE_LTE }];
+      return [{ path, lte: thresholds.negativeLte }];
     case 'neutral':
       return [];
   }

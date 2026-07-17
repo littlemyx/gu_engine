@@ -2,6 +2,9 @@ import { useCallback, useRef, useState } from 'react';
 import { generateBackground, getBatchStatus, type BatchStatus } from '@root/image_gen/generated_client';
 import type { Brief, WorldModel } from './types';
 import { useNarrativeStore } from './narrativeStore';
+import { imageIsStale, locationFingerprint, locationImageKey } from './imageFingerprint';
+
+export { locationImageKey };
 
 /**
  * Bulk-генератор фонов для всех якорей outline-а через image_gen-сервис.
@@ -57,11 +60,8 @@ function buildMasterPrompt(brief: Brief): string {
 type AnchorLike = { id: string; summary: string };
 type OutlineLike = { title?: string; logline?: string; anchors: AnchorLike[] };
 
-/** Ключ фона локации в store.images (легаси-ключи — голые anchorId). */
-export const locationImageKey = (locationId: string): string => `loc:${locationId}`;
-
 /** Единица очереди генерации: локация мира или (легаси) якорь. */
-type ImageTarget = { key: string; description: string };
+type ImageTarget = { key: string; description: string; locationHash?: string };
 
 function buildSceneDescription(anchor: AnchorLike, brief: Brief): string {
   const place = brief.world.setting.place;
@@ -120,12 +120,21 @@ export function useBulkImageGeneration() {
     // При наличии модели мира фоны генерятся ПО ЛОКАЦИЯМ (ключ loc:<id>):
     // одна библиотека выглядит одинаково у всех якорей, генераций меньше.
     // Без мира — легаси-режим по якорям.
-    const needsWork = (key: string) =>
-      !existing[key] || existing[key].status === 'failed' || existing[key].status === 'pending';
+    // Работа нужна, если фона нет, он упал, ждёт очереди — или нарисован для
+    // прежней версии локации (мир переписан перегенерацией истории).
+    const needsWork = (key: string, locationHash?: string) => {
+      const state = existing[key];
+      if (!state || state.status === 'failed' || state.status === 'pending') return true;
+      return locationHash != null && imageIsStale(state, locationHash);
+    };
     const queue: ImageTarget[] = worldModel
       ? worldModel.locations
-          .map(loc => ({ key: locationImageKey(loc.id), description: buildLocationDescription(loc, brief) }))
-          .filter(t => needsWork(t.key))
+          .map(loc => ({
+            key: locationImageKey(loc.id),
+            description: buildLocationDescription(loc, brief),
+            locationHash: locationFingerprint(loc),
+          }))
+          .filter(t => needsWork(t.key, t.locationHash))
       : outline.anchors
           .map(a => ({ key: a.id, description: buildSceneDescription(a, brief) }))
           .filter(t => needsWork(t.key));
@@ -177,7 +186,7 @@ export function useBulkImageGeneration() {
         setStore(target.key, { status: 'generating', batchId });
 
         const filename = await pollUntilDone(batchId);
-        setStore(target.key, { status: 'done', filename });
+        setStore(target.key, { status: 'done', filename, locationHash: target.locationHash });
         completed++;
       } catch (e) {
         const error = e instanceof Error ? e.message : String(e);
@@ -225,7 +234,8 @@ export function useBulkImageGeneration() {
   return { status, start, cancel, reset };
 }
 
-async function pollUntilDone(batchId: string): Promise<string> {
+/** Дожать батч фона до файла. Экспортируется для initNarrative (resume после reload). */
+export async function pollUntilDone(batchId: string): Promise<string> {
   const startedAt = Date.now();
   // eslint-disable-next-line no-constant-condition
   while (true) {

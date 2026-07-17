@@ -98,6 +98,62 @@ describe('buildSchedule', () => {
   });
 });
 
+describe('buildSchedule + ветки', () => {
+  /** Развилка + два outcome-бита; участники/локации настраиваются. */
+  const branchSpine = (a: Partial<SpineBeat>, b: Partial<SpineBeat>): SpinePlan => ({
+    title: 'Ветки',
+    logline: '',
+    beats: [
+      beat({ id: 'b1', participants: ['kira'], establishes: ['met_all'] }),
+      beat({
+        id: 'bp',
+        kind: 'branchPoint',
+        act: 2,
+        window: { fromSlot: 3, toSlot: 3 },
+        guard: guardFromRequires(['met_all']),
+        establishes: ['faced'],
+        outcomes: [
+          { id: 'o_a', label: 'a', setsFlag: 'chose_a', summary: '' },
+          { id: 'o_b', label: 'b', setsFlag: 'chose_b', summary: '' },
+        ],
+      }),
+      beat({ id: 'path_a', act: 3, window: { fromSlot: 6, toSlot: 8 }, guard: guardFromRequires(['chose_a']), ...a }),
+      beat({ id: 'path_b', act: 3, window: { fromSlot: 6, toSlot: 8 }, guard: guardFromRequires(['chose_b']), ...b }),
+      beat({ id: 'fin', kind: 'finale', act: 4, window: { fromSlot: 9, toSlot: 11 }, participants: ['kira', 'yuki'] }),
+    ],
+    endings: [{ id: 'e_normal', kind: 'normal', liId: null, guard: { all: [] } }],
+  });
+
+  it('регрессия: outcome-биты с общим участником и разными локациями → пины не конфликтуют', () => {
+    // Раньше оба бита делили слот, второй пин затирал первый →
+    // «участник "asel" бита ... не в его локации» на каждой генерации.
+    const s = branchSpine(
+      { participants: ['asel'], locationId: 'loc_home' },
+      { participants: ['asel'], locationId: 'loc_hangout' },
+    );
+    const schedule = buildSchedule(brief, s, cal, castPlan, tagMap, 0);
+    const beatSlots = assignBeatSlots(s, cal);
+    expect(schedule.asel[beatSlots.path_a]).toBe('loc_home');
+    expect(schedule.asel[beatSlots.path_b]).toBe('loc_hangout');
+    const pinErrors = validateSchedule(schedule, s, cal, brief).filter(
+      i => i.severity === 'error' && i.scope.startsWith('beats/'),
+    );
+    expect(pinErrors).toEqual([]);
+  });
+
+  it('со-слотные эксклюзивные биты с разными участниками/локациями → без ложного slots/*-error', () => {
+    const s = branchSpine(
+      { participants: ['asel'], locationId: 'loc_home' },
+      { participants: ['kira'], locationId: 'loc_hangout' },
+    );
+    const beatSlots = assignBeatSlots(s, cal);
+    expect(beatSlots.path_a).toBe(beatSlots.path_b); // всё ещё делят слот
+    const schedule = buildSchedule(brief, s, cal, castPlan, tagMap, 0);
+    const issues = validateSchedule(schedule, s, cal, brief);
+    expect(issues.filter(i => i.severity === 'error')).toEqual([]);
+  });
+});
+
 describe('validateSchedule', () => {
   it('ловит сломанный пин участника бита', () => {
     const schedule = build();

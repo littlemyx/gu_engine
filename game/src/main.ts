@@ -23,6 +23,7 @@ let currentProject: ResolvedProject | null = null;
 // Имя переменной времени календарного компилятора (contract с
 // client/src/narrative/compileCalendarGame.ts).
 const SLOT_VAR = "slot";
+const PHASE_VAR = "phase";
 
 if (typeof __GU_PROJECT__ !== "undefined") {
   launchGame(__GU_PROJECT__);
@@ -223,7 +224,11 @@ function launchGame(project: ResolvedProject): void {
     renderer.renderScene(node, isEnd);
   });
   calendarState = calendarSettings
-    ? new CalendarState(calendarSettings, () => engine.getState()[SLOT_VAR] ?? 0)
+    ? new CalendarState(
+        calendarSettings,
+        () => engine.getState()[SLOT_VAR] ?? 0,
+        () => engine.getState()[PHASE_VAR] ?? 0,
+      )
     : null;
   engine.setProjectMeta(project.title, project.projectFile, project.scenesFile);
   renderer.bind(engine);

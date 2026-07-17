@@ -134,6 +134,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/anchorTransition:
+    post:
+      operationId: generateAnchorTransition
+      summary: Generate diegetic daypart-transition scenes (go to class, go to sleep)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnchorTransitionRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /generate/ending:
     post:
       operationId: generateEnding
@@ -624,6 +642,25 @@ components:
           items:
             type: string
           description: Validation issue messages from the previous attempt.
+
+    AnchorTransitionRequest:
+      type: object
+      required:
+        - brief
+        - dayparts
+        - homeLocationName
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+        dayparts:
+          type: array
+          items:
+            type: string
+          description: Calendar dayparts in order; the last one is where the hero goes to sleep.
+        homeLocationName:
+          type: string
+          description: Name of the hero's home location — where sleep leads.
 
     AnchorBeatRequest:
       type: object

@@ -44,6 +44,7 @@ import {
 import { deriveCalendarMontage } from '@/narrative/calendarSliceModel';
 import { deriveLegacyOutline } from '@/narrative/deriveLegacyOutline';
 import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
+import { buildSeedIssues } from '@/narrative/qaSeeds';
 import { OutlineGraph } from './OutlineGraph';
 import { CharacterRelationshipPanel } from './CharacterRelationshipPanel';
 import { AudioPreviewPanel } from './AudioPreviewPanel';
@@ -383,7 +384,7 @@ const Playground = () => {
                   brief={brief}
                   hasCalendarStack={Boolean(spine && calendar && schedule)}
                   onRegenerateWithFeedback={options => void calendarGen.run(brief, options)}
-                  regenRunning={calendarGen.phase !== 'idle' && calendarGen.phase !== 'done' && !calendarGen.error}
+                  regen={calendarGen}
                 />
                 <ExportBar
                   outline={activeOutline}
@@ -650,6 +651,7 @@ const CALENDAR_PHASE_LABEL: Record<string, string> = {
   spine: 'Хребет истории',
   schedule: 'Расписание персонажей',
   beat_prose: 'Проза битов',
+  anchor_transitions: 'Переходы частей дня',
   event_pool: 'Пул событий',
   prune: 'Отсев недостижимого',
   dialogue_units: 'Диалоговые юниты',
@@ -665,6 +667,10 @@ const CalendarGenBar: React.FC<{
 }> = ({ gen, brief, hasSpine, disabled }) => {
   const running = gen.phase !== 'idle' && gen.phase !== 'done' && !gen.error;
   const pct = gen.progress.total === 0 ? 0 : Math.round((gen.progress.completed / gen.progress.total) * 100);
+  // Прогон упал, но уже посчитанные стадии лежат в черновике: «Продолжить»
+  // доделывает остаток, не переплачивая за пройденное.
+  const canContinue = Boolean(gen.error) && gen.hasDraft;
+  const label = running ? 'Генерация...' : canContinue ? 'Продолжить' : hasSpine ? 'Перегенерировать' : 'Сгенерировать';
   return (
     <div className={styles.bulkBar}>
       <div className={styles.bulkLeft}>
@@ -682,6 +688,7 @@ const CalendarGenBar: React.FC<{
           {gen.error ? (
             <>
               ✗ {gen.error}
+              {canContinue && ' · черновик сохранён, история не тронута'}
               {gen.issues.length > 0 && ` · ${gen.issues.slice(0, 2).join('; ')}`}
             </>
           ) : (
@@ -689,14 +696,31 @@ const CalendarGenBar: React.FC<{
           )}
         </span>
       </div>
+      {canContinue && (
+        <button
+          type="button"
+          className={styles.secondaryBtn}
+          onClick={() => gen.discardDraft()}
+          disabled={disabled || running}
+          title="Выбросить черновик упавшего прогона — следующий запуск начнётся с нуля"
+        >
+          Сбросить черновик
+        </button>
+      )}
       <button
         type="button"
-        className={hasSpine ? styles.secondaryBtn : styles.primaryBtn}
+        className={hasSpine && !canContinue ? styles.secondaryBtn : styles.primaryBtn}
         onClick={() => void gen.run(brief, hasSpine ? { force: true } : undefined)}
         disabled={disabled || running}
-        title={hasSpine ? 'Полная перегенерация: кэши стадий сбрасываются, медиа остаются' : undefined}
+        title={
+          canContinue
+            ? 'Доделать прогон с той стадии, где он оборвался (готовые стадии не пересчитываются)'
+            : hasSpine
+            ? 'Полная перегенерация: стадии считаются заново, старая история заменяется только по успеху'
+            : undefined
+        }
       >
-        {running ? 'Генерация...' : hasSpine ? 'Перегенерировать' : 'Сгенерировать'}
+        {label}
       </button>
     </div>
   );
@@ -1216,29 +1240,6 @@ const QA_GROUP_ORDER = ['spine', 'calendar', 'schedule', 'units', 'dialogue', 'q
 
 const qaGroupOf = (issue: SegmentIssue): string => issue.scope.split('/')[0] || '?';
 
-/**
- * Затравки регенерации: spine-issues списком (плюс sim/leaf — симуляция
- * политик и критик листьев судят именно хребет), dialogue-issues по unitId.
- */
-const SPINE_SEED_GROUPS = new Set(['spine', 'sim', 'leaf']);
-
-function buildSeedIssues(issues: SegmentIssue[]): BulkCalendarRunOptions['seedIssues'] {
-  const spine = issues
-    .filter(i => SPINE_SEED_GROUPS.has(qaGroupOf(i)))
-    .map(i => `[${i.severity}] ${i.scope}: ${i.message}`);
-  const dialogue: Record<string, string[]> = {};
-  for (const i of issues) {
-    if (qaGroupOf(i) !== 'dialogue') continue;
-    const unitId = i.scope.split('/')[1];
-    if (!unitId) continue;
-    (dialogue[unitId] ??= []).push(`[${i.severity}] ${i.scope}: ${i.message}`);
-  }
-  const seeds: NonNullable<BulkCalendarRunOptions['seedIssues']> = {};
-  if (spine.length > 0) seeds.spine = spine;
-  if (Object.keys(dialogue).length > 0) seeds.dialogue = dialogue;
-  return Object.keys(seeds).length > 0 ? seeds : undefined;
-}
-
 const PolicyTable: React.FC<{ reports: PolicyReport[] }> = ({ reports }) => {
   if (reports.length === 0) return null;
   return (
@@ -1272,9 +1273,12 @@ const QAPanel: React.FC<{
   brief: Brief;
   hasCalendarStack: boolean;
   onRegenerateWithFeedback: (options: BulkCalendarRunOptions) => void;
-  regenRunning: boolean;
-}> = ({ qa, brief, hasCalendarStack, onRegenerateWithFeedback, regenRunning }) => {
+  /** Состояние календарного прогона: панель сама его запускает — сама и показывает. */
+  regen: ReturnType<typeof useBulkCalendarGeneration>;
+}> = ({ qa, brief, hasCalendarStack, onRegenerateWithFeedback, regen }) => {
   const { state, issues, policyReports } = qa.status;
+  const regenRunning = regen.phase !== 'idle' && regen.phase !== 'done' && !regen.error;
+  const qaEventUnits = useNarrativeStore(s => s.eventUnits);
   const errorCount = issues.filter(i => i.severity === 'error').length;
   const warningCount = issues.length - errorCount;
 
@@ -1291,7 +1295,17 @@ const QAPanel: React.FC<{
     });
   }, [issues]);
 
-  const seedIssues = useMemo(() => (state === 'done' ? buildSeedIssues(issues) : undefined), [state, issues]);
+  const seedIssues = useMemo(
+    () =>
+      state === 'done'
+        ? buildSeedIssues(
+            issues,
+            Object.values(qaEventUnits),
+            brief.loveInterests.map(li => li.id),
+          )
+        : undefined,
+    [state, issues, qaEventUnits, brief],
+  );
 
   return (
     <div className={styles.qaPanel}>
@@ -1304,7 +1318,16 @@ const QAPanel: React.FC<{
               (issues.length === 0 ? ' · чисто ✓' : ` · ✗ ${errorCount} ошибок · ⚠ ${warningCount} предупреждений`)}
           </span>
           <span className={styles.bulkMeta}>
-            структурный отчёт + симуляция политик по evaluateSlice + LLM-критик листьев (text_gen)
+            {regenRunning ? (
+              <>регенерация · {CALENDAR_PHASE_LABEL[regen.phase] ?? regen.phase}…</>
+            ) : regen.error ? (
+              <>
+                ✗ регенерация упала: {regen.error}
+                {regen.hasDraft && ' · черновик сохранён — «Продолжить» доделает с места обрыва (бар в секции «Граф»)'}
+              </>
+            ) : (
+              'структурный отчёт + симуляция политик по evaluateSlice + LLM-критик листьев (text_gen)'
+            )}
           </span>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -1314,9 +1337,13 @@ const QAPanel: React.FC<{
               className={styles.secondaryBtn}
               onClick={() => onRegenerateWithFeedback({ seedIssues })}
               disabled={regenRunning}
-              title="issues групп spine/dialogue уходят previousIssues-фидбеком соответствующих стадий"
+              title="issues уходят previousIssues-фидбеком владеющих стадий: spine/sim/leaf/deadContent → хребет, sim/deadContent → пулы событий, dialogue → проза юнитов"
             >
-              {regenRunning ? 'Регенерация...' : 'Перегенерировать с фидбеком'}
+              {regenRunning
+                ? 'Регенерация...'
+                : regen.error && regen.hasDraft
+                ? 'Продолжить регенерацию'
+                : 'Перегенерировать с фидбеком'}
             </button>
           )}
           <button
@@ -1372,6 +1399,9 @@ const ExportBar: React.FC<{
   const eventUnits = useNarrativeStore(s => s.eventUnits);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
+  // tagMap даёт якорям тег 'home' — куда уводит сон; нарации — их прозу.
+  const tagMap = useNarrativeStore(s => s.tagMap);
+  const anchorNarrations = useNarrativeStore(s => s.anchorNarrations);
   const audioBase = useNarrativeStore(s => s.audioBase);
   const audioMoodBeds = useNarrativeStore(s => s.audioMoodBeds);
   const audioSpecialBeds = useNarrativeStore(s => s.audioSpecialBeds);
@@ -1419,6 +1449,7 @@ const ExportBar: React.FC<{
       images,
       characters,
       audioInput,
+      { tagMap, narrations: anchorNarrations ?? undefined },
     );
     const slug = slugify(result.project.title);
     downloadJson(`${slug}.gu.json`, result.project);

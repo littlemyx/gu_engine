@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import {
   formatGuard,
   formatEffect,
+  truncate,
   type MontageCharacter,
   type MontageLocation,
   type SliceEventView,
@@ -50,6 +51,15 @@ type Emphasis = 'base' | 'hi' | 'dim';
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 const diamondPoints = (x: number, y: number, r: number) => `${x},${y - r} ${x + r},${y} ${x},${y + r} ${x - r},${y}`;
+
+const plural = (n: number, one: string, few: string, many: string): string => {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return many;
+  const mod10 = n % 10;
+  if (mod10 === 1) return one;
+  if (mod10 >= 2 && mod10 <= 4) return few;
+  return many;
+};
 
 // ── Унифицированная view-модель доски ───────────────────────────────────────
 
@@ -340,34 +350,38 @@ export const MontageBoard: React.FC<{
   };
 
   const branchPoints = calendarModel?.branchPoints ?? [];
+  const dimmedCount = board.frames.reduce((acc, f) => acc + f.events.filter(e => e.dimmed).length, 0);
 
   return (
     <div className={styles.board}>
-      {/* ── селектор веток (фаза 5): «—» = все ветки, сегмент = лист ── */}
+      {/* ── селектор веток (фаза 5): «все» = union исходов, сегмент = один исход ── */}
       {branchPoints.length > 0 && (
         <div className={styles.branchRow}>
-          <span className={styles.legendLabel}>ветки</span>
+          <span className={styles.legendLabel}>развилки</span>
           {branchPoints.map(bp => (
-            <span key={bp.id} className={styles.branchGroup} title={bp.summary}>
-              <span className={styles.branchName}>{bp.id}</span>
+            <span key={bp.id} className={styles.branchGroup}>
+              <span className={styles.branchName} title={`${bp.summary}\nid развилки: ${bp.id}`}>
+                {truncate(bp.summary || bp.id, 34)}
+              </span>
               <span className={styles.branchSegs}>
                 <button
                   type="button"
                   className={`${styles.branchSeg} ${!branchAssignment[bp.id] ? styles.branchSegActive : ''}`}
-                  title="все ветки"
+                  title="Все ветки: на доске видны события всех исходов этой развилки."
                   onClick={() => {
                     const next = { ...branchAssignment };
                     delete next[bp.id];
                     onBranchAssignmentChange?.(next);
                   }}
                 >
-                  —
+                  все
                 </button>
                 {bp.outcomes.map(o => (
                   <button
                     key={o.id}
                     type="button"
                     className={`${styles.branchSeg} ${branchAssignment[bp.id] === o.id ? styles.branchSegActive : ''}`}
+                    title={`Показать доску так, будто «${bp.summary}» кончилась исходом «${o.label}»: события остальных исходов гаснут.`}
                     onClick={() => onBranchAssignmentChange?.({ ...branchAssignment, [bp.id]: o.id })}
                   >
                     {o.label}
@@ -376,6 +390,16 @@ export const MontageBoard: React.FC<{
               </span>
             </span>
           ))}
+          <span className={styles.branchHint}>
+            {dimmedCount > 0
+              ? `выбран прогон одной ветки — ${dimmedCount} ${plural(
+                  dimmedCount,
+                  'событие',
+                  'события',
+                  'событий',
+                )} чужих веток погашено`
+              : 'выбор исхода гасит на доске события других веток'}
+          </span>
         </div>
       )}
 

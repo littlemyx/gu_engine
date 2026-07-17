@@ -1,15 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
+  CHOICE_PATH_DELTA_CAP,
+  LADDER_AFFECTION_CEIL,
   actOfSlot,
   actSlotWindow,
+  arcStageCount,
   computeCalendarTargets,
   dayOfSlot,
   daypartOfSlot,
   guardFromRequires,
+  ladderClosingGain,
+  ladderThreshold,
   parseCalendar,
   parseSpinePlan,
+  requiredArcStages,
   slotLabel,
   slotOf,
+  stageFloorDay,
+  stageFloorSlot,
+  PHASES_PER_SLOT,
+  phaseWindowForStage,
+  phaseWindowForTiming,
 } from './calendarTypes';
 import type { Calendar, SpineBeat, SpinePlan } from './calendarTypes';
 import { validateSpine } from './validateSpine';
@@ -86,6 +97,75 @@ describe('calendar helpers', () => {
     expect(actOfSlot(11, cal)).toBe(4);
     expect(actSlotWindow(1, cal)).toEqual({ fromSlot: 0, toSlot: 2 });
     expect(actSlotWindow(4, cal)).toEqual({ fromSlot: 9, toSlot: 11 });
+  });
+});
+
+describe('лестница отношений: чистая математика', () => {
+  it('arcStageCount: 3 дня → 4 ступени, 4 → 5, 12 → 9 (потолок), пол 3', () => {
+    expect(arcStageCount(3)).toBe(4);
+    expect(arcStageCount(4)).toBe(5);
+    expect(arcStageCount(12)).toBe(9);
+    expect(arcStageCount(20)).toBe(9);
+    expect(arcStageCount(1)).toBe(3);
+  });
+
+  it('requiredArcStages перечисляет 1..N', () => {
+    expect(requiredArcStages(5)).toEqual([1, 2, 3, 4, 5]);
+    expect(requiredArcStages(3)).toEqual([1, 2, 3]);
+  });
+
+  it('пороги: t(1)=A0, монотонный рост, t(N)=потолок (slow_burn A0=0.2, N=5)', () => {
+    const t = (s: number) => ladderThreshold(0.2, s, 5);
+    expect(t(1)).toBeCloseTo(0.2);
+    expect(t(2)).toBeCloseTo(0.3625);
+    expect(t(3)).toBeCloseTo(0.525);
+    expect(t(4)).toBeCloseTo(0.6875);
+    expect(t(5)).toBeCloseTo(LADDER_AFFECTION_CEIL);
+    for (let s = 2; s <= 5; s++) expect(t(s)).toBeGreaterThan(t(s - 1));
+  });
+
+  it('headroom-формула: у тёплого архетипа (mutual_pining A0=0.6) ступени НЕ вырождаются', () => {
+    const t = (s: number) => ladderThreshold(0.6, s, 5);
+    // Регресс критика: глобальная формула клампилась в 0.85 уже на t(4) —
+    // соседние пороги совпадали и верх лестницы переставал гейтить.
+    for (let s = 2; s <= 5; s++) expect(t(s) - t(s - 1)).toBeCloseTo(0.0625);
+    expect(t(5)).toBeCloseTo(LADDER_AFFECTION_CEIL);
+  });
+
+  it('полы: N=5 на 4 днях → [0,0,1,2,3] — максимум две ступени в день', () => {
+    expect([1, 2, 3, 4, 5].map(s => stageFloorDay(s, 5, 4))).toEqual([0, 0, 1, 2, 3]);
+    // Последняя ступень всегда доступна не позже последнего дня.
+    expect(stageFloorDay(9, 9, 12)).toBeLessThan(12);
+    expect(stageFloorSlot(3, 5, cal)).toBe(3); // день 1 × 3 части дня
+  });
+
+  it('на вершине лестницы гейна нет — расти больше некуда', () => {
+    expect(ladderClosingGain(0.2, 5, 5)).toBe(0);
+  });
+
+  /**
+   * Сердце баланса: два инварианта, между которыми живёт вся лестница.
+   * Проверяем на всех архетипных стартах и всех размерах лестницы, а не на
+   * одном удобном примере — фиксированная доля от шага их НЕ держит (при N=3,
+   * A0=0.2 шаг 0.325, а половина + выборы = 0.31 < 0.325: прилежный игрок
+   * упирался бы в стену).
+   */
+  describe('инварианты гейна: тёплый поднимается, холодный — нет', () => {
+    const starts = [0, 0.1, 0.2, 0.5, 0.6]; // enemies_to_lovers … mutual_pining
+    for (const a0 of starts) {
+      for (const n of [3, 5, 9]) {
+        it(`A0=${a0}, N=${n}`, () => {
+          for (let s = 1; s < n; s++) {
+            const step = ladderThreshold(a0, s + 1, n) - ladderThreshold(a0, s, n);
+            const gain = ladderClosingGain(a0, s, n);
+            // Тёплая посиделка (встреча + выборы) ОТКРЫВАЕТ следующую ступень.
+            expect(gain + CHOICE_PATH_DELTA_CAP).toBeGreaterThanOrEqual(step - 1e-9);
+            // Холодная прогонка одними встречами — НЕ открывает.
+            expect(gain).toBeLessThan(step);
+          }
+        });
+      }
+    }
   });
 });
 
@@ -192,6 +272,20 @@ describe('validateSpine', () => {
     const spine2 = okSpine();
     spine2.beats.push(beat({ id: 'bp', kind: 'branchPoint', act: 2, window: { fromSlot: 3, toSlot: 5 } }));
     expect(errors(validateSpine(spine2, cal, brief, null)).some(i => i.message.includes('2-3 исхода'))).toBe(true);
+  });
+
+  it('цепочка порядка не ломает валидный хребет и держит достижимость финала', () => {
+    // Регресс: инжект {fired: предшественник} не должен ни порождать ошибок,
+    // ни делать финал недостижимым на листе.
+    expect(errors(validateSpine(okSpine(), cal, brief, null))).toEqual([]);
+  });
+
+  it('ловит цикл, собранный через fired-зависимость руками', () => {
+    const spine = okSpine();
+    // b1 (акт 1) искусственно ставится ПОСЛЕ b3 (акт 3) — против стрелы времени.
+    spine.beats[0].guard = { all: [{ fired: 'b3' }] };
+    const issues = errors(validateSpine(spine, cal, brief, null));
+    expect(issues.some(i => i.scope === 'beats/b1/requires' && i.message.includes('начинается позже'))).toBe(true);
   });
 
   it('good-концовка обязана ссылаться на существующего LI', () => {
@@ -392,5 +486,28 @@ describe('validateCalendar', () => {
     };
     const issues = errors(validateCalendar(cal, brief, world, null, null));
     expect(issues.some(i => i.scope === 'world/hall/adjacent' && i.message.includes('несуществующего'))).toBe(true);
+  });
+});
+
+describe('малые часы: окна восприимчивости', () => {
+  it('early — только свежая фаза, late — только поздняя, any — вся часть дня', () => {
+    expect(phaseWindowForTiming('early')).toEqual({ fromPhase: 0, toPhase: 0 });
+    expect(phaseWindowForTiming('late')).toEqual({ fromPhase: PHASES_PER_SLOT - 1, toPhase: PHASES_PER_SLOT - 1 });
+    expect(phaseWindowForTiming('any')).toEqual({ fromPhase: 0, toPhase: PHASES_PER_SLOT - 1 });
+  });
+
+  it('дефолт ступени: глубокий разговор (≥2) — на свежую голову, знакомство и филлеры — когда угодно', () => {
+    expect(phaseWindowForStage(2)).toEqual(phaseWindowForTiming('early'));
+    expect(phaseWindowForStage(5)).toEqual(phaseWindowForTiming('early'));
+    expect(phaseWindowForStage(1)).toEqual(phaseWindowForTiming('any'));
+  });
+
+  it('окна не выходят за число фаз слота — иначе юнит недостижим ни в одной', () => {
+    for (const t of ['early', 'late', 'any'] as const) {
+      const w = phaseWindowForTiming(t);
+      expect(w.fromPhase).toBeGreaterThanOrEqual(0);
+      expect(w.toPhase).toBeLessThanOrEqual(PHASES_PER_SLOT - 1);
+      expect(w.fromPhase).toBeLessThanOrEqual(w.toPhase);
+    }
   });
 });

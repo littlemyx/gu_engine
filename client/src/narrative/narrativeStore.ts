@@ -1,9 +1,19 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AnchorBeat, EndingVariant, WorldModel, WorldLocation } from './types';
-import { DEFAULT_LOCATION_MOOD, isLocationMood, isSpecialAmbientKind } from './types';
-import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
+import type { AnchorNarrations, Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
 import type { DialogueUnit } from './dialogueUnit';
+import type {
+  BulkCalendarPhase,
+  CalendarDraft,
+  CalendarRunState,
+  CalendarCascadeStage,
+  CalendarPendingBatch,
+} from './calendarRunState';
+import { buildCommitPatch } from './calendarRunState';
+import { reconcileImagesForWorld } from './imageFingerprint';
+import type { StoryQAStatus } from './storyQA';
+import { migratePersistedNarrativeState, NARRATIVE_STORE_VERSION } from './narrativeMigrations';
 
 /**
  * Стор для procedural-narrative-пилота (календарный пайплайн).
@@ -18,7 +28,8 @@ import type { DialogueUnit } from './dialogueUnit';
 export type ImageGenState =
   | { status: 'pending' }
   | { status: 'generating'; batchId: string }
-  | { status: 'done'; filename: string }
+  /** locationHash — отпечаток локации, для которой нарисован фон (см. imageFingerprint). */
+  | { status: 'done'; filename: string; locationHash?: string }
   | { status: 'failed'; error: string };
 
 /**
@@ -72,6 +83,8 @@ type NarrativeState = {
   calendar: Calendar | null;
   /** Маппинг агендных тегов на id локаций WorldModel. */
   tagMap: Record<string, string[]> | null;
+  /** Подписи и нарации якорных переходов по индексу части дня. */
+  anchorNarrations: AnchorNarrations | null;
   /** Хребет: биты с окнами слотов, развилки, guarded-концовки. */
   spine: SpinePlan | null;
   /** char × slot → locationId|null; детерминированно собирается из агенд. */
@@ -98,6 +111,21 @@ type NarrativeState = {
   audioSfx: Record<string, string>;
   /** Стейт генерации SFX-набора (результаты пишутся в audioSfx). */
   audioSfxState: AudioTrackState | null;
+
+  /**
+   * Состояние календарного прогона: черновик нового стека + позиция + живой
+   * батч. Пишется только calendarRunner-ом; committed-поля стека меняются
+   * из прогона исключительно через commitCalendarRun — обрыв на любой стадии
+   * оставляет автора со старой историей.
+   */
+  calendarRun: CalendarRunState | null;
+
+  /**
+   * Последний отчёт Story QA — переживает переходы и reload. Сбрасывается
+   * коммитом календарного прогона (новая история → старый отчёт врёт);
+   * зависший state='running' после reload санитизирует initNarrative.
+   */
+  storyQA: StoryQAStatus | null;
 
   setImage: (locKey: string, state: ImageGenState) => void;
   clearImages: () => void;
@@ -137,28 +165,30 @@ type NarrativeState = {
   setAudioSfx: (emotion: string, filename: string) => void;
   setAudioSfxState: (state: AudioTrackState | null) => void;
   clearAudio: () => void;
+
+  /** Старт нового прогона (или продолжение прошлого — решает calendarRunner). */
+  beginCalendarRun: (run: CalendarRunState) => void;
+  patchCalendarRun: (
+    patch: Partial<{
+      phase: BulkCalendarPhase;
+      progress: { completed: number; total: number };
+      pendingBatch: CalendarPendingBatch | null;
+      dirtyStages: CalendarCascadeStage[];
+      softIssues: Record<string, string[]>;
+    }>,
+  ) => void;
+  /** Инкрементальная запись артефактов стадии в черновик (переживает reload). */
+  patchCalendarDraft: (patch: CalendarDraft) => void;
+  failCalendarRun: (phase: BulkCalendarPhase, error: string, issues: string[]) => void;
+  /** Единственная точка записи committed-стека из прогона (атомарный коммит). */
+  commitCalendarRun: () => void;
+  discardCalendarRun: () => void;
+
+  setStoryQA: (status: StoryQAStatus | null) => void;
 };
 
-type PersistedNarrativeState = Pick<
-  NarrativeState,
-  | 'images'
-  | 'characters'
-  | 'endings'
-  | 'worldModel'
-  | 'castPlan'
-  | 'calendar'
-  | 'tagMap'
-  | 'spine'
-  | 'schedule'
-  | 'eventUnits'
-  | 'unitProse'
-  | 'spineBeatProse'
-  | 'audioBase'
-  | 'audioMoodBeds'
-  | 'audioSpecialBeds'
-  | 'audioByLi'
-  | 'audioSfx'
->;
+const isPlainRecord = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** Пустое состояние календарного пайплайна от стадии spine и ниже. */
 const CLEARED_FROM_SPINE = {
@@ -179,6 +209,7 @@ export const useNarrativeStore = create<NarrativeState>()(
       castPlan: null,
       calendar: null,
       tagMap: null,
+      anchorNarrations: null,
       spine: null,
       schedule: null,
       eventUnits: {},
@@ -190,6 +221,8 @@ export const useNarrativeStore = create<NarrativeState>()(
       audioByLi: {},
       audioSfx: {},
       audioSfxState: null,
+      calendarRun: null,
+      storyQA: null,
 
       setImage: (locKey, state) => {
         set(s => ({ images: { ...s.images, [locKey]: state } }));
@@ -341,15 +374,56 @@ export const useNarrativeStore = create<NarrativeState>()(
           audioSfx: {},
           audioSfxState: null,
         }),
+
+      beginCalendarRun: run => set({ calendarRun: run }),
+
+      patchCalendarRun: patch => {
+        set(s => (s.calendarRun ? { calendarRun: { ...s.calendarRun, ...patch } } : s));
+      },
+
+      patchCalendarDraft: patch => {
+        set(s => {
+          if (!s.calendarRun) return s;
+          const draft: Record<string, unknown> = { ...s.calendarRun.draft };
+          for (const [key, value] of Object.entries(patch)) {
+            const prev = draft[key];
+            // Поэлементные поля (eventUnits/unitProse/spineBeatProse/endings)
+            // накапливаются по ходу стадии — патч мержится, а не заменяет.
+            draft[key] = isPlainRecord(prev) && isPlainRecord(value) ? { ...prev, ...value } : value;
+          }
+          return { calendarRun: { ...s.calendarRun, draft: draft as CalendarDraft } };
+        });
+      },
+
+      failCalendarRun: (phase, error, issues) => {
+        // draft/pendingBatch/dirtyStages сохраняются: следующий запуск
+        // («Продолжить») переиспользует уже оплаченные стадии.
+        set(s => (s.calendarRun ? { calendarRun: { ...s.calendarRun, status: 'error', phase, error, issues } } : s));
+      },
+
+      commitCalendarRun: () => {
+        set(s => {
+          if (!s.calendarRun) return s;
+          const patch = buildCommitPatch(s.calendarRun);
+          // Новый мир → фоны исчезнувших локаций выбрасываются, фоны
+          // переписанных возвращаются в очередь (см. reconcileImagesForWorld).
+          // Отчёт QA сбрасывается: он судил прежнюю историю.
+          return { ...patch, images: reconcileImagesForWorld(s.images, patch.worldModel), storyQA: null };
+        });
+      },
+
+      discardCalendarRun: () => set({ calendarRun: null }),
+
+      setStoryQA: storyQA => set({ storyQA }),
     }),
     {
       name: 'gu-narrative-state',
-      // v10: снос легаси (outline/segments/storyOutline/narrationWebs/
-      // dialogueVariants/anchorBeats/beatPlan выброшены). v9: календарный
-      // пайплайн. v8: mood/specialKind локаций.
-      version: 10,
-      // Персистим только данные, не действия. audioSfxState — транзиентный
-      // прогресс, не персистится (batchId протухает при рестарте audio_gen).
+      // v11: calendarRun (черновик прогона) + audioSfxState — их дожимает
+      // init-система после reload. v10: снос легаси. v9: календарный пайплайн.
+      version: NARRATIVE_STORE_VERSION,
+      // Персистим только данные, не действия. batchId незавершённых генераций
+      // персистится намеренно: initNarrative переподключается к живым батчам,
+      // а мёртвые (сервис перезапущен → 404) помечает failed.
       partialize: state => ({
         images: state.images,
         characters: state.characters,
@@ -358,6 +432,7 @@ export const useNarrativeStore = create<NarrativeState>()(
         castPlan: state.castPlan,
         calendar: state.calendar,
         tagMap: state.tagMap,
+        anchorNarrations: state.anchorNarrations,
         spine: state.spine,
         schedule: state.schedule,
         eventUnits: state.eventUnits,
@@ -368,57 +443,13 @@ export const useNarrativeStore = create<NarrativeState>()(
         audioSpecialBeds: state.audioSpecialBeds,
         audioByLi: state.audioByLi,
         audioSfx: state.audioSfx,
+        audioSfxState: state.audioSfxState,
+        calendarRun: state.calendarRun,
+        storyQA: state.storyQA,
       }),
       // Без migrate zustand выбрасывает состояние при несовпадении версии —
       // дорогие кэши генерации должны переживать апгрейд схемы.
-      migrate: persisted => {
-        // Старые версии не имели части полей — дозаполняем дефолтами,
-        // не трогая накопленные кэши генерации.
-        const prev = (persisted ?? {}) as Partial<PersistedNarrativeState>;
-        // v7→v8: у persisted-локаций нет mood/specialKind. Инжектим дефолты, иначе
-        // required-поле mood окажется undefined в рантайме (тип бы соврал).
-        const worldModel = prev.worldModel
-          ? {
-              ...prev.worldModel,
-              locations: prev.worldModel.locations.map(l => ({
-                ...l,
-                mood: isLocationMood(l.mood) ? l.mood : DEFAULT_LOCATION_MOOD,
-                specialKind: isSpecialAmbientKind(l.specialKind) ? l.specialKind : null,
-              })),
-            }
-          : null;
-        // v9→v10: легаси-ключи (outline/segments/storyOutline/narrationWebs/
-        // dialogueVariants/anchorBeats/beatPlan) просто не переносятся.
-        return {
-          images: prev.images ?? {},
-          characters: prev.characters ?? {},
-          endings: prev.endings ?? {},
-          worldModel,
-          // v8→v9: календарный пайплайн — новые поля, кэши прежних стадий не трогаем.
-          castPlan: prev.castPlan ?? null,
-          calendar: prev.calendar ?? null,
-          tagMap: prev.tagMap ?? null,
-          spine: prev.spine ?? null,
-          schedule: prev.schedule ?? null,
-          eventUnits: prev.eventUnits ?? {},
-          // Фаза 3: unitProse хранит DialogueUnit[] (узловые графы). Записи
-          // старой DialogueVariant-формы (без nodes) выбрасываются — поле
-          // никогда не наполнялось «в дикой природе», а компилятор формы
-          // без nodes не понимает.
-          unitProse: Object.fromEntries(
-            Object.entries(prev.unitProse ?? {}).filter(
-              ([, units]) =>
-                Array.isArray(units) && units.every(u => Array.isArray((u as Partial<DialogueUnit>)?.nodes)),
-            ),
-          ),
-          spineBeatProse: prev.spineBeatProse ?? {},
-          audioBase: prev.audioBase ?? null,
-          audioMoodBeds: prev.audioMoodBeds ?? {},
-          audioSpecialBeds: prev.audioSpecialBeds ?? {},
-          audioByLi: prev.audioByLi ?? {},
-          audioSfx: prev.audioSfx ?? {},
-        };
-      },
+      migrate: migratePersistedNarrativeState,
     },
   ),
 );

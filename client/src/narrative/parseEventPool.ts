@@ -1,8 +1,16 @@
 import type { Brief, LoveInterestCard, SegmentIssue } from './types';
 import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
-import { guardFromRequires } from './calendarTypes';
+import { arcStageCount, guardFromRequires, phaseWindowForTiming, requiredArcStages } from './calendarTypes';
+import type { UnitTiming } from './calendarTypes';
 import type { Effect, Guard } from './events';
+import { guardFiredIds } from './events';
 import { guardFlags } from './validateSpine';
+import { applyLadderGuards } from './ladderGuards';
+
+// guardFiredIds переехал к Guard (events.ts) — здесь ре-экспорт для прежних
+// импортёров; beatChain берёт его из events напрямую (иначе цикл через
+// validateSpine).
+export { guardFiredIds };
 
 /**
  * Стадия eventPool (B2, фаза 4 docs/plans/calendar-branching.md):
@@ -14,31 +22,28 @@ import { guardFlags } from './validateSpine';
 /** Границы rel-дельты юнита (клампится парсером, проверяется валидатором). */
 export const REL_DELTA_BOUND = 0.3;
 
+const isUnitTiming = (v: unknown): v is UnitTiming => v === 'early' || v === 'late' || v === 'any';
+
 /** Целевое число юнитов на стадию арки (контракт targets стадии B2). */
 export const EVENT_POOL_UNITS_PER_STAGE = 2;
 
-const MIN_UNITS_PER_CHAR = 4;
-const MAX_UNITS_PER_CHAR = 8;
+/**
+ * Границы размера пула — от высоты лестницы: на N ступеней нужно минимум по
+ * юниту, иначе ступень пропущена. Легаси N=3 даёт ровно прежние 4-8.
+ */
+const minUnitsPerChar = (stageCount: number) => Math.max(4, stageCount);
+const maxUnitsPerChar = (stageCount: number) => 2 * stageCount + 2;
 
 const REL_VARS = new Set(['affection', 'trust', 'tension']);
 
 const asStringArray = (v: unknown): string[] => (Array.isArray(v) ? v.map(x => String(x)).filter(Boolean) : []);
-
-/** id fired-зависимостей guard-а (для валидации и reachability). */
-export function guardFiredIds(guard: Guard): string[] {
-  if ('all' in guard) return guard.all.flatMap(guardFiredIds);
-  if ('any' in guard) return guard.any.flatMap(guardFiredIds);
-  if ('not' in guard) return guardFiredIds(guard.not);
-  if ('fired' in guard) return [guard.fired];
-  return [];
-}
 
 /**
  * Ответ LLM → EventUnit[]. id префиксуется evt_<liId>_; цепочка стадий
  * достраивается АВТОМАТИЧЕСКИ: каждый юнит стадии N>1 получает guard
  * {fired: <последний юнит стадии N-1>} — у LLM её не спрашиваем.
  */
-export function parseEventPool(rawText: string, liId: string): EventUnit[] {
+export function parseEventPool(rawText: string, liId: string, stageCount = 3): EventUnit[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(rawText);
@@ -54,6 +59,8 @@ export function parseEventPool(rawText: string, liId: string): EventUnit[] {
     goal: string;
     locationId: string;
     window: { fromSlot: number; toSlot: number };
+    /** Окно восприимчивости внутри части дня; не указано — дефолт ступени. */
+    timing?: UnitTiming;
     requires: string[];
     establishes: string[];
     relEffects: { var: string; delta: number }[];
@@ -72,10 +79,16 @@ export function parseEventPool(rawText: string, liId: string): EventUnit[] {
     const stage = Number(unit.arcStage);
     return {
       id: String(unit.id),
-      arcStage: Number.isFinite(stage) ? Math.trunc(stage) : 1,
+      // Ступень вне лестницы — за её пределы клампим: иначе «ступень 7» при
+      // N=5 повисла бы выше вершины и осталась бы недостижимой.
+      arcStage: Number.isFinite(stage) ? Math.max(1, Math.min(Math.trunc(stage), stageCount)) : 1,
       goal: String(unit.goal ?? ''),
       locationId: String(unit.locationId),
       window: { fromSlot: Math.trunc(fromSlot), toSlot: Math.trunc(toSlot) },
+      // Восприимчивость выбирает генерация от смысла сцены («утешить
+      // вымотанного» — late). Мусор молча роняем в дефолт ступени: поле
+      // опциональное, ронять из-за него весь пул — несоразмерно.
+      timing: isUnitTiming(unit.timing) ? unit.timing : undefined,
       requires: asStringArray(unit.requires),
       establishes: asStringArray(unit.establishes),
       relEffects: Array.isArray(unit.relEffects)
@@ -87,10 +100,28 @@ export function parseEventPool(rawText: string, liId: string): EventUnit[] {
     };
   });
 
-  // Последний юнит каждой стадии — хвост fired-цепочки для стадии N+1.
+  // Хвост fired-цепочки для ступени N+1 — юнит ступени N с САМЫМ РАННИМ окном.
+  //
+  // Раньше брался последний по позиции в массиве, и живой прогон показал цену:
+  // модель перечислила поздний юнит последним, гейтом стал он, а все встречи
+  // следующей ступени, открытые раньше его окна, стали недостижимы —
+  // шесть юнитов Киры (ступени 3-5) молча выпали из игры. Позиция в массиве
+  // ничего не значит; смысл гейта — «ступень N пройдена», и самый ранний юнит
+  // выражает его наиболее слабо, оставляя следующей ступени максимум окон.
+  // Тай-брейк по позиции — детерминизм.
   const prefixed = (rawId: string) => (rawId.startsWith(`evt_${liId}_`) ? rawId : `evt_${liId}_${rawId}`);
   const lastOfStage = new Map<number, string>();
-  for (const s of shells) lastOfStage.set(s.arcStage, prefixed(s.id));
+  {
+    const earliest = new Map<number, number>();
+    for (const s of shells) {
+      const from = s.window.fromSlot;
+      const best = earliest.get(s.arcStage);
+      if (best == null || from < best) {
+        earliest.set(s.arcStage, from);
+        lastOfStage.set(s.arcStage, prefixed(s.id));
+      }
+    }
+  }
 
   return shells.map((s, index) => {
     const guard = guardFromRequires(s.requires);
@@ -111,7 +142,14 @@ export function parseEventPool(rawText: string, liId: string): EventUnit[] {
     return {
       id,
       kind: 'dialogue',
-      at: { slot: s.window, locationId: s.locationId },
+      // Фаза ставится ТОЛЬКО из собственного timing юнита; дефолт по ступени
+      // доштампует applyLadderGuards — иначе не отличить «модель выбрала any»
+      // от «модель промолчала», и дефолт нечего было бы не перетирать.
+      at: {
+        slot: s.window,
+        locationId: s.locationId,
+        ...(s.timing ? { phase: phaseWindowForTiming(s.timing) } : {}),
+      },
       participants: [liId],
       guard,
       effects,
@@ -219,13 +257,71 @@ export function validateEventUnits(
     }
   }
 
+  const stageCount = arcStageCount(calendar.days);
   for (const [liId, list] of byChar) {
-    if (list.length < MIN_UNITS_PER_CHAR || list.length > MAX_UNITS_PER_CHAR) {
+    const min = minUnitsPerChar(stageCount);
+    const max = maxUnitsPerChar(stageCount);
+    if (list.length < min || list.length > max) {
       issues.push({
         severity: 'warning',
-        scope: `coverage/${liId}`,
-        message: `у "${liId}" ${list.length} юнитов — целевой диапазон ${MIN_UNITS_PER_CHAR}-${MAX_UNITS_PER_CHAR}`,
+        scope: `pool/${liId}`,
+        message: `у "${liId}" ${list.length} юнитов — целевой диапазон ${min}-${max} для лестницы из ${stageCount} ступеней`,
       });
+    }
+    // Пропущенная ступень — разрыв в отношениях: соседние сцены разъезжаются,
+    // и близость возникает рывком. Ровно то, ради чего лестница.
+    const present = new Set(list.map(u => u.arcStage ?? 1));
+    for (const stage of requiredArcStages(stageCount)) {
+      if (!present.has(stage)) {
+        issues.push({
+          severity: 'warning',
+          scope: `pool/${liId}`,
+          message: `у "${liId}" нет ни одной встречи ступени ${stage} из ${stageCount} — лестница с дырой, отношения прыгнут через ступень`,
+        });
+      }
+    }
+  }
+
+  // Зависимость обязана УСПЕВАТЬ сработать: если юнит ждёт `fired: V`, то V
+  // должен иметь возможность отыграть строго раньше, чем закроется окно юнита.
+  //
+  // Живой прогон: модель написала цепочку, идущую НАЗАД во времени —
+  // `open_up_1` открыт в слотах 1..2, но ждёт `habit_2` из слота 8. Сыграть
+  // такое невозможно физически, и вся верхушка арки Киры (ступени 3-5, шесть
+  // юнитов) оказалась мёртвой. Ловил это только prune — уже после генерации
+  // пула, молчаливым warning'ом «недостижимы», без объяснения причины.
+  // Здесь же ошибка уходит в фидбек ретрая и называет виновное окно.
+  //
+  // Чиним валидацией, а не сдвигом окон: окно связано с локацией и weekly-
+  // паттерном персонажа, и подвинуть его молча — значит поставить героя туда,
+  // где его в этот слот нет. Выбор нового окна остаётся за моделью.
+  //
+  // Судим ПОЧИНЕННЫЙ граф — тот же, что увидят компилятор и prune. Иначе
+  // валидатор ругается на то, что applyLadderGuards и так исправляет (подъём
+  // окна к полу ступени, перецепка гейта на самый ранний юнит), и заворачивает
+  // рабочий пул: ровно так этот валидатор с первого же прогона завалил стадию
+  // на кэшированном пуле Юки. Ошибка должна оставаться только там, где ремонт
+  // бессилен.
+  const repaired = applyLadderGuards(units, spine, calendar, brief).units;
+  const byId = new Map(repaired.map(u => [u.id, u]));
+  for (const unit of repaired) {
+    const win = unit.at.slot;
+    if (!win) continue;
+    for (const depId of guardFiredIds(unit.guard)) {
+      const dep = byId.get(depId);
+      const depWin = dep?.at.slot;
+      if (!dep || !depWin) continue; // висячие ссылки ловит проверка выше
+      if (depWin.fromSlot >= win.toSlot) {
+        issues.push({
+          severity: 'error',
+          scope: `units/${unit.id}`,
+          message:
+            `юнит "${unit.id}" (окно [${win.fromSlot}, ${win.toSlot}]) ждёт "${depId}", ` +
+            `но у того окно [${depWin.fromSlot}, ${depWin.toSlot}] — раньше он отыграть не успеет, ` +
+            `и встреча недостижима. Сдвинь окно "${unit.id}" так, чтобы оно начиналось после ` +
+            `слота ${depWin.fromSlot} (не забудь: локация должна совпадать с расписанием персонажа).`,
+        });
+      }
     }
   }
 
@@ -251,7 +347,7 @@ export function buildEventPoolRequestPayload(
   scheduleExcerpt: { slot: number; locationId: string }[];
   spineBeats: { id: string; summary: string; window: { fromSlot: number; toSlot: number } }[];
   calendar: { slotCount: number; dayparts: string[]; actBoundaries: number[] };
-  targets: { unitsPerStage: number };
+  targets: { unitsPerStage: number; arcStageCount: number };
 } {
   const agenda = castPlan.members.find(m => m.id === li.id)?.agenda ?? {};
   const scheduleExcerpt = (schedule[li.id] ?? []).flatMap((locationId, slot) =>
@@ -271,6 +367,8 @@ export function buildEventPoolRequestPayload(
       dayparts: calendar.dayparts,
       actBoundaries: calendar.actBoundaries,
     },
-    targets: { unitsPerStage: EVENT_POOL_UNITS_PER_STAGE },
+    // Лестница считается от ФАКТИЧЕСКОГО календаря (в отличие от castPlan,
+    // который идёт раньше и берёт цифру из брифа).
+    targets: { unitsPerStage: EVENT_POOL_UNITS_PER_STAGE, arcStageCount: arcStageCount(calendar.days) },
   };
 }

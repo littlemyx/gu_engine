@@ -1,8 +1,10 @@
 import type { Brief, SegmentIssue, WorldModel } from './types';
-import type { Calendar, SpineBeat, SpinePlan } from './calendarTypes';
+import type { Calendar, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
 import { actSlotWindow, effectiveBeatWindow } from './calendarTypes';
 import { assignBeatSlots } from './beatSchedule';
+import { applyBeatChain } from './beatChain';
 import type { Guard } from './events';
+import { guardFiredIds } from './events';
 
 /**
  * Валидация хребта (SpinePlan) против календаря и мира.
@@ -62,7 +64,13 @@ export function enumerateLeafAssignments(spine: SpinePlan): LeafAssignment[] {
  * Симуляция установления флагов на одном листе (фикспойнт): флаг доступен
  * со слота установителя (бит — в назначенный assignBeatSlots слот); флаги
  * НЕвыбранных исходов недоступны никогда; бит играется, если каждый его
- * guard-флаг доступен не позже конца окна бита.
+ * guard-флаг доступен не позже конца окна бита И каждый его fired-предшественник
+ * по цепочке уже сыгран (иначе валидатор считал бы проигрываемым бит, который
+ * движок не пустит: рёбра гейтятся beat[<pred>] ≥ 1).
+ *
+ * Fired-депы на ЮНИТЫ (гейт головы линии) здесь пропускаются: модель листа знает
+ * только биты. Их достижимость проверяет симуляция политик story QA, которая
+ * ходит по расписанию и зажигает встречи.
  */
 export function playableBeatsForLeaf(
   spine: SpinePlan,
@@ -71,6 +79,7 @@ export function playableBeatsForLeaf(
 ): { played: Set<string>; earliest: Map<string, number> } {
   const beatSlots = assignBeatSlots(spine, calendar);
   const slotOfBeat = (b: SpineBeat): number => beatSlots[b.id] ?? Math.max(0, b.window.fromSlot);
+  const beatById = new Map(spine.beats.map(b => [b.id, b]));
 
   const earliest = new Map<string, number>();
   const played = new Set<string>();
@@ -83,11 +92,16 @@ export function playableBeatsForLeaf(
     changed = false;
     for (const b of spine.beats) {
       if (played.has(b.id)) continue;
-      const ok = guardFlags(b.guard).every(f => {
+      const flagsOk = guardFlags(b.guard).every(f => {
         const e = earliest.get(f);
         return e != null && e <= b.window.toSlot;
       });
-      if (!ok) continue;
+      const firedOk = guardFiredIds(b.guard).every(dep => {
+        const src = beatById.get(dep);
+        if (!src) return true; // юнит-гейт — вне модели листа
+        return played.has(src.id) && slotOfBeat(src) <= b.window.toSlot;
+      });
+      if (!flagsOk || !firedOk) continue;
       played.add(b.id);
       changed = true;
       const s = slotOfBeat(b);
@@ -103,12 +117,18 @@ export function playableBeatsForLeaf(
 }
 
 export function validateSpine(
-  spine: SpinePlan,
+  rawSpine: SpinePlan,
   calendar: Calendar,
   brief: Brief,
   worldModel: WorldModel | null,
+  units: EventUnit[] = [],
 ): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
+  // Валидируем ТОТ ЖЕ граф, что соберёт компилятор: порядок битов навязывает
+  // цепочка, а не флаги LLM. applyBeatChain идемпотентна, так что повторный
+  // вызов над уже упорядоченным хребтом ничего не меняет. На стадии генерации
+  // хребта юнитов ещё нет — тогда проверяется только цепочка beat→beat.
+  const spine = applyBeatChain(rawSpine, calendar, new Set(brief.loveInterests.map(li => li.id)), units);
   const beats = spine.beats;
 
   // Дубли id.
@@ -311,6 +331,22 @@ export function validateSpine(
         }
       }
     }
+
+    // Зависимости цепочки порядка (fired) — в тот же граф: ацикличность и
+    // «успеваю после предшественника» обязаны покрывать и их. Депы на юниты
+    // (гейт головы) пропускаем — здесь граф только по битам.
+    for (const dep of guardFiredIds(b.guard)) {
+      const src = beatById.get(dep);
+      if (!src) continue;
+      if (src.id !== b.id) depSet.add(src.id);
+      if (src.window.fromSlot > b.window.toSlot) {
+        issues.push({
+          severity: 'error',
+          scope: `beats/${b.id}/requires`,
+          message: `бит "${b.id}" (окно до ${b.window.toSlot}) идёт после бита "${src.id}", который начинается позже (${src.window.fromSlot})`,
+        });
+      }
+    }
     deps.set(b.id, depSet);
   }
 
@@ -347,10 +383,25 @@ export function validateSpine(
   for (const b of beats) {
     if (assigned[b.id] == null) {
       const win = effectiveBeatWindow(b, calendar);
+      // Сообщение уходит в фидбек ретрая, поэтому обязано подсказывать ВЫХОД, а
+      // не только констатировать. Живой прогон показал: модель раз за разом
+      // разводит ветвевые биты одной развилки по разным локациям — тогда общий
+      // участник не даёт им делить слот, и акт переполняется. Без подсказки
+      // модель не может это починить: правило живёт в коде планировщика.
+      const rival = beats.find(
+        o =>
+          o.id !== b.id &&
+          assigned[o.id] != null &&
+          o.locationId !== b.locationId &&
+          o.participants.some(p => b.participants.includes(p)),
+      );
+      const hint = rival
+        ? ` Например, бит "${rival.id}" делит с ним участника, но стоит в другой локации ("${rival.locationId}" против "${b.locationId}") — биты разных исходов ОДНОЙ развилки с общим участником обязаны быть в ОДНОЙ локации, тогда они делят слот; иначе каждому нужен свой.`
+        : ' Уменьшите число одновременных битов акта или разнесите их по актам.';
       issues.push({
         severity: 'error',
         scope: `beats/${b.id}/window`,
-        message: `бит "${b.id}" не удаётся расположить в окне акта [${win.fromSlot}, ${win.toSlot}] — на каком-то листе одновременных битов больше, чем слотов акта`,
+        message: `бит "${b.id}" не удаётся расположить в окне акта [${win.fromSlot}, ${win.toSlot}] — на каком-то листе одновременных битов больше, чем слотов акта.${hint}`,
       });
     }
   }

@@ -130,6 +130,12 @@ export type CalendarSettings = {
   dayparts: string[];
   /** День начала каждого акта; actBoundaries[0] === 0. */
   actBoundaries: number[];
+  /**
+   * Фаз внутри части дня (малая стрелка). Разговоры тратят фазу, часть дня
+   * двигают только сюжет и якорные переходы. Поля нет — игра собрана до
+   * реформы времени: фаз не существует, HUD показывает только часть дня.
+   */
+  phasesPerSlot?: number;
 };
 
 export type ProjectSettings = {
