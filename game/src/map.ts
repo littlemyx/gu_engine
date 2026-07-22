@@ -1,5 +1,20 @@
 import { layoutMap, Point } from "./mapLayout";
-import { WorldState } from "./worldState";
+import { WorldMapLocation } from "./types";
+
+/** Как локация выглядит на карте. */
+export type LocationStatus = "current" | "visited" | "available" | "locked";
+
+/**
+ * Что карте нужно от мира. Интерфейс, а не класс: карте незачем знать, кто
+ * отвечает на эти четыре вопроса — сейчас это storylet-рантайм, где положение
+ * героя знает режиссёр.
+ */
+export interface WorldView {
+  locations(): WorldMapLocation[];
+  edges(): Array<[string, string]>;
+  statusOf(loc: string): LocationStatus;
+  nameOf(loc: string): string;
+}
 
 const PANEL_ANIM_MS = 380;
 const DEPART_ANIM_MS = 250;
@@ -36,7 +51,7 @@ export class WorldMap {
 
   constructor(
     private root: HTMLElement,
-    private world: WorldState,
+    private world: WorldView,
     private onTravel: (loc: string) => void | Promise<void>,
   ) {
     this.root.classList.add("map-root");

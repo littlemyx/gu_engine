@@ -1,5 +1,18 @@
 import type { EndingKind } from './types';
-import type { EventDef, Guard, PhaseWindow, SlotWindow } from './events';
+import type { EventDef, Guard, SlotWindow } from './events';
+import {
+  DEFAULT_DAYPARTS,
+  slotOf,
+  dayOfSlot,
+  daypartOfSlot,
+  slotLabel,
+  actOfSlot,
+  actSlotWindow,
+  PHASES_PER_SLOT,
+  phaseWindowForTiming,
+  phaseWindowForStage,
+  type UnitTiming,
+} from 'gu-engine-story-core';
 
 export type { PhaseWindow, SlotWindow } from './events';
 
@@ -22,8 +35,6 @@ export type { PhaseWindow, SlotWindow } from './events';
 // CALENDAR
 // ============================================================================
 
-export const DEFAULT_DAYPARTS = ['утро', 'день', 'вечер'];
-
 export type Calendar = {
   days: number;
   /** Названия частей дня; длина = слотов в дне. */
@@ -36,16 +47,12 @@ export type Calendar = {
   specialDays?: { day: number; label: string }[];
 };
 
-export const slotOf = (day: number, daypartIndex: number, daypartsPerDay: number): number =>
-  day * daypartsPerDay + daypartIndex;
-
-export const dayOfSlot = (slot: number, cal: Calendar): number => Math.floor(slot / cal.dayparts.length);
-
-export const daypartOfSlot = (slot: number, cal: Calendar): string => cal.dayparts[slot % cal.dayparts.length] ?? '';
-
-/** «день 3 · вечер» (день 1-based для человека). */
-export const slotLabel = (slot: number, cal: Calendar): string =>
-  `день ${dayOfSlot(slot, cal) + 1} · ${daypartOfSlot(slot, cal)}`;
+/**
+ * Арифметика слотов живёт в общем ядре: её одинаково считают генератор и HUD
+ * движка. Функции структурно-типизированы (им нужны только dayparts и границы
+ * актов), поэтому полный Calendar подходит по форме без адаптеров.
+ */
+export { DEFAULT_DAYPARTS, slotOf, dayOfSlot, daypartOfSlot, slotLabel, actOfSlot, actSlotWindow };
 
 /**
  * Маркер времени по ВСЕМУ окну встречи — то, что честно знает про неё проза.
@@ -66,24 +73,6 @@ export function windowTimeMarker(window: SlotWindow, cal: Calendar): string {
   const dayTo = dayOfSlot(to, cal) + 1;
   const days = dayFrom === dayTo ? `день ${dayFrom}` : `дни ${dayFrom}–${dayTo}`;
   return `${days} · время суток РАЗНОЕ (${[...dayparts].join('/')}) — точный момент неизвестен`;
-}
-
-/** Акт слота по границам дней; акты 1-based. */
-export function actOfSlot(slot: number, cal: Calendar): number {
-  const day = dayOfSlot(slot, cal);
-  let act = 1;
-  for (let i = 1; i < cal.actBoundaries.length; i++) {
-    if (day >= cal.actBoundaries[i]) act = i + 1;
-  }
-  return act;
-}
-
-/** Окно слотов акта [fromSlot, toSlot] включительно. */
-export function actSlotWindow(act: number, cal: Calendar): SlotWindow {
-  const perDay = cal.dayparts.length;
-  const fromDay = cal.actBoundaries[act - 1] ?? 0;
-  const toDay = act < cal.actBoundaries.length ? cal.actBoundaries[act] - 1 : cal.days - 1;
-  return { fromSlot: fromDay * perDay, toSlot: toDay * perDay + perDay - 1 };
 }
 
 /**
@@ -166,47 +155,11 @@ export const FILLER_RECOVERY_DELTA = 0.04;
 
 // ── Малые часы: фазы внутри части дня ───────────────────────────────────────
 //
-// Большая стрелка (slot = день × часть дня) двигается ТОЛЬКО сюжетом: битами
-// хребта и якорными переходами («пойти спать»). Разговоры её не крутят —
-// плейтест показал, во что это выливается: беседа начиналась вечером, а после
-// прощания наступало утро, и ночь исчезала как побочный эффект.
-//
-// Малая стрелка — часы САМОГО СЛОТА, а не бюджет действий игрока. Разговор
-// расходует фазу; к поздней фазе персонаж «менее восприимчив» — глубокие ветки
-// закрываются, остаются сюжетные. Дефицит создаёт мир (люди заняты), а не
-// счётчик очков: игрок не видит числа, он видит, что человек уже не тот.
-
-/** Фаз в одной части дня: «первая половина / вторая половина». */
-export const PHASES_PER_SLOT = 2;
-
-/** Когда в пределах части дня уместен разговор — семантика от смысла сцены. */
-export type UnitTiming = 'early' | 'late' | 'any';
-
-/**
- * Окно фаз по семантике контента.
- *
- * Восприимчивость — свойство СЦЕНЫ, а не позиции в слоте: «подбодрить
- * вымотанную к концу смены» обязано открываться именно поздно, и жёсткое
- * «глубокое — только на свежую голову» такую арку бы запретило. Поэтому окно
- * выбирает генерация (поле timing у юнита), а лестница даёт лишь дефолт.
- */
-export function phaseWindowForTiming(timing: UnitTiming): PhaseWindow {
-  const last = Math.max(0, PHASES_PER_SLOT - 1);
-  if (timing === 'early') return { fromPhase: 0, toPhase: 0 };
-  if (timing === 'late') return { fromPhase: last, toPhase: last };
-  return { fromPhase: 0, toPhase: last };
-}
-
-/**
- * ДЕФОЛТ окна фаз для ступени s — когда генерация timing не указала.
- *
- * Ступень 1 и филлеры («поболтать») уместны в любой момент части дня; глубокий
- * разговор ступени ≥2 по умолчанию требует свежей фазы. Это именно дефолт:
- * собственный timing юнита его не перетирает (см. applyLadderGuards).
- */
-export function phaseWindowForStage(stage: number): PhaseWindow {
-  return phaseWindowForTiming(stage >= 2 ? 'early' : 'any');
-}
+// Двухслойная модель времени переехала в общее ядро (story_core/calendar.ts):
+// её обязаны одинаково считать генерация, симуляция политик и рантайм. Здесь
+// — только ре-экспорт, чтобы ~15 файлов narrative/ не меняли адрес импорта.
+export { PHASES_PER_SLOT, phaseWindowForTiming, phaseWindowForStage };
+export type { UnitTiming };
 
 /** Подпись кнопки + нарация якорного перехода (ключ — индекс части дня). */
 export type AnchorNarration = { label: string; narration: string };

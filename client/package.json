@@ -33,6 +33,7 @@
     "@dagrejs/dagre": "^3.0.0",
     "@xyflow/react": "^12.10.1",
     "ai": "^6.0.147",
+    "gu-engine-story-core": "link:../story_core",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-router-dom": "6.30.3",

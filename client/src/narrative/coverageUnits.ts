@@ -3,13 +3,13 @@ import type { Calendar, CharacterSchedule, EventUnit, SpinePlan } from './calend
 import { FILLER_RECOVERY_DELTA, ladderThreshold } from './calendarTypes';
 import { assignBeatSlots } from './beatSchedule';
 import { archetypeAffectionStart, effectiveStageCount } from './ladderGuards';
-import { scheduleRuns } from './compileCalendarGame';
+import { scheduleRuns } from 'gu-engine-story-core';
 
 /**
  * Покрытие расписания взаимодействиями (симптом B репортнутого бага).
  *
  * Расписание ставит LI в локацию, но кнопка «Поговорить» рождается ТОЛЬКО из
- * EventUnit-а с прозой (compileCalendarGame). validateEventUnits проверяет лишь
+ * EventUnit-а с прозой (buildStoryletBundle). validateEventUnits проверяет лишь
  * обратное направление — «юнит там, где персонаж бывает», — поэтому слот, куда
  * пул не дотянулся, оставался немым: игрок сидел в кафе с Юки и не мог с ней
  * заговорить. Хуже: useUnitEncounters отключает фолбэк по расписанию, стоит

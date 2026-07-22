@@ -1,5 +1,5 @@
-import { GameEngine } from "./engine";
 import { GameAudio } from "./audio";
+import { SceneHost } from "./sceneHost";
 import { SceneLineEntry, SceneNode, SceneType, SpriteEntry } from "./types";
 import { parseScene, SceneLine } from "./speaker";
 
@@ -14,7 +14,7 @@ const BG_PRELOAD_TIMEOUT = 1500;
  */
 export class GameRenderer {
   private root: HTMLElement;
-  private engine: GameEngine | null = null;
+  private engine: SceneHost | null = null;
   private audio: GameAudio | null = null;
   private backCallback: (() => void) | null = null;
   private topLabelProvider: (() => string) | null = null;
@@ -52,7 +52,7 @@ export class GameRenderer {
     this.root = root;
   }
 
-  bind(engine: GameEngine): void {
+  bind(engine: SceneHost): void {
     this.engine = engine;
   }
 
@@ -98,7 +98,7 @@ export class GameRenderer {
         <div class="stage-scrim"></div>
         <div class="stage-topbar">
           <div class="topbar-left">
-            <button class="topbar-back" data-role="back" hidden>← Проект</button>
+            <button class="topbar-back" data-role="back" hidden>← В меню</button>
             <div class="topbar-label" data-role="toplabel"></div>
           </div>
           <button class="map-btn" data-role="mapbtn" hidden>

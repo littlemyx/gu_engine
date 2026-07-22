@@ -1,0 +1,100 @@
+.selectorPanel {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  padding: 14px 16px;
+  margin-top: 12px;
+}
+
+.selectorHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.selectorTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.selectorSub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #6b7280;
+  max-width: 60ch;
+}
+
+.selectorReset {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #374151;
+  background: #f9fafb;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.selectorReset:hover {
+  background: #f3f4f6;
+}
+
+.selectorWeights {
+  display: grid;
+  gap: 6px;
+}
+
+.selectorFooter {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.selectorRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(120px, 200px) 40px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.selectorLabel {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.selectorHint {
+  font-size: 11px;
+  color: #9ca3af;
+}
+
+.selectorValue {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 12px;
+  color: #6b7280;
+  text-align: right;
+}
+
+.selectorRow input[type='number'],
+.selectorRow select {
+  padding: 4px 6px;
+  font-size: 13px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.selectorNote {
+  margin: 12px 0 0;
+  font-size: 11px;
+  color: #9ca3af;
+  line-height: 1.4;
+}

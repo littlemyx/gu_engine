@@ -29,16 +29,14 @@ export { useBulkImageGeneration } from './useBulkImageGeneration';
 export type { ImageBulkStatus, ImageBulkFailure } from './useBulkImageGeneration';
 export { useBulkCharacterGeneration } from './useBulkCharacterGeneration';
 export type { CharacterBulkStatus, CharacterBulkFailure } from './useBulkCharacterGeneration';
-export { downloadJson, slugify, type GameSceneGraph, type GameProjectFile } from './convertToGameProject';
+export { downloadJson, slugify } from './convertToGameProject';
 export {
-  compileCalendarGameProject,
-  lintRouters,
-  scheduleRuns,
-  type CalendarCompileResult,
-  type CalendarCompileStats,
-  type WorldAudioInput,
-  type WorldCompileStats,
-} from './compileCalendarGame';
+  buildStoryletBundle,
+  type StoryletBundleResult,
+  type StoryletBundleStats,
+  type StoryletBundleAudioInput,
+  type StoryletAnchorsInput,
+} from './buildStoryletBundle';
 export {
   CANONICAL_POSES,
   EMOTION_TO_POSE,

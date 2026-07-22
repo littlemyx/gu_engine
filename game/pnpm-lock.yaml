@@ -11,6 +11,9 @@ importers:
       fflate:
         specifier: ^0.8.2
         version: 0.8.2
+      gu-engine-story-core:
+        specifier: link:../story_core
+        version: link:../story_core
     devDependencies:
       '@types/node':
         specifier: ^22.0.0

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { Calendar, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
-import { PHASES_PER_SLOT, guardFromRequires, ladderClosingGain } from './calendarTypes';
+import { PHASES_PER_SLOT, guardFromRequires } from './calendarTypes';
 import { archetypeAffectionStart } from './ladderGuards';
 import type { DialogueUnit } from './dialogueUnit';
-import type { DialogueVariantBracket, SegmentIssue } from './types';
+import type { DialogueVariantBracket, SegmentIssue, WorldModel } from './types';
+import { DEFAULT_LOCATION_MOOD } from './types';
 import { SAMPLE_BRIEF } from './sampleBrief';
 import type { StoryQAInputs } from './storyQA';
 import { buildStoryLeafQARequests, runStoryQAStructural, simulatePolicies, summarizePolicyReports } from './storyQA';
@@ -87,6 +88,44 @@ const schedule: CharacterSchedule = {
   asel: new Array<string | null>(12).fill(null),
 };
 
+/**
+ * Мир симуляции: три связанные локации. Режиссёр ходит по карте, поэтому
+ * симуляция без модели мира невозможна — раньше политике хватало расписания,
+ * теперь она обязана ДОЙТИ до персонажа.
+ */
+const worldModel: WorldModel = {
+  locations: [
+    {
+      id: 'loc_a',
+      name: 'loc_a',
+      description: 'a',
+      pointsOfInterest: [],
+      adjacent: [{ locationId: 'loc_b', via: '' }],
+      mood: DEFAULT_LOCATION_MOOD,
+      specialKind: null,
+    },
+    {
+      id: 'loc_b',
+      name: 'loc_b',
+      description: 'b',
+      pointsOfInterest: [],
+      adjacent: [{ locationId: 'loc_c', via: '' }],
+      mood: DEFAULT_LOCATION_MOOD,
+      specialKind: null,
+    },
+    {
+      id: 'loc_c',
+      name: 'loc_c',
+      description: 'c',
+      pointsOfInterest: [],
+      adjacent: [],
+      mood: DEFAULT_LOCATION_MOOD,
+      specialKind: null,
+    },
+  ],
+  anchorLocations: {},
+};
+
 const mkInputs = (
   spine: SpinePlan,
   eventUnits: EventUnit[],
@@ -98,7 +137,7 @@ const mkInputs = (
   schedule,
   castPlan: null,
   tagMap: null,
-  worldModel: null,
+  worldModel,
   eventUnits,
   unitProse,
 });
@@ -344,15 +383,14 @@ describe('simulatePolicies (D3)', () => {
     expect(report.reachedFinale).toBe(true);
     expect(report.endingSatisfied).toBe('e1'); // branchPoint → первый исход → path_x
     expect(report.firedBeats).toEqual(['b1', 'b2', 'b3', 'bp', 'fin']);
-    expect(report.firedUnits).toContain('u2'); // u2 в loc_a срабатывает по пути
-    expect(report.deadSlots).toEqual([]);
-    // Отношения = архетипный старт Киры + детерминированный гейн ступени.
-    // Раньше симуляция считала с НУЛЯ, зато применяла rel-эффекты пула, которых
-    // собранная игра НИКОГДА не применяла: QA валидировал не ту игру. Теперь
-    // валюта арки одна и та же по обе стороны, поэтому +0.2 от LLM здесь нет.
-    const kiraStart = archetypeAffectionStart(SAMPLE_BRIEF, 'kira');
-    expect(kiraStart).toBeCloseTo(0.1);
-    expect(report.relFinal.kira).toBeCloseTo(kiraStart + ladderClosingGain(kiraStart, 1, 3));
+    // Разговоров НЕТ: встреча требует, чтобы игрок нажал «Поговорить», а
+    // spine-only не говорит ни с кем. Прежняя симуляция поджигала юниты
+    // локации сама, без участия игрока, — в собранной игре так не было
+    // никогда, и это ровно то расхождение, ради которого QA переехал на
+    // настоящего режиссёра.
+    expect(report.firedUnits).toEqual([]);
+    // Отношения не двигаются: ни выборов, ни closing-гейнов не случилось.
+    expect(report.relFinal.kira).toBeCloseTo(archetypeAffectionStart(SAMPLE_BRIEF, 'kira'));
   });
 
   it('финал, зависящий от юнита в непосещаемой локации, валит spine-only; summarize даёт error', () => {
@@ -374,7 +412,12 @@ describe('simulatePolicies (D3)', () => {
   it('greedy-li:* разворачивается в политику на каждого LI брифа', () => {
     const inputs = mkInputs(simSpine(), [], {});
     const reports = simulatePolicies(inputs, ['greedy-li:*']);
-    expect(reports.map(r => r.policy)).toEqual(['greedy-li:kira', 'greedy-li:yuki', 'greedy-li:asel']);
+    // Каждая политика гоняется по набору seed-ов: селектор стохастичен, и
+    // одиночный прогон мог бы случайно не заметить голодающий контент.
+    expect([...new Set(reports.map(r => r.policy))]).toEqual(['greedy-li:kira', 'greedy-li:yuki', 'greedy-li:asel']);
+    const seeds = [...new Set(reports.map(r => r.seed))];
+    expect(seeds.length).toBeGreaterThan(1);
+    expect(reports).toHaveLength(3 * seeds.length);
   });
 
   it('seeded-random детерминирован: два прогона дают идентичные отчёты', () => {
@@ -385,8 +428,44 @@ describe('simulatePolicies (D3)', () => {
     const a = simulatePolicies(inputs, ['seeded-random:1', 'seeded-random:2']);
     const b = simulatePolicies(inputs, ['seeded-random:1', 'seeded-random:2']);
     expect(a).toEqual(b);
-    // Разные seed-ы — это разные политики (не один и тот же прогон под двумя именами).
-    expect(a[0].policy).not.toBe(a[1].policy);
+    // Обе оси различимы: и политика, и seed прогона.
+    expect(new Set(a.map(r => r.policy))).toEqual(new Set(['seeded-random:1', 'seeded-random:2']));
+    expect(new Set(a.map(r => r.seed)).size).toBeGreaterThan(1);
+  });
+
+  it('симуляция гоняет ТОТ ЖЕ режиссёр, что и игра: отчёт воспроизводим по seed', () => {
+    // Смысл всего переезда D3: симулятор и движок больше не два исполнителя
+    // одних правил. Одинаковые вход и seed обязаны давать посимвольно
+    // одинаковый прогон — иначе «QA зелёный, а игра не проходится» вернётся.
+    const inputs = mkInputs(simSpine(), [unit('u1', 'loc_c')], { u1: fullProse() });
+    expect(simulatePolicies(inputs, ['warm-li:kira'])).toEqual(simulatePolicies(inputs, ['warm-li:kira']));
+  });
+
+  it('без модели мира симуляция не молчит, а докладывает ошибку', () => {
+    // Пустой отчёт раньше читался бы как «всё хорошо» — самый опасный вид
+    // зелёного: не проверено ничего.
+    const blind = { ...mkInputs(simSpine(), []), worldModel: null };
+    expect(simulatePolicies(blind)).toEqual([]);
+    const errs = summarizePolicyReports([]).filter(i => i.severity === 'error');
+    expect(errs).toHaveLength(1);
+    expect(errs[0].message).toContain('не запускалась');
+  });
+
+  it('контент, который селектор не предлагает, попадает в отчёт как голодающий', () => {
+    // Сцена Асель, которой расписание не ставит НИ ОДНОГО слота на сцене:
+    // проза оплачена, а встретить её негде. Локация при этом настоящая —
+    // юнит в несуществующей локации компилятор отбрасывает раньше, это
+    // другой сигнал (его ловит структурный D2).
+    const units = [unit('u_seen', 'loc_c'), unit('u_never', 'loc_a', { participants: ['asel'] })];
+    const inputs = mkInputs(simSpine(), units, { u_seen: fullProse(), u_never: fullProse() });
+    const reports = simulatePolicies(inputs, ['warm-li:kira']);
+    const starved = reports.find(r => r.starvedUnits)?.starvedUnits ?? [];
+    expect(starved).toContain('u_never');
+    expect(starved).not.toContain('u_seen');
+
+    const warn = summarizePolicyReports(reports).filter(i => i.scope === 'sim/selector');
+    expect(warn).toHaveLength(1);
+    expect(warn[0].severity).toBe('warning');
   });
 
   it('концовка без выполнимого guard-а → endingSatisfied null + error в summary', () => {

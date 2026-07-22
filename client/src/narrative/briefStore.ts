@@ -16,6 +16,7 @@ import type {
 } from './types';
 import { SAMPLE_BRIEF } from './sampleBrief';
 import { ARCHETYPES } from './archetypes';
+import { DEFAULT_SELECTOR_CONFIG, type SelectorConfig, type SelectorWeights } from 'gu-engine-story-core';
 
 /**
  * Стор брифа для канваса. В отличие от narrativeStore (сессионный кэш
@@ -58,6 +59,15 @@ function newLoveInterest(archetype: ArchetypeId = 'slow_burn'): LoveInterestCard
 
 type BriefState = {
   brief: Brief;
+
+  /**
+   * Настройки салиенс-селектора — авторская ручка режиссуры, а не артефакт
+   * генерации: правятся без перегенерации истории и едут в бандл как есть.
+   */
+  selector: SelectorConfig;
+  patchSelector: (patch: Partial<SelectorConfig>) => void;
+  patchSelectorWeight: (key: keyof SelectorWeights, value: number) => void;
+  resetSelector: () => void;
 
   resetToSample: () => void;
   resetToBlank: () => void;
@@ -115,6 +125,12 @@ export const useBriefStore = create<BriefState>()(
 
       resetToSample: () => set({ brief: SAMPLE_BRIEF }),
       resetToBlank: () => set({ brief: blankBrief() }),
+
+      selector: DEFAULT_SELECTOR_CONFIG,
+      patchSelector: patch => set(s => ({ selector: { ...s.selector, ...patch } })),
+      patchSelectorWeight: (key, value) =>
+        set(s => ({ selector: { ...s.selector, weights: { ...s.selector.weights, [key]: value } } })),
+      resetSelector: () => set({ selector: DEFAULT_SELECTOR_CONFIG }),
 
       setFormat: format => set(s => ({ brief: { ...s.brief, format } })),
 
@@ -211,7 +227,8 @@ export const useBriefStore = create<BriefState>()(
     {
       name: 'gu-narrative-brief',
       // v2: scale.branchPointBudget (бюджет глобальных развилок хребта).
-      version: 2,
+      // v3: selector — настройки салиенс-селектора.
+      version: 3,
       migrate: persisted => {
         const prev = (persisted ?? {}) as Partial<BriefState>;
         const brief = prev.brief ?? SAMPLE_BRIEF;
@@ -220,6 +237,12 @@ export const useBriefStore = create<BriefState>()(
           brief: {
             ...brief,
             scale: { ...brief.scale, branchPointBudget: brief.scale.branchPointBudget ?? 2 },
+          },
+          // Веса могли пополниться новым членом — дефолты снизу, сохранённое сверху.
+          selector: {
+            ...DEFAULT_SELECTOR_CONFIG,
+            ...(prev.selector ?? {}),
+            weights: { ...DEFAULT_SELECTOR_CONFIG.weights, ...(prev.selector?.weights ?? {}) },
           },
         };
       },

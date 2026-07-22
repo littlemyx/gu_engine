@@ -23,6 +23,9 @@ importers:
       ai:
         specifier: ^6.0.147
         version: 6.0.147(zod@4.3.6)
+      gu-engine-story-core:
+        specifier: link:../story_core
+        version: link:../story_core
       react:
         specifier: 18.3.1
         version: 18.3.1

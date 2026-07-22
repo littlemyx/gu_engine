@@ -5,7 +5,7 @@ info:
   description: Audio generation service wrapping Suno API for the visual novel engine
 
 servers:
-  - url: http://localhost:3300
+  - url: http://localhost:3310
 
 paths:
   /generate/melody:

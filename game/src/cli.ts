@@ -2,33 +2,12 @@ import { readFileSync, existsSync, writeFileSync, mkdirSync, readdirSync, rmSync
 import { resolve, dirname, relative, basename, extname, join } from "node:path";
 import { build, type Plugin } from "vite";
 import { zipSync, Zippable } from "fflate";
-import { ProjectFile, SceneGraph, ResolvedProject, DEFAULT_SETTINGS } from "./types";
+import {
+  STORY_BUNDLE_FORMAT_VERSION,
+  validateStoryBundle,
+  type StoryBundleV2,
+} from "gu-engine-story-core";
 
-/** Collect all image URLs from scene nodes */
-function collectImageUrls(scenes: SceneGraph): string[] {
-  const urls: string[] = [];
-  for (const node of scenes.nodes) {
-    if (node.data.image) {
-      urls.push(node.data.image);
-    }
-  }
-  return [...new Set(urls)];
-}
-
-/** Collect all audio URLs: project-level bgmUrl + per-scene audioProfile/sfxUrl */
-function collectAudioUrls(project: ResolvedProject): string[] {
-  const urls: string[] = [];
-  if (project.settings.bgmUrl) urls.push(project.settings.bgmUrl);
-  for (const node of project.scenes.nodes) {
-    const p = node.data.audioProfile;
-    if (p?.positiveUrl) urls.push(p.positiveUrl);
-    if (p?.negativeUrl) urls.push(p.negativeUrl);
-    if (node.data.sfxUrl) urls.push(node.data.sfxUrl);
-  }
-  return [...new Set(urls)];
-}
-
-/** Download a URL to a local file. Returns true on success. */
 async function downloadFile(url: string, dest: string): Promise<boolean> {
   try {
     const res = await fetch(url);
@@ -100,66 +79,7 @@ async function downloadAssets(
   return mapping;
 }
 
-/** Replace image URLs in project scenes according to the mapping */
-function rewriteImageUrls(
-  project: ResolvedProject,
-  mapping: Map<string, string>,
-): ResolvedProject {
-  return {
-    ...project,
-    scenes: {
-      ...project.scenes,
-      nodes: project.scenes.nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          image: mapping.get(node.data.image) ?? node.data.image,
-        },
-      })),
-    },
-  };
-}
-
-/** Replace audio URLs in settings.bgmUrl, audioProfile and sfxUrl */
-function rewriteAudioUrls(
-  project: ResolvedProject,
-  mapping: Map<string, string>,
-): ResolvedProject {
-  return {
-    ...project,
-    settings: {
-      ...project.settings,
-      bgmUrl: project.settings.bgmUrl
-        ? (mapping.get(project.settings.bgmUrl) ?? project.settings.bgmUrl)
-        : undefined,
-    },
-    scenes: {
-      ...project.scenes,
-      nodes: project.scenes.nodes.map((node) => ({
-        ...node,
-        data: {
-          ...node.data,
-          audioProfile: node.data.audioProfile
-            ? {
-                ...node.data.audioProfile,
-                positiveUrl: node.data.audioProfile.positiveUrl
-                  ? (mapping.get(node.data.audioProfile.positiveUrl) ?? node.data.audioProfile.positiveUrl)
-                  : undefined,
-                negativeUrl: node.data.audioProfile.negativeUrl
-                  ? (mapping.get(node.data.audioProfile.negativeUrl) ?? node.data.audioProfile.negativeUrl)
-                  : undefined,
-              }
-            : undefined,
-          sfxUrl: node.data.sfxUrl
-            ? (mapping.get(node.data.sfxUrl) ?? node.data.sfxUrl)
-            : undefined,
-        },
-      })),
-    },
-  };
-}
-
-/** Recursively collect all files in a directory into a fflate-compatible structure */
+/** Рекурсивный обход директории для упаковки в архив. */
 function collectFiles(dir: string, prefix = ""): Zippable {
   const result: Zippable = {};
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -181,17 +101,108 @@ function packArchive(outDir: string, archivePath: string): void {
   writeFileSync(archivePath, zipped);
 }
 
-function injectProjectPlugin(project: ResolvedProject): Plugin {
-  return {
-    name: "gu-inject-project",
-    config() {
-      return {
-        define: {
-          __GU_PROJECT__: JSON.stringify(project),
-        },
-      };
-    },
-  };
+/** Все внешние URL бандла: фоны локаций, спрайты по строкам, аудио. */
+function collectBundleUrls(bundle: StoryBundleV2): { images: string[]; audio: string[] } {
+  const images = new Set<string>();
+  const audio = new Set<string>();
+
+  for (const l of bundle.world.locations) if (l.background) images.add(l.background);
+  for (const b of bundle.spine.beats) if (b.background) images.add(b.background);
+  for (const e of bundle.spine.endings) if (e.background) images.add(e.background);
+  if (bundle.intro.background) images.add(bundle.intro.background);
+
+  for (const unit of bundle.units) {
+    for (const v of unit.variants) {
+      for (const n of v.nodes) for (const l of n.lines) for (const s of l.sprites ?? []) images.add(s.url);
+      for (const l of v.farewell?.lines ?? []) for (const s of l.sprites ?? []) images.add(s.url);
+    }
+    if (unit.audioProfile?.positiveUrl) audio.add(unit.audioProfile.positiveUrl);
+    if (unit.audioProfile?.negativeUrl) audio.add(unit.audioProfile.negativeUrl);
+    if (unit.sfxUrl) audio.add(unit.sfxUrl);
+  }
+
+  if (bundle.audio.bgmUrl) audio.add(bundle.audio.bgmUrl);
+  for (const u of Object.values(bundle.audio.ambientByMood ?? {})) audio.add(u);
+  for (const u of Object.values(bundle.audio.ambientBySpecial ?? {})) audio.add(u);
+
+  return { images: [...images], audio: [...audio] };
+}
+
+/**
+ * Переписывание URL в бандле. Сериализуем-подменяем-разбираем: адресов много и
+ * они разной глубины, а обход руками пришлось бы держать синхронным со схемой.
+ */
+function rewriteBundleUrls(bundle: StoryBundleV2, mapping: Map<string, string>): StoryBundleV2 {
+  let json = JSON.stringify(bundle);
+  for (const [from, to] of mapping) {
+    json = json.split(JSON.stringify(from).slice(1, -1)).join(JSON.stringify(to).slice(1, -1));
+  }
+  return JSON.parse(json) as StoryBundleV2;
+}
+
+async function buildBundle(
+  bundle: StoryBundleV2,
+  absOutDir: string,
+  gameRoot: string,
+  archive: boolean,
+): Promise<void> {
+  const issues = validateStoryBundle(bundle).filter((i) => i.severity === "error");
+  if (issues.length > 0) {
+    console.error("Бандл не прошёл проверку:");
+    for (const i of issues) console.error(`  - ${i.message}`);
+    process.exit(1);
+  }
+
+  console.log(`Сборка бандла: "${bundle.title}"`);
+  console.log(
+    `Юнитов: ${bundle.units.length}, битов: ${bundle.spine.beats.length}, ` +
+      `концовок: ${bundle.spine.endings.length}, слотов: ${bundle.calendar.slotCount}`,
+  );
+
+  const { images, audio } = collectBundleUrls(bundle);
+  const usedNames = new Set<string>();
+  const failedDownloads: string[] = [];
+  const assetsDir = resolve(absOutDir, "assets");
+  let out = bundle;
+
+  if (images.length > 0) {
+    console.log(`\nСкачивание изображений (${images.length})...`);
+    const mapping = await downloadAssets(images, assetsDir, usedNames, failedDownloads);
+    console.log(`Скачано: ${mapping.size}/${images.length}`);
+    out = rewriteBundleUrls(out, mapping);
+  }
+  if (audio.length > 0) {
+    console.log(`\nСкачивание аудио (${audio.length})...`);
+    const mapping = await downloadAssets(audio, assetsDir, usedNames, failedDownloads);
+    console.log(`Скачано: ${mapping.size}/${audio.length}`);
+    out = rewriteBundleUrls(out, mapping);
+  }
+
+  if (failedDownloads.length > 0) {
+    console.warn(`\n⚠ Не скачано ассетов: ${failedDownloads.length}. В сборке останутся исходные URL:`);
+    for (const url of failedDownloads) console.warn(`  - ${url}`);
+  }
+
+  await build({
+    root: gameRoot,
+    plugins: [
+      {
+        name: "gu-inject-bundle",
+        config: () => ({ define: { __GU_PROJECT__: JSON.stringify(out) } }),
+      } as Plugin,
+    ],
+    build: { outDir: absOutDir, emptyOutDir: false },
+    logLevel: "info",
+  });
+
+  if (archive) {
+    const title = out.title.replace(/[^a-zа-яё0-9]+/gi, "-").replace(/(^-|-$)/g, "") || "project";
+    const archivePath = resolve(dirname(absOutDir), `${title}.gu`);
+    console.log(`\nУпаковка в архив: ${archivePath}`);
+    packArchive(absOutDir, archivePath);
+  }
+
+  console.log(`\n✓ Готово: ${absOutDir}`);
 }
 
 async function main() {
@@ -202,13 +213,13 @@ async function main() {
   const outDir = filteredArgs.find((_, i) => filteredArgs[i - 1] === "--out") ?? "dist";
 
   if (!projectPath) {
-    console.error("Использование: gu-build <project.gu.json | scenes.json> [--out <dir>] [--archive]");
+    console.error("Использование: gu-build <story.gu.json> [--out <dir>] [--archive]");
     process.exit(1);
   }
 
   const absProjectPath = resolve(process.cwd(), projectPath);
   if (!existsSync(absProjectPath)) {
-    console.error(`Файл проекта не найден: ${absProjectPath}`);
+    console.error(`Файл бандла не найден: ${absProjectPath}`);
     process.exit(1);
   }
 
@@ -229,87 +240,18 @@ async function main() {
     }
   }
 
-  const projectDir = dirname(absProjectPath);
   const raw = JSON.parse(readFileSync(absProjectPath, "utf-8"));
 
-  let project: ResolvedProject;
-
-  if (raw.nodes && raw.edges) {
-    // Прямой scenes JSON (экспорт из редактора)
-    project = {
-      title: "Новелла",
-      scenes: raw as SceneGraph,
-      settings: { ...DEFAULT_SETTINGS },
-    };
-  } else {
-    // ProjectFile (.gu.json)
-    const projectFile = raw as ProjectFile;
-    const scenesPath = resolve(projectDir, projectFile.scenes);
-    if (!existsSync(scenesPath)) {
-      console.error(`Файл сцен не найден: ${scenesPath}`);
-      process.exit(1);
-    }
-    const scenes: SceneGraph = JSON.parse(readFileSync(scenesPath, "utf-8"));
-    project = {
-      title: projectFile.title ?? "Новелла",
-      scenes,
-      settings: { ...DEFAULT_SETTINGS, ...projectFile.settings },
-    };
-  }
-
-  console.log(`Сборка: "${project.title}"`);
-  console.log(`Сцен: ${project.scenes.nodes.length}, связей: ${project.scenes.edges.length}`);
-
-  // Download assets and rewrite image URLs to relative paths
-  const imageUrls = collectImageUrls(project.scenes);
-  let buildProject = project;
-  const usedNames = new Set<string>();
-  const failedDownloads: string[] = [];
-  const assetsDir = resolve(absOutDir, "assets");
-
-  if (imageUrls.length > 0) {
-    console.log(`\nСкачивание изображений (${imageUrls.length})...`);
-    const mapping = await downloadAssets(imageUrls, assetsDir, usedNames, failedDownloads);
-    console.log(`Скачано: ${mapping.size}/${imageUrls.length}`);
-    buildProject = rewriteImageUrls(project, mapping);
-  }
-
-  const audioUrls = collectAudioUrls(buildProject);
-  if (audioUrls.length > 0) {
-    console.log(`\nСкачивание аудио (${audioUrls.length})...`);
-    const mapping = await downloadAssets(audioUrls, assetsDir, usedNames, failedDownloads);
-    console.log(`Скачано: ${mapping.size}/${audioUrls.length}`);
-    buildProject = rewriteAudioUrls(buildProject, mapping);
-  }
-
-  if (failedDownloads.length > 0) {
-    console.warn(
-      `\n⚠ Не скачано ассетов: ${failedDownloads.length}. ` +
-        `В сборке останутся исходные URL (на другой машине они будут недоступны):`,
+  if (raw.formatVersion !== STORY_BUNDLE_FORMAT_VERSION) {
+    console.error(
+      `Это не storylet-бандл (formatVersion ${raw.formatVersion ?? "нет"}).\n` +
+        `gu-build собирает только формат v${STORY_BUNDLE_FORMAT_VERSION} — ` +
+        `экспортируйте историю кнопкой «Скачать storylet-бандл (v2)».`,
     );
-    for (const url of failedDownloads) console.warn(`  - ${url}`);
+    process.exit(1);
   }
 
-  await build({
-    root: gameRoot,
-    plugins: [injectProjectPlugin(buildProject)],
-    build: {
-      outDir: absOutDir,
-      emptyOutDir: false, // preserve downloaded assets
-    },
-    logLevel: "info",
-  });
-
-  if (archive) {
-    const title = buildProject.title.replace(/[^a-zа-яё0-9]+/gi, "-").replace(/(^-|-$)/g, "") || "project";
-    const archivePath = resolve(dirname(absOutDir), `${title}.gu`);
-    console.log(`\nУпаковка в архив: ${archivePath}`);
-    packArchive(absOutDir, archivePath);
-    rmSync(absOutDir, { recursive: true });
-    console.log(`Готово! Архив: ${archivePath}`);
-  } else {
-    console.log(`\nГотово! Файлы в: ${absOutDir}`);
-  }
+  await buildBundle(raw as StoryBundleV2, absOutDir, gameRoot, archive);
 }
 
 main().catch((e) => {

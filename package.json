@@ -7,7 +7,7 @@
     "dev": "concurrently -n img-srv,aud-srv,img-gen,txt-gen,aud-gen,client,game -c blue,gray,magenta,yellow,red,green,cyan \"pnpm -C image_server dev\" \"pnpm -C audio_server dev\" \"pnpm -C image_gen dev\" \"pnpm -C text_gen dev\" \"pnpm -C audio_gen dev\" \"pnpm -C client dev\" \"pnpm -C game dev\"",
     "dev:servers": "concurrently -n img-srv,aud-srv,img-gen,txt-gen,aud-gen -c blue,gray,magenta,yellow,red \"pnpm -C image_server dev\" \"pnpm -C audio_server dev\" \"pnpm -C image_gen dev\" \"pnpm -C text_gen dev\" \"pnpm -C audio_gen dev\"",
     "dev:front": "concurrently -n client,game -c green,cyan \"pnpm -C client dev\" \"pnpm -C game dev\"",
-    "install:all": "for d in gen_shared image_server audio_server image_gen text_gen audio_gen client game; do echo \"== $d ==\"; pnpm -C \"$d\" install || exit 1; done"
+    "install:all": "for d in gen_shared story_core image_server audio_server image_gen text_gen audio_gen client game; do echo \"== $d ==\"; pnpm -C \"$d\" install || exit 1; done"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

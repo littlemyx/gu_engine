@@ -18,9 +18,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### Game engine (novel player) — run from `game/`
 
-- `pnpm dev` — Dev-сервер (port 5174), открытие проекта через UI
+- `pnpm dev` — Dev-сервер (port 5174); историю открывают через UI либо сразу по `?bundle=<url>`
 - `pnpm build` — Сборка dev-оболочки
-- `pnpm build:game <project.gu.json> [--out <dir>]` — CLI-сборка standalone-игры (HTML/JS/CSS с вшитыми данными)
+- `pnpm build:game <story.gu.json> [--out <dir>]` — CLI-сборка standalone-игры (HTML/JS/CSS с вшитым бандлом)
+
+### Story core — run from `story_core/`
+
+- `pnpm test` — Vitest (guard/effect-алгебра, селектор, режиссёр, детерминизм по seed)
+- `pnpm typecheck` — tsc --noEmit
 
 ### Auxiliary services
 
@@ -36,9 +41,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `client/src/routes/index.tsx` — Route definitions. Layout wraps child routes via `<Outlet />`.
 - `client/src/pages/main/index.tsx` — Core page. Contains the React Flow canvas where users create scene nodes, connect them via edges, and export to JSON. This is the primary feature of the app.
 
-**Scene node model:** Each node has `SceneNodeData` (label, image URL, outputs array). Outputs are connection points on the right side of a node. State is managed via `FlowContext` (React context providing `updateNodeData`, `addOutput`, `removeOutput`, `updateOutput`).
+**Scene node model:** Each node has `SceneNodeData` (label, image URL, outputs array). Outputs are connection points on the right side of a node. State is managed via `FlowContext` (React context providing `updateNodeData`, `addOutput`, `removeOutput`, `updateOutput`). Экспорт в игру отсюда снят вместе с графовым движком — истории собираются из брифа в плейграунде.
 
-**Game engine (`game/`)** — Vanilla TypeScript + Vite. Движок интерактивных новелл с двумя режимами: (1) dev — Vite dev-сервер, где через UI загружается файл проекта `.gu.json`; (2) CLI-сборка — `pnpm build:game <project.gu.json>` генерирует standalone HTML/JS/CSS с вшитыми данными сцен. Проектный файл (`.gu.json`) содержит `title`, путь к `scenes` JSON и `settings` (тайминги анимаций). Core: `game/src/engine.ts` (GameEngine), `game/src/renderer.ts` (DOM-рендер), `game/src/cli.ts` (CLI-сборщик).
+**Story core (`story_core/`)** — общее символическое ядро, подключается в `client/` и `game/` как `link:../story_core` (именно `link:`, не `file:`: pnpm по `file:` копирует пакет, и правки не доезжают до потребителей). Здесь живут guard/effect-алгебра, состояние, календарная арифметика, ГПСЧ, салиенс-селектор, режиссёр (`StoryletDirector`) и типы формата `.gu.json` v2. Одна семантика на генератор и движок — симуляция QA и игра исполняют буквально один класс.
+
+**Game engine (`game/`)** — Vanilla TypeScript + Vite. Движок читает **storylet-бандл** `.gu.json` v2: пул сцен с guard-ами и эффектами, а НЕ развёрнутый граф. В каждой точке выбора (вход в локацию, разговор в хабе, концовка) движок фильтрует пул и ранжирует салиенс-селектором; жребий тянется только среди равноценных вариантов, ступень арки и бит хребта болтовнёй не вытесняются. Core: `game/src/storyletHost.ts` (решения режиссёра → кадры), `game/src/renderer.ts` (DOM-рендер через интерфейс `SceneHost`), `game/src/save.ts` (сейв = сериализованное состояние), `game/src/cli.ts` (CLI-сборщик).
+
+Графовый режим (`engine.ts`, `scenes.json`, численные условия на рёбрах) снесён: он запекал решения в порядок рёбер, из-за чего адаптивности в момент игры не было, а симуляция QA и игра расходились. Канвас-редактор (`client/src/pages/main`) остался инструментом рисования сцен, но его выход в игру больше не ведёт.
 
 **image_server/** — Standalone Express + Sharp service for image upload, listing (with base64 thumbnails), retrieval, deletion, and renaming. Stores files in `image_server/images/`.
 

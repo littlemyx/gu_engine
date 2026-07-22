@@ -1,32 +1,43 @@
-import { GameEngine } from "./engine";
 import { GameRenderer } from "./renderer";
-import { WorldState } from "./worldState";
 import { CalendarState } from "./calendarState";
 import { WorldMap } from "./map";
 import { GameAudio } from "./audio";
+import { StoryletHost } from "./storyletHost";
+import { StoryletWorld } from "./storyletWorld";
+import { hasSave, loadGame, saveGame, clearGame } from "./save";
 import {
-  ResolvedProject,
-  ProjectFile,
-  ProjectSettings,
-  SceneGraph,
-  DEFAULT_SETTINGS,
-} from "./types";
+  STORY_BUNDLE_FORMAT_VERSION,
+  validateStoryBundle,
+  type StoryBundleV2,
+} from "gu-engine-story-core";
 import "./style.css";
 
-declare const __GU_PROJECT__: ResolvedProject | undefined;
+declare const __GU_PROJECT__: StoryBundleV2 | undefined;
+
+/** Бандл v2 — единственный формат, который понимает движок. */
+function isStoryBundle(v: unknown): v is StoryBundleV2 {
+  return Boolean(v) && (v as StoryBundleV2).formatVersion === STORY_BUNDLE_FORMAT_VERSION;
+}
 
 const app = document.getElementById("app")!;
 const renderer = new GameRenderer(app);
 
-let currentProject: ResolvedProject | null = null;
-
-// Имя переменной времени календарного компилятора (contract с
-// client/src/narrative/compileCalendarGame.ts).
-const SLOT_VAR = "slot";
-const PHASE_VAR = "phase";
+// ?bundle=<url> — открыть бандл сразу, без диалога выбора файла. Нужно, чтобы
+// прогонять историю из фикстуры в дев-сервере и в автотестах.
+const bundleParam = new URLSearchParams(location.search).get("bundle");
 
 if (typeof __GU_PROJECT__ !== "undefined") {
-  launchGame(__GU_PROJECT__);
+  launchStorylet(__GU_PROJECT__);
+} else if (bundleParam) {
+  fetch(bundleParam)
+    .then((r) => r.json())
+    .then((data) => {
+      if (!isStoryBundle(data)) throw new Error("это не бандл v2");
+      launchStorylet(data);
+    })
+    .catch((e) => {
+      app.innerHTML = `<div class="load-screen"><h1>Не удалось открыть бандл</h1><p>${String(e)}</p></div>`;
+    });
 } else {
   showStartScreen();
 }
@@ -37,267 +48,163 @@ function showStartScreen(): void {
   app.innerHTML = `
     <div class="load-screen">
       <h1>Движок новелл</h1>
+      <p class="load-hint">Откройте storylet-бандл — файл .gu.json из плейграунда.</p>
       <div class="load-actions">
-        <button class="load-btn" id="open-btn">Открыть проект</button>
-        <button class="load-btn load-btn--secondary" id="new-btn">Новый проект</button>
+        <button class="load-btn" id="open-btn">Открыть историю</button>
       </div>
       <input type="file" id="file-input" accept=".json,.gu.json" hidden />
     </div>
   `;
 
-  const openBtn = document.getElementById("open-btn")!;
-  const newBtn = document.getElementById("new-btn")!;
   const input = document.getElementById("file-input") as HTMLInputElement;
-
-  openBtn.addEventListener("click", () => input.click());
+  document.getElementById("open-btn")!.addEventListener("click", () => input.click());
 
   input.addEventListener("change", async () => {
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      const projectFile: ProjectFile = JSON.parse(text);
-      currentProject = {
-        title: projectFile.title ?? "Новелла",
-        scenes: { nodes: [], edges: [] },
-        projectFile: file.name,
-        settings: { ...DEFAULT_SETTINGS, ...projectFile.settings },
-      };
-      showProjectScreen();
+      const parsed = JSON.parse(await file.text());
+      if (!isStoryBundle(parsed)) {
+        alert(
+          "Это не storylet-бандл. Движок читает только формат v2 — " +
+            "нажмите «Скачать storylet-бандл (v2)» в плейграунде.",
+        );
+        return;
+      }
+      // Бандл самодостаточен: ни scenes.json, ни экрана проекта не нужно.
+      const issues = validateStoryBundle(parsed).filter((i) => i.severity === "error");
+      if (issues.length > 0) {
+        alert(`Бандл не прошёл проверку:\n${issues.map((i) => `• ${i.message}`).join("\n")}`);
+        return;
+      }
+      launchStorylet(parsed);
     } catch (e) {
       alert(`Ошибка чтения файла: ${(e as Error).message}`);
     }
   });
-
-  newBtn.addEventListener("click", () => {
-    currentProject = {
-      title: "Новая новелла",
-      scenes: { nodes: [], edges: [] },
-      settings: { ...DEFAULT_SETTINGS },
-    };
-    showProjectScreen();
-  });
 }
 
-// ── Экран проекта ──
+// ── Игра на storylet-пуле (формат v2) ──
 
-function showProjectScreen(): void {
-  if (!currentProject) return;
-
-  const p = currentProject;
-  const hasScenes = p.scenes.nodes.length > 0;
-  const scenesStatus = hasScenes
-    ? `${p.scenes.nodes.length} сцен, ${p.scenes.edges.length} связей`
-    : "Сцены не загружены";
-
-  app.innerHTML = `
-    <div class="project-screen">
-      <div class="project-header">
-        <input class="project-title-input" id="title-input" value="${escapeAttr(p.title)}" />
-      </div>
-
-      <div class="project-section">
-        <h2>Сцены</h2>
-        <p class="project-status">${scenesStatus}</p>
-        <button class="load-btn" id="load-scenes-btn">Загрузить scenes.json</button>
-        <input type="file" id="scenes-input" accept=".json" hidden />
-      </div>
-
-      <div class="project-section">
-        <h2>Настройки</h2>
-        <div class="settings-grid">
-          ${settingRow("sceneFadeInMs", "Появление сцены (мс)", p.settings.sceneFadeInMs)}
-          ${settingRow("sceneFadeOutMs", "Затухание сцены (мс)", p.settings.sceneFadeOutMs)}
-          ${settingRow("choiceAppearDelayMs", "Задержка между вариантами (мс)", p.settings.choiceAppearDelayMs)}
-          ${settingRow("endFadeInMs", "Появление конца (мс)", p.settings.endFadeInMs)}
-        </div>
-      </div>
-
-      <div class="project-actions">
-        <button class="load-btn" id="play-btn" ${hasScenes ? "" : "disabled"}>Играть</button>
-        <button class="load-btn load-btn--secondary" id="save-btn">Сохранить проект</button>
-        <button class="load-btn load-btn--secondary" id="back-btn">Назад</button>
-      </div>
-    </div>
-  `;
-
-  document.getElementById("title-input")!.addEventListener("input", (e) => {
-    p.title = (e.target as HTMLInputElement).value;
-  });
-
-  const loadScenesBtn = document.getElementById("load-scenes-btn")!;
-  const scenesInput = document.getElementById("scenes-input") as HTMLInputElement;
-  loadScenesBtn.addEventListener("click", () => scenesInput.click());
-  scenesInput.addEventListener("change", async () => {
-    const file = scenesInput.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      p.scenes = JSON.parse(text) as SceneGraph;
-      p.scenesFile = file.name;
-      showProjectScreen();
-    } catch (e) {
-      alert(`Ошибка: ${(e as Error).message}`);
-    }
-  });
-
-  document.querySelectorAll<HTMLInputElement>(".setting-input").forEach((input) => {
-    input.addEventListener("change", () => {
-      const key = input.dataset.key as keyof ProjectSettings;
-      const val = parseInt(input.value, 10);
-      if (!isNaN(val) && val >= 0) {
-        (p.settings as unknown as Record<string, number>)[key] = val;
-      }
-    });
-  });
-
-  document.getElementById("play-btn")!.addEventListener("click", () => {
-    if (hasScenes) launchGame(p);
-  });
-
-  document.getElementById("save-btn")!.addEventListener("click", () => {
-    const projectFile: ProjectFile = {
-      title: p.title,
-      scenes: "./scenes.json",
-      settings: p.settings,
-    };
-    downloadJson(`${slugify(p.title)}.gu.json`, projectFile);
-    if (hasScenes) {
-      downloadJson("scenes.json", p.scenes);
-    }
-  });
-
-  document.getElementById("back-btn")!.addEventListener("click", showStartScreen);
-}
-
-function settingRow(key: string, label: string, value: number): string {
-  return `
-    <label class="setting-row">
-      <span class="setting-label">${label}</span>
-      <input class="setting-input" type="number" min="0" step="50" data-key="${key}" value="${value}" />
-    </label>
-  `;
-}
-
-// ── Игра ──
-
-function collectAudioUrlsForPreload(project: ResolvedProject): string[] {
+function collectBundleAudioUrls(bundle: StoryBundleV2): string[] {
   const urls: string[] = [];
-  if (project.settings.bgmUrl) urls.push(project.settings.bgmUrl);
-  // Все mood- и special-беды банка, иначе первый вход в новую-по-настроению
-  // локацию фетчит синхронно и кроссфейд стартует поздно.
-  for (const url of Object.values(project.settings.ambientByMood ?? {})) urls.push(url);
-  for (const url of Object.values(project.settings.ambientBySpecial ?? {})) urls.push(url);
-  for (const node of project.scenes.nodes) {
-    const p = node.data.audioProfile;
-    if (p?.positiveUrl) urls.push(p.positiveUrl);
-    if (p?.negativeUrl) urls.push(p.negativeUrl);
-    if (node.data.sfxUrl) urls.push(node.data.sfxUrl);
+  if (bundle.audio.bgmUrl) urls.push(bundle.audio.bgmUrl);
+  for (const url of Object.values(bundle.audio.ambientByMood ?? {})) urls.push(url);
+  for (const url of Object.values(bundle.audio.ambientBySpecial ?? {})) urls.push(url);
+  for (const unit of bundle.units) {
+    if (unit.audioProfile?.positiveUrl) urls.push(unit.audioProfile.positiveUrl);
+    if (unit.audioProfile?.negativeUrl) urls.push(unit.audioProfile.negativeUrl);
+    if (unit.sfxUrl) urls.push(unit.sfxUrl);
   }
   return urls;
 }
 
-function launchGame(project: ResolvedProject): void {
-  document.title = project.title;
+function launchStorylet(bundle: StoryBundleV2): void {
+  document.title = bundle.title;
+
+  const debug = new URLSearchParams(location.search).has("gudebug");
 
   const audio = new GameAudio({
-    bgmVolume: project.settings.bgmVolume ?? 0.3,
-    sfxVolume: project.settings.sfxVolume ?? 0.5,
-    crossfadeDurationMs: project.settings.crossfadeDurationMs ?? 2000,
+    bgmVolume: bundle.audio.bgmVolume ?? 0.3,
+    sfxVolume: bundle.audio.sfxVolume ?? 0.5,
+    crossfadeDurationMs: bundle.audio.crossfadeDurationMs ?? 2000,
   });
-  audio.preload(collectAudioUrlsForPreload(project)).catch(() => {});
+  audio.preload(collectBundleAudioUrls(bundle)).catch(() => {});
 
-  const manifest = project.settings.world;
-  const worldState =
-    manifest && manifest.locations.length > 0
-      ? new WorldState(manifest, project.scenes)
-      : null;
+  const host = new StoryletHost(bundle);
+  const world = new StoryletWorld(host.director);
 
-  // HUD календаря: слой поверх движка (движок про календарь не знает),
-  // читает переменную slot из state после каждой смены сцены.
-  const calendarSettings = project.settings.calendar;
-  let calendarState: CalendarState | null = null;
+  // HUD календаря читает обе стрелки прямо у режиссёра: переменных-путей,
+  // из которых их приходилось выковыривать, больше нет.
+  const calendarState = new CalendarState(
+    {
+      slotCount: bundle.calendar.slotCount,
+      dayparts: bundle.calendar.dayparts,
+      actBoundaries: bundle.calendar.actBoundaries,
+      phasesPerSlot: bundle.calendar.phasesPerSlot,
+    },
+    () => host.director.slot,
+    () => host.director.phase,
+  );
 
-  const engine = new GameEngine(project.scenes, project.settings, (node, isEnd) => {
-    worldState?.onScene(node);
-    calendarState?.onScene();
-    renderer.renderScene(node, isEnd);
+  host.bindSceneChange((h) => {
+    world.sync();
+    calendarState.onScene();
+    if (debug) {
+      const sel = h.director.lastSelection;
+      // eslint-disable-next-line no-console
+      console.log("[gu]", {
+        slot: h.director.slot,
+        phase: h.director.phase,
+        location: h.director.location,
+        fired: h.director.slice.fired.map((f) => f.eventId),
+        flags: [...h.director.slice.flags],
+        selection: sel && {
+          picked: sel.picked,
+          draw: sel.draw,
+          candidates: sel.candidates.map((c) => ({ id: c.unit.id, score: +c.score.toFixed(3), terms: c.terms })),
+        },
+      });
+    }
+    renderer.renderScene(h.getCurrentNode()!, h.isEnd());
   });
-  calendarState = calendarSettings
-    ? new CalendarState(
-        calendarSettings,
-        () => engine.getState()[SLOT_VAR] ?? 0,
-        () => engine.getState()[PHASE_VAR] ?? 0,
-      )
-    : null;
-  engine.setProjectMeta(project.title, project.projectFile, project.scenesFile);
-  renderer.bind(engine);
+
+  host.bindPersist(() => saveGame(bundle.title, host.snapshot()));
+
+  renderer.bind(host);
   renderer.bindAudio(audio);
   renderer.mount();
 
-  renderer.setTopLabel(() => {
-    const cur = worldState?.getCurrent();
-    const base = cur ? worldState!.nameOf(cur) : project.title;
-    return calendarState ? `${base} · ${calendarState.label()}` : base;
-  });
+  renderer.setTopLabel(() => `${world.nameOf(host.director.location)} · ${calendarState.label()}`);
 
-  if (worldState) {
-    const map = new WorldMap(renderer.getMapRoot(), worldState, (loc) => {
-      const outId = worldState.travelOutputId(loc);
-      if (!outId) return;
-      worldState.setPending(loc);
-      renderer.runAction(() => engine.choose(outId));
-    });
-    renderer.setMap(true, () => map.open(worldState.canTravel(engine.getCurrentNode())));
-  } else {
-    renderer.setMap(false, () => {});
-  }
+  const map = new WorldMap(renderer.getMapRoot(), world, (loc) => {
+    renderer.runAction(() => host.choose(`move:${loc}`));
+  });
+  renderer.setMap(true, () =>
+    // Ходить можно только из хаба: посреди сцены карта смотрится, но не водит.
+    map.open((host.getCurrentNode()?.id ?? "").startsWith("hub_")),
+  );
 
   renderer.onBack(() => {
     audio.dispose();
     document.title = "Движок новелл";
-    showProjectScreen();
+    showStartScreen();
   });
 
-  // Эмбиент-подложка по локации: спец-бед (бар/стадион) в приоритете, иначе
-  // бед по настроению. worldState.onScene выполняется перед renderScene, поэтому
-  // getCurrent() свеж. Нет модели мира / нет тега → undefined → фолбэк на bgmUrl.
-  const ambientByMood = project.settings.ambientByMood ?? {};
-  const ambientBySpecial = project.settings.ambientBySpecial ?? {};
-  const locationMood: Record<string, string> = {};
-  const locationSpecial: Record<string, string> = {};
-  for (const l of manifest?.locations ?? []) {
-    if (l.mood) locationMood[l.id] = l.mood;
-    if (l.specialKind) locationSpecial[l.id] = l.specialKind;
-  }
+  const ambientByMood = bundle.audio.ambientByMood ?? {};
+  const ambientBySpecial = bundle.audio.ambientBySpecial ?? {};
   renderer.setBaseBedProvider(() => {
-    const loc = worldState?.getCurrent();
+    const loc = host.director.locationOf(host.director.location);
     if (!loc) return undefined;
-    const special = locationSpecial[loc];
-    if (special && ambientBySpecial[special]) return ambientBySpecial[special];
-    const mood = locationMood[loc];
-    return mood ? ambientByMood[mood] : undefined;
+    if (loc.specialKind && ambientBySpecial[loc.specialKind]) return ambientBySpecial[loc.specialKind];
+    return loc.mood ? ambientByMood[loc.mood] : undefined;
   });
 
-  engine.start();
-}
-
-// ── Утилиты ──
-
-function escapeAttr(str: string): string {
-  return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-}
-
-function slugify(str: string): string {
-  return str.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/(^-|-$)/g, "") || "project";
-}
-
-function downloadJson(filename: string, data: unknown): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
+  // Выбор «продолжить/заново» — обычный экран, а не нативный confirm():
+  // тот блокирует страницу целиком (вместе со скриншотами и автотестами)
+  // и не стилизуется.
+  const saved = loadGame(bundle.title);
+  if (!saved) {
+    host.start();
+    return;
+  }
+  app.innerHTML = `
+    <div class="load-screen">
+      <h1>${bundle.title.replace(/&/g, "&amp;").replace(/</g, "&lt;")}</h1>
+      <p class="load-hint">Есть сохранённое прохождение.</p>
+      <div class="load-actions">
+        <button class="load-btn" id="continue-btn">Продолжить</button>
+        <button class="load-btn load-btn--secondary" id="restart-btn">Начать заново</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("continue-btn")!.addEventListener("click", () => {
+    renderer.mount();
+    host.restore(saved);
+  });
+  document.getElementById("restart-btn")!.addEventListener("click", () => {
+    clearGame(bundle.title);
+    renderer.mount();
+    host.start();
+  });
 }

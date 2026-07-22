@@ -15,7 +15,6 @@ import '@alenaksu/json-viewer';
 import type { JsonViewer } from '@alenaksu/json-viewer/dist/JsonViewer';
 import { usePrototypeStore } from '@/store/prototypeStore';
 import { toCardEdge } from '../utils';
-import { AUDIO_SERVER_BASE } from '../constants';
 import type { CardNode, CardNodeData } from '../types';
 import styles from '../main.module.css';
 import common from '../common.module.css';
@@ -40,17 +39,6 @@ const nodeTypes = {
  * работают только в нарративном пайплайне (compileWorldGame) — у
  * канвас-экспорта нет ни state, ни effects.
  */
-function findCanvasBgmUrl(allNodes: CardNode[]): string | undefined {
-  for (const node of allNodes) {
-    if (node.data.cardType !== 'audio_master_prompt') continue;
-    const files = node.data.generatedAudio ?? [];
-    const selected = files[node.data.audioSelected?.base ?? 0] || files.find(Boolean);
-    if (selected) {
-      return `${AUDIO_SERVER_BASE}/audio/${encodeURIComponent(selected)}`;
-    }
-  }
-  return undefined;
-}
 
 export const Flow = () => {
   const { nodes, edges, setNodes, setEdges, deleteNode, updateNodeData, loadScenes, reset } = usePrototypeStore();
@@ -266,46 +254,10 @@ export const Flow = () => {
     [screenToFlowPosition, setNodes, setEdges],
   );
 
-  const onExport = useCallback(() => {
-    // В scenes.json уходят только сцены и рёбра между ними: служебные
-    // карточки (персонажи, промпты) с нулём входящих рёбер ломали
-    // findStartNode движка.
-    const sceneIds = new Set(nodes.filter(n => n.data.cardType === 'scene').map(n => n.id));
-    const sceneNodes = nodes.filter(n => sceneIds.has(n.id));
-    const sceneEdges = edges.filter(e => sceneIds.has(e.source) && sceneIds.has(e.target));
-
-    const scenes = JSON.stringify({ nodes: sceneNodes, edges: sceneEdges }, null, 2);
-    const scenesBlob = new Blob([scenes], { type: 'application/json' });
-    const scenesUrl = URL.createObjectURL(scenesBlob);
-    const scenesLink = document.createElement('a');
-    scenesLink.href = scenesUrl;
-    scenesLink.download = 'scenes.json';
-    scenesLink.click();
-    URL.revokeObjectURL(scenesUrl);
-
-    const bgmUrl = findCanvasBgmUrl(nodes);
-    const project = JSON.stringify(
-      {
-        title: 'Новелла',
-        scenes: './scenes.json',
-        settings: {
-          crossfadeDurationMs: 2000,
-          bgmVolume: 0.3,
-          sfxVolume: 0.5,
-          ...(bgmUrl ? { bgmUrl } : {}),
-        },
-      },
-      null,
-      2,
-    );
-    const projectBlob = new Blob([project], { type: 'application/json' });
-    const projectUrl = URL.createObjectURL(projectBlob);
-    const projectLink = document.createElement('a');
-    projectLink.href = projectUrl;
-    projectLink.download = 'project.gu.json';
-    projectLink.click();
-    URL.revokeObjectURL(projectUrl);
-  }, [nodes, edges]);
+  // Экспорт в игровой формат убран вместе с графовым движком: он отдавал
+  // scenes.json + project.gu.json, а движок читает storylet-бандл, который
+  // собирается из брифа в плейграунде. Канвас остался инструментом
+  // рисования сцен — его выход в игру больше не ведёт.
 
   const handleNewProject = useCallback(() => {
     reset();
@@ -396,9 +348,6 @@ export const Flow = () => {
           </button>
           {rightPanelOpen && (
             <>
-              <button className={styles.toolButton} onClick={onExport}>
-                Экспорт в JSON
-              </button>
               {/* @ts-expect-error json-viewer is a web component */}
               <json-viewer ref={jsonViewerRef} class={styles.jsonPreview} />
             </>

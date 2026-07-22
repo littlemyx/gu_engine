@@ -9,7 +9,7 @@ import {
   formatEffect,
   type EventDef,
   type TimeSlice,
-} from './events';
+} from './index';
 
 const SLICE: TimeSlice = { z: 6, anchorId: 'a7_festival', timeMarker: 'день 7 · вечер' };
 

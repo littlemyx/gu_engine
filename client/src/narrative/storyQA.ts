@@ -1,25 +1,19 @@
-import type { Brief, SegmentIssue, WorldModel } from './types';
-import type {
-  Calendar,
-  CastPlan,
-  CharacterSchedule,
-  EventUnit,
-  SpineBeat,
-  SpineBeatOutcome,
-  SpinePlan,
-} from './calendarTypes';
+import type { Brief, EndingVariant, SegmentIssue, WorldModel } from './types';
+import { endingKey } from './types';
+import type { Calendar, CastPlan, CharacterSchedule, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
 import { PHASES_PER_SLOT, slotLabel } from './calendarTypes';
-import type { EventDef, Guard, SliceState } from './events';
-import { DEFAULT_RELATIONSHIP, createSliceState, evalGuard, evaluateSlice, guardFiredIds } from './events';
+import type { Guard } from './events';
+import { guardFiredIds } from './events';
+import { StoryletDirector, type CompiledBeat, type Effect } from 'gu-engine-story-core';
+import { buildStoryletBundle } from './buildStoryletBundle';
+import { DIALOGUE_UNIT_MAX_DEPTH } from './dialogueUnit';
 import { enumerateLeafAssignments, guardFlags, playableBeatsForLeaf, validateSpine } from './validateSpine';
 import { validateCalendar } from './validateCalendar';
 import { validateSchedule } from './buildSchedule';
 import { unitEstablishes, validateEventUnits } from './parseEventPool';
 import { computeReachableUnits, computeReachableUnitsFor } from './reachability';
 import { assignBeatSlots } from './beatSchedule';
-import { applyBeatChain } from './beatChain';
-import { applyLadderGuards, skipsNegativeBracket } from './ladderGuards';
-import { CHOICE_PATH_DELTA_CAP } from './calendarTypes';
+import { skipsNegativeBracket } from './ladderGuards';
 import { coverageIssues } from './coverageUnits';
 import type { DialogueUnit } from './dialogueUnit';
 import { validateDialogueUnit } from './dialogueUnit';
@@ -214,6 +208,8 @@ export type StoryQAStatus = {
 
 export type PolicyReport = {
   policy: string;
+  /** Seed прогона: селектор стохастичен, отчёт обязан быть воспроизводим. */
+  seed: number;
   reachedFinale: boolean;
   /** id первой выполнимой концовки (evalGuard по финальному состоянию), иначе null. */
   endingSatisfied: string | null;
@@ -232,7 +228,20 @@ export type PolicyReport = {
   slotCount: number;
   /** Биты, сыгранные раньше своего предшественника по цепочке (обязано быть пусто). */
   orderViolations?: string[];
+  /**
+   * Юниты, которых селектор не предложил ни при одной политике и seed-е —
+   * оплаченная проза, которую игрок не увидит. Заполняется один раз на прогон
+   * (в первом отчёте), потому что считается по всем политикам сразу.
+   */
+  starvedUnits?: string[];
 };
+
+/**
+ * Seed-ы симуляции. Селектор тянет жребий, поэтому одиночный прогон мог бы
+ * случайно не заметить голодающий контент; фиксированный набор держит отчёт
+ * воспроизводимым.
+ */
+const SIM_SEEDS = [1, 2, 3];
 
 /**
  * Дефолтные политики; 'greedy-li:*' разворачивается в одну политику на
@@ -249,8 +258,6 @@ export const DEFAULT_POLICIES = [
   'seeded-random:2',
 ];
 
-const BEAT_DEF_PREFIX = 'beat:';
-
 /** FNV-1a-подобный детерминированный хэш (та же идея, что в buildSchedule). */
 function policyHash(key: string, slot: number, seed: number): number {
   let h = (2166136261 ^ seed) >>> 0;
@@ -263,132 +270,117 @@ function policyHash(key: string, slot: number, seed: number): number {
   return h >>> 0;
 }
 
-type PolicyImpl = {
+/**
+ * Политика игрока поверх ПУБЛИЧНОГО API режиссёра.
+ *
+ * Раньше политики говорили с evaluateSlice — вторым исполнителем правил,
+ * который компилятор потом переводил в граф. Теперь они играют ровно то, что
+ * увидит игрок: тот же StoryletDirector, тот же селектор, те же брекеты и
+ * продолжения. Поэтому «QA зелёный, а игра не проходится» стало невозможно
+ * по построению, а не по внимательности.
+ */
+type PlayerPolicy = {
   name: string;
-  pickLocation: (slot: number, firedBeatIds: Set<string>) => string | null;
-  pickOutcome: (beat: SpineBeat) => SpineBeatOutcome | null;
-  /**
-   * Как игрок ведёт себя В диалоге: выборы дают ±CHOICE_PATH_DELTA_CAP за
-   * встречу. Симулятор не проигрывает диалоговые графы, поэтому канал выборов
-   * моделируется одним числом на встречу.
-   *
-   * 0 (по умолчанию) — пессимистично, только детерминированные closing-гейны:
-   * такой прогон честно отвечает «нельзя ли проскочить ступень нахрапом».
-   * +cap («warm-li») — прилежный игрок: отвечает «доходима ли арка вообще».
-   * Обе границы нужны: одна ловит скачок, другая — тупик.
-   */
-  choiceBias?: number;
+  /** Куда идти, когда здесь пусто. null — двигать время якорем. */
+  pickLocation: (d: StoryletDirector, moves: string[]) => string | null;
+  /** С кем говорить из предложенного селектором. null — ни с кем. */
+  pickTalk: (talks: Array<{ unitId: string; li: string }>) => string | null;
+  /** Как отвечать в сцене: 'warm' — максимум близости, 'cold' — минимум. */
+  tone: 'warm' | 'cold';
+  pickOutcome: (beat: CompiledBeat) => string | undefined;
+  /** Продолжать ли посиделку следующей ступенью. */
+  takeContinuation: boolean;
 };
 
-/**
- * fired-депы на БИТЫ → id их дефов (beat:<id>).
- *
- * Обязательно: evaluateSlice пишет в state.fired ИМЕННО id дефа (с префиксом), а
- * evalGuard сравнивает по сырому значению {fired}. Без remap любая цепочка
- * порядка невыполнима в симуляции — и КАЖДАЯ политика ложно провалила бы финал.
- * Депы на юниты не трогаем: их дефы живут под собственными id.
- */
-function remapBeatFired(guard: Guard, beatIds: Set<string>): Guard {
-  if ('all' in guard) return { all: guard.all.map(g => remapBeatFired(g, beatIds)) };
-  if ('any' in guard) return { any: guard.any.map(g => remapBeatFired(g, beatIds)) };
-  if ('not' in guard) return { not: remapBeatFired(guard.not, beatIds) };
-  if ('fired' in guard && beatIds.has(guard.fired)) return { fired: `${BEAT_DEF_PREFIX}${guard.fired}` };
-  return guard;
-}
+function buildPolicies(liIds: string[], names: string[]): PlayerPolicy[] {
+  const firstOutcome = (beat: CompiledBeat): string | undefined => beat.outcomes?.[0]?.id;
 
-/** Бит хребта → EventDef; исход развилки политики вшит как доп. setFlag. */
-function beatToDef(beat: SpineBeat, chosenOutcome: SpineBeatOutcome | null, beatIds: Set<string>): EventDef {
-  return {
-    id: `${BEAT_DEF_PREFIX}${beat.id}`,
-    kind: 'state_change',
-    at: { locationId: beat.locationId, slot: beat.window },
-    participants: beat.participants.filter(p => !p.startsWith('$')),
-    guard: remapBeatFired(beat.guard, beatIds),
-    effects: [
-      ...beat.establishes.map(f => ({ setFlag: f } as const)),
-      ...(chosenOutcome ? [{ setFlag: chosenOutcome.setsFlag } as const] : []),
-    ],
-    priority: 0,
-  };
-}
+  /** Куда идти за конкретным человеком: ближайший шаг к его локации. */
+  const towardLi =
+    (liId: string) =>
+    (d: StoryletDirector, moves: string[]): string | null => {
+      const want = d.bundle.schedule[liId]?.[d.slot] ?? null;
+      if (want && want !== d.location) {
+        if (moves.includes(want)) return want;
+        // Не сосед — идём общим маршрутом к содержимому (BFS без побочных эффектов).
+        const route = d.routeToContent();
+        if (route.length > 0) return route[0];
+      }
+      return null;
+    };
 
-function buildPolicies(inputs: StoryQAInputs, names: string[]): PolicyImpl[] {
-  const { brief, spine, schedule } = inputs;
-  const liIds = brief.loveInterests.map(li => li.id);
-
-  const firstOutcome = (beat: SpineBeat): SpineBeatOutcome | null => beat.outcomes?.[0] ?? null;
-
-  /** Локация LI в слоте (null = за кадром / нет в расписании). */
-  const liLocation = (liId: string, slot: number): string | null => schedule[liId]?.[slot] ?? null;
-
-  /** Занятые локации слота (детерминированно отсортированы). */
-  const occupiedLocations = (slot: number): string[] => {
-    const set = new Set<string>();
-    for (const liId of liIds) {
-      const loc = liLocation(liId, slot);
-      if (loc) set.add(loc);
-    }
-    return [...set].sort();
-  };
-
-  /** «Самый ранний созревший несыгранный бит»: слот внутри окна, бит не сработал. */
-  const earliestMaturedBeat = (slot: number, firedBeatIds: Set<string>): SpineBeat | null => {
-    const matured = spine.beats
-      .filter(b => !firedBeatIds.has(b.id) && slot >= b.window.fromSlot && slot <= b.window.toSlot)
-      .sort(
-        (a, b) => a.window.fromSlot - b.window.fromSlot || a.window.toSlot - b.window.toSlot || (a.id < b.id ? -1 : 1),
-      );
-    return matured[0] ?? null;
-  };
-
-  const build = (name: string): PolicyImpl => {
+  const build = (name: string): PlayerPolicy => {
     if (name === 'spine-only') {
       return {
         name,
-        pickLocation: (slot, fired) => earliestMaturedBeat(slot, fired)?.locationId ?? null,
+        // Только сюжет: идём туда, где созрел бит, и ни с кем не говорим.
+        pickLocation: d => {
+          const beat = d.bundle.spine.beats.find(
+            b => !d.slice.fired.some(f => f.eventId === b.id) && d.maturedBeat(b.locationId)?.id === b.id,
+          );
+          if (!beat || beat.locationId === d.location) return null;
+          const route = d.routeToContent();
+          return route.length > 0 ? route[0] : null;
+        },
+        pickTalk: () => null,
+        tone: 'cold',
         pickOutcome: firstOutcome,
+        takeContinuation: false,
       };
     }
-    if (name.startsWith('greedy-li:')) {
-      const liId = name.slice('greedy-li:'.length);
-      return { name, pickLocation: slot => liLocation(liId, slot), pickOutcome: firstOutcome };
-    }
-    // Прилежный игрок: ходит за своим LI и выбирает тепло — верхняя граница
-    // продвижения по лестнице (проверка завершаемости арки).
-    if (name.startsWith('warm-li:')) {
-      const liId = name.slice('warm-li:'.length);
+    if (name.startsWith('greedy-li:') || name.startsWith('warm-li:')) {
+      // greedy — пессимистичная граница (холодные ответы): «нельзя ли
+      // проскочить ступень нахрапом». warm — прилежный игрок: «доходима ли
+      // арка вообще». Нужны обе.
+      const warm = name.startsWith('warm-li:');
+      const liId = name.slice(name.indexOf(':') + 1);
       return {
         name,
-        pickLocation: slot => liLocation(liId, slot),
+        pickLocation: towardLi(liId),
+        pickTalk: talks => talks.find(t => t.li === liId)?.unitId ?? null,
+        tone: warm ? 'warm' : 'cold',
         pickOutcome: firstOutcome,
-        choiceBias: CHOICE_PATH_DELTA_CAP,
+        takeContinuation: true,
       };
     }
     if (name === 'round-robin') {
       return {
         name,
-        pickLocation: slot => (liIds.length > 0 ? liLocation(liIds[slot % liIds.length], slot) : null),
+        pickLocation: (d, moves) => (liIds.length > 0 ? towardLi(liIds[d.slot % liIds.length])(d, moves) : null),
+        pickTalk: talks => talks[0]?.unitId ?? null,
+        tone: 'warm',
         pickOutcome: firstOutcome,
+        takeContinuation: true,
       };
     }
     if (name.startsWith('seeded-random:')) {
       const seed = Number(name.slice('seeded-random:'.length)) || 0;
       return {
         name,
-        pickLocation: slot => {
-          const occ = occupiedLocations(slot);
-          if (occ.length === 0) return null;
-          return occ[policyHash(name, slot, seed) % occ.length];
+        pickLocation: (d, moves) => {
+          if (moves.length === 0) return null;
+          const route = d.routeToContent();
+          if (route.length > 0) return route[0];
+          return moves[policyHash(name, d.slot, seed) % moves.length];
         },
-        pickOutcome: beat => {
-          const outcomes = beat.outcomes ?? [];
-          if (outcomes.length === 0) return null;
-          return outcomes[policyHash(beat.id, 0, seed) % outcomes.length];
-        },
+        pickTalk: talks => (talks.length === 0 ? null : talks[policyHash(name, 0, seed) % talks.length].unitId),
+        tone: seed % 2 === 0 ? 'warm' : 'cold',
+        pickOutcome: beat =>
+          beat.outcomes && beat.outcomes.length > 0
+            ? beat.outcomes[policyHash(beat.id, 0, seed) % beat.outcomes.length].id
+            : undefined,
+        takeContinuation: true,
       };
     }
-    // Неизвестное имя — политика «ждать всегда» (отчёт честно провалится).
-    return { name, pickLocation: () => null, pickOutcome: firstOutcome };
+    // Неизвестное имя — политика «стоять на месте» (отчёт честно провалится).
+    return {
+      name,
+      pickLocation: () => null,
+      pickTalk: () => null,
+      tone: 'cold',
+      pickOutcome: firstOutcome,
+      takeContinuation: false,
+    };
   };
 
   return names
@@ -400,198 +392,260 @@ function buildPolicies(inputs: StoryQAInputs, names: string[]): PolicyImpl[] {
     .map(build);
 }
 
+/** Суммарная дельта affection выбора — по ней политика и отыгрывает тон. */
+function choiceAffection(choice: { effects: Effect[] }): number {
+  let sum = 0;
+  for (const e of choice.effects) if ('rel' in e && e.rel.var === 'affection') sum += e.rel.delta;
+  return sum;
+}
+
+/** Проигрывает открытую сцену до закрывающего узла, отвечая в заданном тоне. */
+function playScene(d: StoryletDirector, tone: 'warm' | 'cold'): void {
+  let node = d.currentNode();
+  let depth = 0;
+  while (node && node.choices.length > 0 && depth++ < DIALOGUE_UNIT_MAX_DEPTH + 2) {
+    const sorted = [...node.choices].sort((a, b) => choiceAffection(a) - choiceAffection(b));
+    const pick = tone === 'warm' ? sorted[sorted.length - 1] : sorted[0];
+    node = d.choose(pick.id);
+  }
+}
+
 /**
- * Прогон детерминированных политик игрока по evaluateSlice. Позиции
- * персонажей на каждом слоте сбрасываются из колонок расписания; политика
- * выбирает ОДНУ локацию героини — события в других локациях не срабатывают
- * (в этом смысл симуляции: контент должен быть достижим ходьбой).
+ * Прогон детерминированных политик игрока ПО НАСТОЯЩЕМУ РЕЖИССЁРУ.
+ *
+ * Бандл собирается в памяти тем же buildStoryletBundle, что уходит в экспорт
+ * (с заглушками вместо ненаписанной прозы — QA судит структуру, а не текст), и
+ * политики играют его через публичный API StoryletDirector. Симуляция и игра
+ * больше не два исполнителя одних правил, а один и тот же класс: расхождение
+ * между «QA зелёный» и «игра не проходится» невозможно по построению.
+ *
+ * Каждая политика гоняется по нескольким seed-ам: селектор стохастичен, и
+ * одиночный прогон мог бы случайно не заметить голодающий контент.
  *
  * Утверждения живут в ОТЧЁТЕ (см. summarizePolicyReports), не бросаются.
  */
 export function simulatePolicies(inputs: StoryQAInputs, policies: string[] = DEFAULT_POLICIES): PolicyReport[] {
-  const { brief, calendar, schedule } = inputs;
-  // Симулируем ТОТ ЖЕ граф, что соберёт компилятор: лестница отношений
-  // (полы окон + rel-пороги) и цепочка порядка битов. Обе идемпотентны.
-  // Без этого QA валидировал бы игру, которой нет: гейты есть в собранном
-  // графе, но не в симуляции.
-  const ladder = applyLadderGuards(inputs.eventUnits, inputs.spine, calendar, brief);
-  const eventUnits = ladder.units;
-  const spine = applyBeatChain(ladder.spine, calendar, new Set(brief.loveInterests.map(li => li.id)), eventUnits);
+  const { brief, calendar, worldModel, spine, schedule, eventUnits, unitProse, tagMap } = inputs;
+  // Без модели мира симуляции нет: режиссёр ходит по карте. Молча вернуть
+  // пустой отчёт нельзя — QA выглядел бы зелёным именно тогда, когда он вообще
+  // ничего не проверил; summarizePolicyReports превращает это в error.
+  if (!worldModel || worldModel.locations.length === 0) return [];
+
   const liIds = brief.loveInterests.map(li => li.id);
   const slotCount = calendar.slotCount;
-  const reachable = computeReachableUnits(spine, calendar, eventUnits);
-  // Валюта арки — ОДНА: детерминированный closing-гейн ступени, который
-  // compileCalendarGame вешает на closing-ребро.
-  //
-  // rel-эффекты пула от LLM здесь отбрасываются намеренно: собранная игра их
-  // никогда не применяла (closing нёс только met/unit/флаги/slot), а симулятор
-  // применял — и showed отношения, которых в игре нет. Оставить оба канала
-  // значило бы удвоить валюту: на реальной истории affection упирался в
-  // потолок 1.0, и любой rel-порог становился бы бутафорией.
-  const unitDefs: EventDef[] = eventUnits
-    .filter(u => reachable.has(u.id))
-    .map(u => {
-      const liId = u.participants[0] ?? '';
-      const gain = ladder.plan.closingGain.get(u.id) ?? 0;
-      const effects = u.effects.filter(e => !('rel' in e));
-      if (gain > 0 && liId) effects.push({ rel: { char: liId, var: 'affection', delta: gain, clamp: [-1, 1] } });
-      return { ...u, effects };
-    });
-  const finale = spine.beats.find(b => b.kind === 'finale') ?? null;
-  const beatIds = new Set(spine.beats.map(b => b.id));
 
-  return buildPolicies({ ...inputs, spine }, policies).map(policy => {
-    const defs: EventDef[] = [
-      ...spine.beats.map(b => beatToDef(b, b.kind === 'branchPoint' ? policy.pickOutcome(b) : null, beatIds)),
-      ...unitDefs,
-    ];
+  // Концовки-заглушки: компилятор берёт в бандл только те, для которых есть
+  // проза, а QA обязан судить достижимость концовок ЕЩЁ ДО её генерации.
+  // Иначе endingSatisfied всегда null и каждая политика ложно проваливается.
+  const stubEndings: Record<string, EndingVariant> = Object.fromEntries(
+    spine.endings.map(e => [
+      endingKey(e.kind, e.liId),
+      { kind: e.kind, liId: e.liId, scenes: [{ id: '', narration: `[без прозы: концовка ${e.id}]` }] },
+    ]),
+  );
 
-    // Отношения стартуют с АРХЕТИПНЫХ значений — тех же, что дефолты stateSchema
-    // собранной игры. Нули были слепым пятном: «тёплые» архетипы (forbidden 0.5,
-    // mutual_pining 0.6) начинают игру заметно выше нуля, и QA, считавший с нуля,
-    // не видел ни ранних тёплых веток, ни выполнимости rel-гейтов.
-    const state: SliceState = createSliceState({
-      relationships: Object.fromEntries(
-        liIds.map(id => [id, { ...DEFAULT_RELATIONSHIP, affection: ladder.plan.startByLi.get(id) ?? 0 }]),
-      ),
-    });
+  // Тот же сборщик, что и в экспорте: лестница и цепочка битов применяются
+  // внутри него, поэтому QA видит ровно те гейты, что попадут в игру.
+  const { bundle } = buildStoryletBundle(
+    brief,
+    spine,
+    calendar,
+    schedule,
+    worldModel,
+    {},
+    unitProse,
+    Object.fromEntries(eventUnits.map(u => [u.id, u])),
+    stubEndings,
+    {},
+    {},
+    undefined,
+    { tagMap },
+    { stubMissingProse: true },
+  );
 
-    const deadSlots: number[] = [];
-    const firedBeatIds = new Set<string>();
-    const firedUnits: string[] = [];
-    const firedBeats: string[] = [];
-    /** Разговоров сыграно за прогон — метрика плотности контента (см. отчёт). */
-    let actsPlayed = 0;
+  const offeredEver = new Set<string>();
+  const reports: PolicyReport[] = [];
 
-    // Слот проживается ФАЗАМИ. Раньше цикл делал один pickLocation на слот —
-    // структурное зеркало отменённого тарифа «встреча = слот». Теперь слот
-    // двигают только сюжет и якоря, а внутри слота помещается до PHASES_PER_SLOT
-    // разговоров; сим обязан судить ту игру, которая есть, иначе он валидирует
-    // несуществующую.
-    for (let slot = 0; slot < slotCount; slot++) {
-      // Позиции каждого слота — колонка расписания (перемещения слота не копятся).
-      state.positions = Object.fromEntries(liIds.map(id => [id, schedule[id]?.[slot] ?? null]));
+  for (const policy of buildPolicies(liIds, policies)) {
+    for (const seed of SIM_SEEDS) {
+      const d = new StoryletDirector(bundle, { seed });
+      const firedBeats: string[] = [];
+      const firedUnits: string[] = [];
+      const deadSlots = new Set<number>();
+      let actsPlayed = 0;
 
-      let phase = 0;
-      let visited = false;
-      let firedHere = 0;
+      // Потолок шагов: слоты × фазы × запас на ходьбу. Страховка от политики,
+      // которая ходит кругами и никуда не приходит.
+      const maxSteps = slotCount * (calendar.slotCount > 0 ? PHASES_PER_SLOT : 1) * 8 + 64;
+      let steps = 0;
+      let progressedThisSlot = false;
+      let watchedSlot = d.slot;
 
-      while (phase < PHASES_PER_SLOT) {
-        const loc = policy.pickLocation(slot, firedBeatIds);
-        if (loc == null) break; // политика никуда не пошла — мёртвым не считаем.
-        visited = true;
-
-        const evaluation = evaluateSlice(defs, { z: slot, slot, phase }, state, loc);
-        if (evaluation.fired.length === 0) break;
-        firedHere += evaluation.fired.length;
-
-        let dialoguesFired = 0;
-        for (const def of evaluation.fired) {
-          if (def.id.startsWith(BEAT_DEF_PREFIX)) {
-            const beatId = def.id.slice(BEAT_DEF_PREFIX.length);
-            firedBeatIds.add(beatId);
-            firedBeats.push(beatId);
-          } else {
-            dialoguesFired++;
-            actsPlayed++;
-            firedUnits.push(def.id);
-            // Канал выборов: симулятор не проигрывает граф диалога, поэтому
-            // поведение игрока В сцене — одно число на встречу (см. choiceBias).
-            const bias = policy.choiceBias ?? 0;
-            const liId = def.participants[0] ?? '';
-            if (bias !== 0 && liId) {
-              const rel = state.relationships[liId] ?? { ...DEFAULT_RELATIONSHIP };
-              rel.affection = Math.max(-1, Math.min(1, rel.affection + bias));
-              state.relationships[liId] = rel;
-            }
-          }
+      // shouldEnd, а не finaleFired: проспавшая сюжет политика упирается в
+      // конец календаря — с гарантией анти-софтлока это штатная концовка, и
+      // крутить пустые шаги до maxSteps незачем.
+      while (!d.shouldEnd() && steps++ < maxSteps) {
+        if (d.slot !== watchedSlot) {
+          if (!progressedThisSlot) deadSlots.add(watchedSlot);
+          watchedSlot = d.slot;
+          progressedThisSlot = false;
         }
-        // Фазу тратят только разговоры. Отыграли одни биты — повторять проход
-        // бессмысленно: evaluateSlice их уже зафиксировал в state.fired.
-        if (dialoguesFired === 0) break;
-        phase += dialoguesFired;
+
+        const beat = d.maturedBeat();
+        if (beat) {
+          d.completeBeat(beat.id, beat.kind === 'branchPoint' ? policy.pickOutcome(beat) : undefined);
+          firedBeats.push(beat.id);
+          progressedThisSlot = true;
+          continue;
+        }
+
+        const actions = d.hubActions();
+        for (const t of actions.talks) offeredEver.add(t.unitId);
+
+        const talkId = policy.pickTalk(actions.talks);
+        if (talkId && d.startTalk(talkId)) {
+          playScene(d, policy.tone);
+          firedUnits.push(talkId);
+          actsPlayed++;
+          progressedThisSlot = true;
+          let close = d.closeTalk();
+          while (policy.takeContinuation && close.continuation) {
+            const nextId = close.continuation.unitId;
+            if (!d.startTalk(nextId)) break;
+            playScene(d, policy.tone);
+            firedUnits.push(nextId);
+            actsPlayed++;
+            close = d.closeTalk();
+          }
+          continue;
+        }
+
+        const moveIds = actions.moves.map(m => m.locationId);
+        const target = policy.pickLocation(d, moveIds);
+        if (target && moveIds.includes(target)) {
+          d.moveTo(target);
+          continue;
+        }
+        d.anchorAdvance();
+      }
+      if (!progressedThisSlot && d.slot < slotCount) deadSlots.add(watchedSlot);
+
+      const ending = d.checkEnding();
+
+      // Регресс-страховка порядка: бит не может опередить предшественника по
+      // fired-цепочке — движок гейтит его guard-ом, а не надеждой.
+      const orderIndex = new Map(firedBeats.map((id, i) => [id, i]));
+      const beatIds = new Set(bundle.spine.beats.map(b => b.id));
+      const orderViolations: string[] = [];
+      for (const b of bundle.spine.beats) {
+        const at = orderIndex.get(b.id);
+        if (at == null) continue;
+        for (const dep of guardFiredIds(b.guard)) {
+          if (!beatIds.has(dep)) continue;
+          const depAt = orderIndex.get(dep);
+          if (depAt == null || depAt > at) orderViolations.push(`${b.id} до ${dep}`);
+        }
       }
 
-      // Мёртвый слот — тот, куда игрок пришёл и не нашёл НИЧЕГО.
-      if (visited && firedHere === 0) deadSlots.push(slot);
+      reports.push({
+        policy: policy.name,
+        seed,
+        reachedFinale: d.finaleFired(),
+        endingSatisfied: ending?.id ?? null,
+        firedBeats,
+        firedUnits,
+        deadSlots: [...deadSlots].sort((a, b) => a - b),
+        actsPlayed,
+        relFinal: Object.fromEntries(liIds.map(id => [id, d.slice.relationships[id]?.affection ?? 0])),
+        slotCount,
+        orderViolations,
+      });
     }
+  }
 
-    // Первая концовка, чей guard выполним финальным состоянием; bracket-guard
-    // оценивается bracketOfAffection по финальным отношениям с e.liId.
-    const endingSatisfied =
-      spine.endings.find(e =>
-        evalGuard(
-          e.guard,
-          {
-            x: e.liId ?? '',
-            y: '',
-            z: { z: slotCount, slot: slotCount },
-            R: state.relationships[e.liId ?? ''] ?? DEFAULT_RELATIONSHIP,
-            H: { flags: state.flags, fired: state.fired },
-          },
-          state,
-        ),
-      )?.id ?? null;
+  // Юниты, которых селектор не предложил НИ РАЗУ ни при одной политике и
+  // seed-е: оплаченная проза, которую игрок не увидит. Это сигнал голодания,
+  // а не ошибка — поэтому едет отдельным полем, а не в reachedFinale.
+  const starved = bundle.units.map(u => u.id).filter(id => !offeredEver.has(id));
+  if (reports.length > 0) reports[0].starvedUnits = starved;
 
-    // Регресс-страховка: движок гейтит биты по beat[<pred>] ≥ 1, значит в
-    // честном прогоне бит не может опередить предшественника. Ловит поломку
-    // remap-а или самой цепочки (тихо вернувшую хаотичный порядок).
-    const orderIndex = new Map(firedBeats.map((id, i) => [id, i]));
-    const orderViolations: string[] = [];
-    for (const b of spine.beats) {
-      const at = orderIndex.get(b.id);
-      if (at == null) continue;
-      for (const dep of guardFiredIds(b.guard)) {
-        if (!beatIds.has(dep)) continue;
-        const depAt = orderIndex.get(dep);
-        if (depAt == null || depAt > at) orderViolations.push(`${b.id} до ${dep}`);
-      }
-    }
-
-    return {
-      policy: policy.name,
-      reachedFinale: finale != null && firedBeatIds.has(finale.id),
-      endingSatisfied,
-      firedBeats,
-      firedUnits,
-      deadSlots,
-      actsPlayed,
-      relFinal: Object.fromEntries(liIds.map(id => [id, state.relationships[id]?.affection ?? 0])),
-      slotCount,
-      orderViolations,
-    };
-  });
+  return reports;
 }
 
 /** Отчёты политик → issues: провал финала/концовки = error, мёртвые слоты = warning. */
 export function summarizePolicyReports(reports: PolicyReport[]): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
+
+  // Пустой отчёт = симуляция не запускалась (нет модели мира). Это ошибка, а
+  // не «всё хорошо»: зелёный QA без единого прогона обманчивее красного.
+  if (reports.length === 0) {
+    return [
+      {
+        severity: 'error',
+        scope: 'sim',
+        message: 'симуляция не запускалась — нет модели мира; проходимость истории не проверена',
+      },
+    ];
+  }
+
+  // Провал финала/концовки — свойство ПОЛИТИКИ, а не отдельного seed-а:
+  // ругаться на каждый seed значило бы утроить один и тот же issue.
+  const bySeedGroups = new Map<string, PolicyReport[]>();
   for (const r of reports) {
-    if (!r.reachedFinale) {
+    const list = bySeedGroups.get(r.policy) ?? [];
+    list.push(r);
+    bySeedGroups.set(r.policy, list);
+  }
+  for (const [policy, runs] of bySeedGroups) {
+    const failedFinale = runs.filter(r => !r.reachedFinale);
+    if (failedFinale.length === runs.length) {
       issues.push({
         severity: 'error',
-        scope: `sim/${r.policy}`,
-        message: `политика не достигает финала за ${r.slotCount} слотов (сыграно битов: ${r.firedBeats.length})`,
+        scope: `sim/${policy}`,
+        message: `политика не достигает финала ни на одном seed (${runs.length}) за ${runs[0].slotCount} слотов`,
+      });
+    } else if (failedFinale.length > 0) {
+      // Часть seed-ов не дошла — история проходима, но зависит от жребия.
+      issues.push({
+        severity: 'warning',
+        scope: `sim/${policy}`,
+        message: `финал достигается не всегда: провал на seed ${failedFinale.map(r => r.seed).join(', ')}`,
       });
     }
+  }
+
+  const starved = reports.find(r => r.starvedUnits)?.starvedUnits ?? [];
+  if (starved.length > 0) {
+    issues.push({
+      severity: 'warning',
+      scope: 'sim/selector',
+      message:
+        `селектор ни разу не предложил ${starved.length} сцен ни при одной политике и seed-е ` +
+        `(${starved.slice(0, 5).join(', ')}${
+          starved.length > 5 ? ', …' : ''
+        }) — оплаченная проза, которую игрок не увидит`,
+    });
+  }
+
+  for (const r of reports) {
     if (r.endingSatisfied == null) {
       issues.push({
         severity: 'error',
-        scope: `sim/${r.policy}`,
+        scope: `sim/${r.policy}#${r.seed}`,
         message: 'ни одна концовка не выполнима финальным состоянием прогона',
       });
     }
     if (r.deadSlots.length > r.slotCount / 3) {
       issues.push({
         severity: 'warning',
-        scope: `sim/${r.policy}`,
+        scope: `sim/${r.policy}#${r.seed}`,
         message: `мёртвых слотов ${r.deadSlots.length} из ${r.slotCount} (>1/3) — игрок часто приходит в пустоту`,
       });
     }
     if (r.orderViolations && r.orderViolations.length > 0) {
       issues.push({
         severity: 'error',
-        scope: `sim/${r.policy}`,
+        scope: `sim/${r.policy}#${r.seed}`,
         message: `порядок битов нарушен: ${r.orderViolations.join(', ')} — цепочка не доехала до симуляции`,
       });
     }

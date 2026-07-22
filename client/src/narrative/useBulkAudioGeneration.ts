@@ -215,7 +215,7 @@ export function useBulkAudioGeneration() {
         failures: [
           {
             key: '__service__',
-            error: 'audio_gen недоступен (http://localhost:3300). Запустите сервис: cd audio_gen && pnpm dev',
+            error: 'audio_gen недоступен (http://localhost:3310). Запустите сервис: cd audio_gen && pnpm dev',
           },
         ],
         cancelled: false,
@@ -428,7 +428,7 @@ function sleep(ms: number): Promise<void> {
 
 async function isAudioGenReachable(): Promise<boolean> {
   try {
-    const res = await fetch('http://localhost:3300/status', { method: 'GET' });
+    const res = await fetch('http://localhost:3310/status', { method: 'GET' });
     return res.ok;
   } catch {
     return false;

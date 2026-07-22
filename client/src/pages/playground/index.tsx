@@ -18,7 +18,7 @@ import {
   isLocationMood,
   SPECIAL_AMBIENT_KINDS,
   SPECIAL_AMBIENT_KIND_LABELS,
-  compileCalendarGameProject,
+  buildStoryletBundle,
   downloadJson,
   slugify,
   type ArchetypeProfile,
@@ -52,6 +52,7 @@ import { BriefEditor } from './BriefEditor';
 import { PlaygroundErrorBoundary } from './PlaygroundErrorBoundary';
 import { MontageBoard } from './MontageBoard';
 import styles from './playground.module.css';
+import { SelectorPanel } from './SelectorPanel';
 
 // ────────────────────────────────────────────────────────────────────────────
 // APP SHELL (макет 4a): топ-бар с чипами пайплайна + левый рейл + секции
@@ -1041,7 +1042,7 @@ const MissingPosesBar: React.FC<{
 };
 
 // ────────────────────────────────────────────────────────────────────────────
-// EXPORT BAR (.gu.json + scenes.json для game/-движка)
+// EXPORT BAR (storylet-бандл .gu.json для game/-движка)
 // ────────────────────────────────────────────────────────────────────────────
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -1199,7 +1200,7 @@ const AudioGenBar: React.FC<{
           {SFX_TOTAL}
         </span>
         <span className={styles.bulkMeta}>
-          Suno API · мелодия → per-LI вариации (positive/negative) → SFX по эмоциям · нужен audio_gen (:3300) c
+          Suno API · мелодия → per-LI вариации (positive/negative) → SFX по эмоциям · нужен audio_gen (:3310) c
           SUNO_API_KEY и S3-кредами
         </span>
         <textarea
@@ -1240,29 +1241,48 @@ const QA_GROUP_ORDER = ['spine', 'calendar', 'schedule', 'units', 'dialogue', 'q
 
 const qaGroupOf = (issue: SegmentIssue): string => issue.scope.split('/')[0] || '?';
 
+/**
+ * Отчёт политик. Каждая политика гоняется по нескольким seed-ам (селектор
+ * стохастичен), поэтому строки сворачиваются по политике: показываем, на
+ * скольких прогонах финал достигнут и какие концовки выпали. «2/3» в колонке
+ * финала — это и есть сигнал «история проходима не всегда».
+ */
 const PolicyTable: React.FC<{ reports: PolicyReport[] }> = ({ reports }) => {
   if (reports.length === 0) return null;
+
+  const byPolicy = new Map<string, PolicyReport[]>();
+  for (const r of reports) {
+    const list = byPolicy.get(r.policy) ?? [];
+    list.push(r);
+    byPolicy.set(r.policy, list);
+  }
+
   return (
     <table className={styles.qaPolicyTable}>
       <thead>
         <tr>
           <th>политика</th>
           <th>финал</th>
-          <th>концовка</th>
+          <th>концовки</th>
           <th>мёртвые слоты</th>
         </tr>
       </thead>
       <tbody>
-        {reports.map(r => (
-          <tr key={r.policy}>
-            <td className={styles.qaPolicyName}>{r.policy}</td>
-            <td>{r.reachedFinale ? '✓' : '✗'}</td>
-            <td>{r.endingSatisfied ?? '—'}</td>
-            <td>
-              {r.deadSlots.length} / {r.slotCount}
-            </td>
-          </tr>
-        ))}
+        {[...byPolicy.entries()].map(([policy, runs]) => {
+          const ok = runs.filter(r => r.reachedFinale).length;
+          const endings = [...new Set(runs.map(r => r.endingSatisfied ?? '—'))];
+          const dead = Math.round(runs.reduce((s, r) => s + r.deadSlots.length, 0) / runs.length);
+          return (
+            <tr key={policy}>
+              <td className={styles.qaPolicyName}>{policy}</td>
+              <td title={`${ok} из ${runs.length} прогонов`}>{ok === runs.length ? '✓' : `${ok}/${runs.length}`}</td>
+              <td>{endings.join(', ')}</td>
+              <td title="в среднем по прогонам">
+                {dead} / {runs[0].slotCount}
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -1326,7 +1346,7 @@ const QAPanel: React.FC<{
                 {regen.hasDraft && ' · черновик сохранён — «Продолжить» доделает с места обрыва (бар в секции «Граф»)'}
               </>
             ) : (
-              'структурный отчёт + симуляция политик по evaluateSlice + LLM-критик листьев (text_gen)'
+              'структурный отчёт + прогон политик настоящим движком (тот же режиссёр, что в игре) + LLM-критик листьев (text_gen)'
             )}
           </span>
         </div>
@@ -1384,7 +1404,7 @@ const QAPanel: React.FC<{
 
 const ExportBar: React.FC<{
   outline: StoryOutlinePlan;
-  /** Полный календарный стек → компиляция через compileCalendarGameProject. */
+  /** Полный календарный стек → сборка storylet-бандла. */
   spine?: SpinePlan | null;
   calendar?: Calendar | null;
   schedule?: CharacterSchedule | null;
@@ -1392,6 +1412,7 @@ const ExportBar: React.FC<{
   qaStatus?: StoryQAStatus;
 }> = ({ outline, spine, calendar, schedule, qaStatus }) => {
   const brief = useBriefStore(s => s.brief);
+  const selector = useBriefStore(s => s.selector);
   const endings = useNarrativeStore(s => s.endings);
   const worldModel = useNarrativeStore(s => s.worldModel);
   const spineBeatProse = useNarrativeStore(s => s.spineBeatProse);
@@ -1434,9 +1455,11 @@ const ExportBar: React.FC<{
     sfx: audioSfx,
   };
 
-  const onExport = () => {
+  // v2: пул storylet-ов одним файлом. Движок сам фильтрует по guard-ам и
+  // выбирает сцену салиенс-селектором — граф заранее не разворачивается.
+  const onExportBundle = () => {
     if (!canExport) return;
-    const result = compileCalendarGameProject(
+    const { bundle } = buildStoryletBundle(
       brief,
       spine!,
       calendar!,
@@ -1450,10 +1473,9 @@ const ExportBar: React.FC<{
       characters,
       audioInput,
       { tagMap, narrations: anchorNarrations ?? undefined },
+      { selector },
     );
-    const slug = slugify(result.project.title);
-    downloadJson(`${slug}.gu.json`, result.project);
-    setTimeout(() => downloadJson('scenes.json', result.scenes), 250);
+    downloadJson(`${slugify(bundle.title)}.gu.json`, bundle);
   };
 
   return (
@@ -1481,18 +1503,19 @@ const ExportBar: React.FC<{
       <button
         type="button"
         className={styles.primaryBtn}
-        onClick={onExport}
+        onClick={onExportBundle}
         disabled={qaBlocked || !canExport}
         title={
           !canExport
             ? 'нужен полный календарный стек: хребет, календарь, расписание, мир'
             : qaBlocked
             ? 'story QA нашёл ошибки — исправьте или включите чекбокс обхода'
-            : undefined
+            : 'storylet-бандл: пул сцен с guard-ами, выбор — в рантайме'
         }
       >
-        Скачать .gu.json + scenes.json
+        Скачать storylet-бандл (v2)
       </button>
+      <SelectorPanel />
     </div>
   );
 };

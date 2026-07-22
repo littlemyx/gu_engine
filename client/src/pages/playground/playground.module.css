@@ -582,10 +582,17 @@
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
+  /* Сводка и кнопки — в строку; панель режиссуры переносится под них целиком. */
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+/* Панель режиссуры занимает всю ширину бара, а не остаток строки. */
+.exportBar > *:last-child:not(button) {
+  flex: 1 0 100%;
 }
 
 .exportLeft {
