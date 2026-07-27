@@ -1,0 +1,22 @@
+.root {
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  line-height: 1.7;
+  color: var(--gu-ink-75);
+  background: transparent;
+  padding: 0;
+}
+
+.error {
+  color: var(--gu-ink);
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0 6px;
+}
+
+.run {
+  color: var(--gu-ink);
+}
+
+.pending {
+  color: var(--gu-ink-45);
+}

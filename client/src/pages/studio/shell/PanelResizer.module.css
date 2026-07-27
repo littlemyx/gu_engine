@@ -1,0 +1,40 @@
+/*
+ * Рамка занимает 5px, но живёт поверх стыка панелей (отрицательный отступ):
+ * визуально это по-прежнему волосяная линия дизайн-системы, а попасть в неё
+ * указателем можно без прицеливания.
+ */
+.vertical,
+.horizontal {
+  position: absolute;
+  z-index: 25;
+  background: transparent;
+  touch-action: none;
+}
+
+.vertical {
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  margin-left: -2px;
+  cursor: col-resize;
+}
+
+.horizontal {
+  left: 0;
+  right: 0;
+  height: 5px;
+  margin-top: -2px;
+  cursor: row-resize;
+}
+
+.vertical:hover,
+.horizontal:hover,
+.active {
+  background: var(--gu-signal-run);
+}
+
+.vertical:focus-visible,
+.horizontal:focus-visible {
+  outline: none;
+  background: var(--gu-signal-run);
+}

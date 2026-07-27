@@ -1,0 +1,81 @@
+/*
+ * Полоска шириной с рамку панели: та же плита тёмного хрома, что у рейла и
+ * инспектора, поэтому свёрнутая панель читается как часть сетки, а не как
+ * кнопка, всплывшая над вьюпортом.
+ */
+.strip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 0;
+  padding: 8px 0;
+  font: inherit;
+  font-family: var(--font-body);
+  color: var(--gu-ink-50);
+  background: var(--gu-chrome);
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.left {
+  border-right: 1px solid var(--gu-hairline);
+}
+
+.right {
+  border-left: 1px solid var(--gu-hairline);
+}
+
+/*
+ * Подсветка — тонкая линия по внутреннему краю и текст в полную яркость.
+ * Заливать фоном всю колонку в 500px высотой ради ховера слишком грубо.
+ */
+.strip:hover,
+.strip:focus-visible {
+  color: var(--gu-ink);
+  outline: none;
+}
+
+.left:hover,
+.left:focus-visible {
+  box-shadow: inset -1px 0 0 var(--gu-signal-run);
+}
+
+.right:hover,
+.right:focus-visible {
+  box-shadow: inset 1px 0 0 var(--gu-signal-run);
+}
+
+.chevron {
+  flex: none;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.label {
+  writing-mode: vertical-rl;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.right .label {
+  /* Справа подпись читается снизу вверх — так же, как корешок на полке. */
+  transform: rotate(180deg);
+}
+
+/* Точка «непросмотренное»: в панели ошибка или готовый батч (макет 7h). */
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gu-signal-fail);
+  margin-top: auto;
+  margin-bottom: 10px;
+}

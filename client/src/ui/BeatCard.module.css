@@ -1,0 +1,111 @@
+.root {
+  display: block;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  text-align: left;
+  border-radius: 0;
+  outline-offset: 1px;
+  font-family: var(--font-body);
+}
+
+button.root {
+  cursor: pointer;
+}
+
+.selected {
+  outline: 2px solid var(--gu-blueprint-700);
+}
+
+.dimmed {
+  opacity: 0.3;
+}
+
+.kicker {
+  font-size: 8.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  margin: 1px 0 2px;
+  text-wrap: pretty;
+}
+
+/* Фиксированная высота: по ней «Чертёж» считает геометрию связей. */
+.fixedHeight {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.fixedHeight .title {
+  flex: 1;
+  min-height: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.status {
+  font-size: 9px;
+  font-weight: 600;
+}
+
+/* — состояния — */
+
+.done {
+  border: 1px solid var(--gu-blueprint-line);
+  background: #fff;
+}
+
+.done .title {
+  color: var(--color-text);
+}
+
+.done .status {
+  color: var(--gu-blueprint-700);
+}
+
+.failed {
+  border: 1px solid var(--gu-blueprint-700);
+  background: #fff;
+}
+
+.failed .title {
+  color: var(--color-text);
+}
+
+.failed .status {
+  color: var(--gu-blueprint-900);
+}
+
+.running {
+  border: 1px dashed var(--gu-blueprint-700);
+  background: var(--gu-blueprint-100);
+}
+
+.running .title {
+  color: var(--color-text);
+}
+
+.running .status {
+  color: var(--gu-blueprint-700);
+}
+
+.locked {
+  border: 1px dashed var(--gu-blueprint-400);
+  background: #fff;
+}
+
+.locked .title {
+  color: var(--color-neutral-500);
+}
+
+.locked .status {
+  color: var(--color-neutral-500);
+}

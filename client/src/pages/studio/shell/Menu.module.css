@@ -1,0 +1,111 @@
+.root {
+  position: relative;
+}
+
+.trigger {
+  font: inherit;
+  font-size: 12px;
+  color: var(--gu-ink-85);
+  background: transparent;
+  border: none;
+  padding: 3px 8px;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.trigger:hover {
+  background: var(--gu-hover-bg);
+  color: var(--gu-ink);
+}
+
+.triggerOpen {
+  background: var(--gu-selected-bg);
+  color: var(--gu-ink);
+}
+
+.dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 40;
+  min-width: 244px;
+  padding: 4px 0;
+  background: var(--gu-chrome-raised);
+  border: 1px solid var(--gu-hairline-strong);
+  box-shadow: var(--shadow-md);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font: inherit;
+  font-size: 12px;
+  color: var(--gu-ink-85);
+  background: transparent;
+  border: none;
+  padding: 4px 12px 4px 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.item:hover:not(:disabled) {
+  background: var(--gu-selected-bg);
+  color: var(--gu-ink);
+}
+
+.item:disabled {
+  color: var(--gu-ink-40);
+  cursor: not-allowed;
+}
+
+.danger {
+  color: var(--gu-signal-fail);
+}
+
+.mark {
+  width: 12px;
+  flex: none;
+  font-size: 10px;
+  text-align: center;
+}
+
+.itemLabel {
+  flex: 1;
+}
+
+.cost {
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  color: var(--gu-ink-55);
+}
+
+.shortcut {
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  color: var(--gu-ink-40);
+}
+
+.separator {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--gu-hairline);
+}
+
+/* Триггер в панели действий: та же кнопка, что и соседние в тулбаре. */
+.triggerToolbar {
+  font-size: 11px;
+  color: var(--gu-ink-85);
+  border: 1px solid var(--gu-hairline-strong);
+  padding: 3px 8px;
+}
+
+.triggerToolbar:disabled {
+  color: var(--gu-ink-45);
+  cursor: default;
+}
+
+.triggerToolbar:disabled:hover {
+  background: transparent;
+}

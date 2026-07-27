@@ -92,7 +92,7 @@ export type CalendarMontageInputs = {
  * важен (окна проверяет validateSpine) — монтажке нужна только гашение
  * контента чужих веток.
  */
-function establishableFlags(spine: SpinePlan, branchAssignment: Record<string, string>): Set<string> {
+export function establishableFlags(spine: SpinePlan, branchAssignment: Record<string, string>): Set<string> {
   const flags = new Set<string>();
   const played = new Set<string>();
   let changed = true;

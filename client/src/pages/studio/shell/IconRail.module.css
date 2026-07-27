@@ -1,0 +1,53 @@
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  background: var(--gu-chrome);
+  border-right: 1px solid var(--gu-hairline);
+}
+
+.button {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font: inherit;
+  font-size: 14px;
+  color: var(--gu-ink-60);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.button:hover {
+  color: var(--gu-ink);
+  background: var(--gu-hover-bg);
+}
+
+.active {
+  color: var(--gu-ink);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.divider {
+  width: 18px;
+  height: 1px;
+  margin: 3px 0;
+  background: var(--gu-hairline-strong);
+}
+
+/* Точка «непросмотренное» на сегменте (макет 7h). */
+.dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gu-signal-fail);
+}

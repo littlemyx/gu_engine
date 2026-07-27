@@ -1,0 +1,99 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: max-content;
+  font-family: var(--font-body);
+}
+
+.block {
+  width: 100%;
+}
+
+.label {
+  display: block;
+  width: 100%;
+  text-align: center;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  padding: 6px 14px;
+  white-space: nowrap;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.label:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.primary {
+  background: var(--color-accent);
+  color: #fff;
+  border: 1px solid var(--color-accent);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--color-accent-600);
+  border-color: var(--color-accent-600);
+}
+
+.primary:active:not(:disabled) {
+  background: var(--color-accent-700);
+  border-color: var(--color-accent-700);
+}
+
+.outline {
+  background: transparent;
+  color: var(--gu-ink);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.outline:hover:not(:disabled) {
+  background: var(--gu-hover-bg);
+}
+
+.ghost {
+  background: transparent;
+  color: var(--gu-ink-75);
+  border: 1px solid transparent;
+}
+
+.ghost:hover:not(:disabled) {
+  background: var(--gu-hover-bg);
+  color: var(--gu-ink);
+}
+
+.reason {
+  font-size: 10px;
+  color: var(--gu-ink-50);
+  text-align: center;
+}
+
+/*
+ * Светлая поверхность (модалки, пустой проект): те же кнопки на #f2f2f3.
+ * Без этого outline и ghost рисовались бы почти белым по светлому — атомы
+ * задуманы для тёмного хрома шелла.
+ */
+.onLight .outline {
+  color: var(--color-accent-900, #22303f);
+  border-color: var(--color-neutral-400, #9b9ea1);
+}
+
+.onLight .outline:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.onLight .ghost {
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.onLight .ghost:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+  color: var(--color-text);
+}
+
+.onLight .reason {
+  color: var(--color-neutral-600, #6f7275);
+}

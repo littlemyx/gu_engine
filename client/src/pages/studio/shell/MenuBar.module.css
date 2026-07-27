@@ -1,0 +1,27 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 10px;
+  background: var(--gu-chrome);
+  border-bottom: 1px solid var(--gu-hairline);
+  font-family: var(--font-body);
+  position: relative;
+  z-index: 30;
+}
+
+.brand {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 13px;
+  color: var(--gu-ink);
+  padding: 0 10px 0 2px;
+  letter-spacing: 0.02em;
+}
+
+.model {
+  margin-left: auto;
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  color: var(--gu-ink-50);
+}

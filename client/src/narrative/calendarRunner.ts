@@ -50,6 +50,9 @@ import {
   validateDialogueUnit,
 } from './dialogueUnit';
 import { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
+import { storageKey } from '@/project/projectScope';
+import { addRunCost, formatCost, resetRunCost, useRunCost } from './costModel';
+import { appendRunLog } from './runLog';
 import { validateCalendar } from './validateCalendar';
 import { validateCastPlan } from './validateCastPlan';
 import { validateSpine, guardFlags } from './validateSpine';
@@ -149,8 +152,63 @@ let running = false;
 
 export const isCalendarRunActive = (): boolean => running;
 
-/** Имя Web Lock: один активный прогон на проект во всех вкладках браузера. */
-const CALENDAR_LOCK = 'gu-calendar-run';
+/**
+ * Запрос остановки от пользователя. Прогон не убивается посреди вызова: флаг
+ * проверяется между стадиями и элементами, поэтому черновик остаётся целым и
+ * «Продолжить» доделывает остаток, не переплачивая за пройденное.
+ */
+let stopRequested = false;
+
+export class CalendarRunStopped extends Error {
+  constructor() {
+    super('прогон остановлен автором');
+    this.name = 'CalendarRunStopped';
+  }
+}
+
+/**
+ * «Стоп» сразу переводит прогон в error — состояние стора и есть источник
+ * правды. Одного module-флага мало: пайплайн — длинная цепочка await-ов с
+ * ретраями, и любая гонка вокруг флага возвращала бы прогон к жизни. Пока в
+ * сторе не «running», ни одна контрольная точка дальше не пропускает.
+ */
+export function requestStopCalendarRun(): void {
+  stopRequested = true;
+  appendRunLog('info', 'запрошена остановка — доигрываем текущий вызов');
+  const run = useNarrativeStore.getState().calendarRun;
+  if (run?.status === 'running') {
+    useNarrativeStore.getState().failCalendarRun(run.phase, 'остановлено автором', []);
+  }
+}
+
+export const isStopRequested = (): boolean => stopRequested;
+
+/**
+ * Бросает CalendarRunStopped, если автор нажал «Стоп» или прогон уже снят
+ * из стора другой стороной.
+ */
+function throwIfStopped(): void {
+  if (stopRequested) throw new CalendarRunStopped();
+  if (useNarrativeStore.getState().calendarRun?.status !== 'running') {
+    throw new CalendarRunStopped();
+  }
+}
+
+/**
+ * Остановка не должна выглядеть как неудачная попытка: в пайплайне много
+ * циклов ретрая, которые глушат ошибку элемента и пробуют снова. Каждый такой
+ * catch обязан пропустить CalendarRunStopped наружу.
+ */
+function rethrowIfStopped(e: unknown): void {
+  if (e instanceof CalendarRunStopped) throw e;
+}
+
+/**
+ * Имя Web Lock: один активный прогон на ПРОЕКТ во всех вкладках браузера.
+ * Имя скоупится projectId, поэтому вкладки с разными проектами гонят прогоны
+ * параллельно и не считают друг друга ведущей вкладкой.
+ */
+const CALENDAR_LOCK = storageKey('gu-calendar-run');
 
 /**
  * Прогон под межвкладочным замком. `ifAvailable` — не ждём освобождения: если
@@ -176,11 +234,15 @@ async function withCalendarLock(cb: (acquired: boolean) => Promise<void>): Promi
 async function runUnderLock(prepare: () => boolean): Promise<void> {
   if (running) return;
   running = true;
+  stopRequested = false;
   try {
     await withCalendarLock(async acquired => {
       // Прогон уже ведёт другая вкладка — не трогаем чужой calendarRun,
       // наблюдатель покажет прогресс через кросс-вкладочный синк.
-      if (!acquired) return;
+      if (!acquired) {
+        appendRunLog('info', 'прогон ведёт другая вкладка — эта только наблюдает');
+        return;
+      }
       if (!prepare()) return;
       await runPipeline();
     });
@@ -188,9 +250,21 @@ async function runUnderLock(prepare: () => boolean): Promise<void> {
     // Непредвиденный сбой: черновик и pendingBatch сохраняются — «Продолжить»
     // подхватит прогон с той же точки.
     const run = store().calendarRun;
-    if (run) store().failCalendarRun(run.phase ?? 'cast', e instanceof Error ? e.message : String(e), []);
+    const stopped = e instanceof CalendarRunStopped;
+    const message = stopped ? 'остановлено автором' : e instanceof Error ? e.message : String(e);
+    if (run) {
+      const done = run.progress.completed;
+      appendRunLog(
+        stopped ? 'run' : 'error',
+        stopped
+          ? `прогон остановлен · ${done}/${run.progress.total} · черновик сохранён`
+          : `✗ ${run.phase} · ${message} · черновик сохранён`,
+      );
+      store().failCalendarRun(run.phase ?? 'cast', message, []);
+    }
   } finally {
     running = false;
+    stopRequested = false;
   }
 }
 
@@ -226,7 +300,8 @@ export async function startCalendarRun(brief: Brief, options?: BulkCalendarRunOp
   // затирать calendarRun чужого активного прогона.
   await runUnderLock(() => {
     const prev = store().calendarRun;
-    const resumed: CalendarRunState = shouldReuseDraft(prev, brief, force)
+    const continued = shouldReuseDraft(prev, brief, force);
+    const resumed: CalendarRunState = continued
       ? { ...(prev as CalendarRunState), status: 'running', error: null, issues: [], seedIssues: options?.seedIssues }
       : {
           status: 'running',
@@ -245,6 +320,14 @@ export async function startCalendarRun(brief: Brief, options?: BulkCalendarRunOp
           runId: newRunId(),
         };
     store().beginCalendarRun(resumed);
+    // Продолжение доплачивает за остаток, новый прогон считает деньги с нуля.
+    if (!continued) resetRunCost();
+    appendRunLog(
+      'run',
+      continued
+        ? `продолжаем прогон с стадии ${resumed.phase}`
+        : `старт прогона · ${force ? 'полная перегенерация' : 'с нуля'}`,
+    );
     return true;
   });
 }
@@ -290,13 +373,18 @@ async function runPipeline(): Promise<void> {
     if (!dirty.includes(stage)) store().patchCalendarRun({ dirtyStages: [...dirty, stage] });
   };
 
-  const publish = (phase: BulkCalendarPhase, completed: number) =>
+  // Смена стадии — точка, где безопасно остановиться: черновик уже записан.
+  const publish = (phase: BulkCalendarPhase, completed: number) => {
+    throwIfStopped();
+    if (runNow().phase !== phase) appendRunLog('run', `${phase} · ${completed}/${TOTAL_STEPS}`);
     store().patchCalendarRun({ phase, progress: { completed, total: TOTAL_STEPS } });
+  };
 
   const putSoftIssues = (stage: string, issues: string[]) =>
     store().patchCalendarRun({ softIssues: { ...runNow().softIssues, [stage]: issues } });
 
   const fail = (phase: BulkCalendarPhase, message: string, stageIssues: string[] = []) => {
+    appendRunLog('error', `✗ ${phase} · ${message} · черновик сохранён`);
     store().failCalendarRun(phase, message, [...flattenSoftIssues(runNow().softIssues), ...stageIssues]);
   };
 
@@ -310,22 +398,34 @@ async function runPipeline(): Promise<void> {
     start: () => Promise<{ batchId: string }>,
     parse: (raw: string) => T,
   ): Promise<T> => {
+    // Останов проверяется перед каждым вызовом: уже оплаченный ответ дожидаемся.
+    throwIfStopped();
+    const label = itemKey ? `${phase} · ${itemKey}` : phase;
     const pending = runNow().pendingBatch;
     if (pending && matchPendingBatch(pending, phase, itemKey)) {
       try {
+        appendRunLog('pending', `${label} · переподключение к батчу`);
         const result = await pollBatchResult(pending.batchId, parse);
         store().patchCalendarRun({ pendingBatch: null });
+        appendRunLog('ok', `${label} ✓`);
         return result;
       } catch (e) {
         store().patchCalendarRun({ pendingBatch: null });
         // Батч потерян (сервер перезапущен) — считаем элемент заново.
         if (!(e instanceof BatchNotFoundError)) throw e;
+        appendRunLog('info', `${label} · батч потерян, считаем заново`);
       }
     }
     const { batchId } = await start();
+    addRunCost(phase);
     store().patchCalendarRun({ phase, pendingBatch: { phase, itemKey, batchId } });
     try {
-      return await pollBatchResult(batchId, parse);
+      const result = await pollBatchResult(batchId, parse);
+      appendRunLog('ok', `${label} ✓`);
+      return result;
+    } catch (e) {
+      appendRunLog('error', `✗ ${label} · ${e instanceof Error ? e.message : String(e)}`);
+      throw e;
     } finally {
       store().patchCalendarRun({ pendingBatch: null });
     }
@@ -399,6 +499,7 @@ async function runPipeline(): Promise<void> {
           // виденных всё равно останется у нас.
           if (errors.length === 0 && feedback.length === 0) break;
         } catch (attemptErr) {
+          rethrowIfStopped(attemptErr);
           lastAttemptError = attemptErr;
         }
       }
@@ -477,6 +578,7 @@ async function runPipeline(): Promise<void> {
             if (!best || errors.length < best.errorCount) best = { artifact, errorCount: errors.length, errors };
             if (errors.length === 0) break;
           } catch (attemptErr) {
+            rethrowIfStopped(attemptErr);
             lastAttemptError = attemptErr;
           }
         }
@@ -494,6 +596,7 @@ async function runPipeline(): Promise<void> {
           return;
         }
       } catch (e) {
+        rethrowIfStopped(e);
         fail('world_calendar', e instanceof Error ? e.message : String(e));
         return;
       }
@@ -567,6 +670,7 @@ async function runPipeline(): Promise<void> {
           if (!best || errors.length < best.errorCount) best = { plan, errorCount: errors.length, errors };
           if (errors.length === 0) break;
         } catch (attemptErr) {
+          rethrowIfStopped(attemptErr);
           lastAttemptError = attemptErr;
         }
       }
@@ -581,6 +685,7 @@ async function runPipeline(): Promise<void> {
       fail('spine', `хребет не прошёл валидацию (${best?.errorCount ?? '?'} ошибок)`, best?.errors ?? []);
       return null;
     } catch (e) {
+      rethrowIfStopped(e);
       fail('spine', e instanceof Error ? e.message : String(e));
       return null;
     }
@@ -688,6 +793,7 @@ async function runPipeline(): Promise<void> {
             if (!best || errors.length < best.errorCount) best = { beat, errorCount: errors.length, errors };
             if (errors.length === 0) break;
           } catch (attemptErr) {
+            rethrowIfStopped(attemptErr);
             lastAttemptError = attemptErr;
           }
         }
@@ -700,6 +806,7 @@ async function runPipeline(): Promise<void> {
           throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
         }
       } catch (e) {
+        rethrowIfStopped(e);
         stageIssues.push(`${anchor.id}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
@@ -738,6 +845,7 @@ async function runPipeline(): Promise<void> {
         );
         putDraft({ anchorNarrations: narrations });
       } catch (e) {
+        rethrowIfStopped(e);
         putSoftIssues('anchor_transitions', [
           `[warning] переходы частей дня не сгенерированы (${
             e instanceof Error ? e.message : String(e)
@@ -841,6 +949,7 @@ async function runPipeline(): Promise<void> {
             if (better) best = { units, errorCount: errors.length, errors: feedback };
             if (errors.length === 0 && feedback.length === 0) break;
           } catch (attemptErr) {
+            rethrowIfStopped(attemptErr);
             lastAttemptError = attemptErr;
           }
         }
@@ -853,6 +962,7 @@ async function runPipeline(): Promise<void> {
           throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
         }
       } catch (e) {
+        rethrowIfStopped(e);
         stageIssues.push(`${li.id}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
@@ -1079,6 +1189,7 @@ async function runPipeline(): Promise<void> {
                 best = { unit: generated, retryCount: issues.length, feedback: issues };
               if (issues.length === 0) break;
             } catch (attemptErr) {
+              rethrowIfStopped(attemptErr);
               lastAttemptError = attemptErr;
             }
           }
@@ -1127,6 +1238,7 @@ async function runPipeline(): Promise<void> {
             putSoftIssues('dialogue_units', dialogueSoft);
           }
         } catch (e) {
+          rethrowIfStopped(e);
           stageIssues.push(`${unitKey}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
@@ -1198,6 +1310,7 @@ async function runPipeline(): Promise<void> {
             if (!best || errors.length < best.errorCount) best = { ending, errorCount: errors.length, errors };
             if (errors.length === 0) break;
           } catch (attemptErr) {
+            rethrowIfStopped(attemptErr);
             lastAttemptError = attemptErr;
           }
         }
@@ -1210,6 +1323,7 @@ async function runPipeline(): Promise<void> {
           throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
         }
       } catch (e) {
+        rethrowIfStopped(e);
         stageIssues.push(`${key}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
@@ -1222,6 +1336,7 @@ async function runPipeline(): Promise<void> {
 
   // Единственная запись в committed-стек за весь прогон.
   store().commitCalendarRun();
+  appendRunLog('ok', `прогон завершён · история обновлена · ≈ ${formatCost(useRunCost.getState().spent)}`);
 }
 
 /** Состав LI не изменился относительно castPlan (id-множества совпадают). */

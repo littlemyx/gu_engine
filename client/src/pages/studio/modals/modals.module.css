@@ -1,0 +1,533 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 37, 49, 0.55);
+}
+
+/* Диалог — светлая чертёжная карточка, как в макете 4h. */
+.window {
+  width: 360px;
+  max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px;
+  background: var(--color-bg, #f2f2f3);
+  color: var(--color-text);
+  border: 1px solid var(--color-neutral-400, #9b9ea1);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-body);
+}
+
+.wide {
+  width: 460px;
+}
+
+.broad {
+  width: 620px;
+}
+
+/* Редакторы (бриф, режиссура): форме нужен простор, а не карточка 360px. */
+.editor {
+  width: 820px;
+  max-width: calc(100vw - 60px);
+  height: calc(100vh - 90px);
+}
+
+.footerStatus {
+  margin-right: auto;
+  align-self: center;
+  font-size: 11px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-800, #3a3d40);
+}
+
+.footer {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.quote {
+  border: 1px solid var(--color-accent-700, #3d5872);
+  background: var(--color-accent-100, #e3e9f0);
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.input,
+.textarea {
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--color-text);
+  background: #fff;
+  border: 1px solid var(--color-neutral-400, #9b9ea1);
+  border-radius: 0;
+  padding: 7px 10px;
+}
+
+.textarea {
+  min-height: 140px;
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  resize: vertical;
+}
+
+.input:focus,
+.textarea:focus {
+  outline: 2px solid var(--color-accent-700, #3d5872);
+  outline-offset: -1px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.checkboxOff {
+  color: var(--color-neutral-500, #9b9ea1);
+  border: 1px dashed var(--color-neutral-400, #9b9ea1);
+  padding: 4px 6px;
+  cursor: not-allowed;
+}
+
+.note {
+  font-size: 11.5px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.warning {
+  color: var(--color-accent-900, #22303f);
+  font-weight: 600;
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.mono {
+  font-family: var(--gu-mono);
+  font-size: 11px;
+}
+
+/* — Режиссура: слайдеры весов и seed-политика (макет 7b) — */
+
+.weightList {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.weightRow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.weightHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11.5px;
+}
+
+.weightName {
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.weightHint {
+  color: var(--color-neutral-600, #6f7275);
+  font-size: 10.5px;
+}
+
+.weightValue {
+  margin-left: auto;
+  font-family: var(--gu-mono);
+  font-size: 11px;
+}
+
+.weightRange {
+  width: 100%;
+  accent-color: var(--color-accent-700, #3d5872);
+}
+
+.stepGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--color-neutral-300, #c4c6c9);
+}
+
+.seedRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.seedTabs {
+  display: inline-flex;
+  border: 1px solid var(--color-neutral-400, #9b9ea1);
+}
+
+.seedTab {
+  font: inherit;
+  font-size: 11px;
+  padding: 5px 12px;
+  border: 0;
+  background: #fff;
+  color: var(--color-neutral-600, #6f7275);
+  cursor: pointer;
+}
+
+.seedTab + .seedTab {
+  border-left: 1px solid var(--color-neutral-400, #9b9ea1);
+}
+
+.seedTabActive {
+  background: var(--color-accent-700, #3d5872);
+  color: #fff;
+}
+
+.seedInput {
+  width: 90px;
+}
+
+/* — Настроения локаций: таблица оверрайдов (макет 7c) — */
+
+.moodTable {
+  display: grid;
+  grid-template-columns: 1fr 150px 140px 48px;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.moodHeadCell {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.moodNameCell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.moodTitle {
+  font-weight: 600;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.moodChangedBadge {
+  font-size: 9.5px;
+  padding: 1px 5px;
+  background: var(--color-accent-100, #e3e9f0);
+  color: var(--color-accent-900, #22303f);
+  border: 1px solid var(--color-accent-700, #3d5872);
+  white-space: nowrap;
+}
+
+.moodSelect {
+  padding: 4px 6px;
+  font-size: 11.5px;
+}
+
+/* Особый тип имеет приоритет: настроение показывается, но не играет. */
+.moodSelectMuted {
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.moodSelectChanged {
+  border-color: var(--color-accent-700, #3d5872);
+  outline: 1px solid var(--color-accent-700, #3d5872);
+  outline-offset: -1px;
+}
+
+.moodTrackCell {
+  font-size: 11.5px;
+  text-align: center;
+}
+
+.moodTrackOk {
+  color: var(--color-accent-700, #3d5872);
+}
+
+.moodTrackWait {
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.moodTrackBad {
+  color: #a4392f;
+}
+
+.moodTrackMuted {
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.moodTrackAccent {
+  color: var(--color-accent-900, #22303f);
+  font-weight: 600;
+}
+
+/* — Недостающие позы: чипы по персонажам (макет 7d) — */
+
+.poseBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.poseHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.poseAllOk {
+  font-size: 11px;
+  color: #2f6e3c;
+}
+
+.poseChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.poseChip {
+  font: inherit;
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  padding: 3px 7px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  color: var(--color-neutral-800, #3a3d40);
+}
+
+.poseChip:disabled {
+  cursor: default;
+}
+
+.poseChipMissing {
+  border-color: var(--color-accent-700, #3d5872);
+  background: var(--color-accent-100, #e3e9f0);
+  color: var(--color-accent-900, #22303f);
+  font-weight: 600;
+}
+
+.poseChipWait {
+  border-style: dashed;
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.poseChipError {
+  border-color: #a4392f;
+  background: #f7e5e2;
+  color: #a4392f;
+  cursor: pointer;
+}
+
+.poseProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.progressTrack {
+  height: 6px;
+  background: var(--color-neutral-300, #c4c6c9);
+}
+
+.progressFill {
+  height: 100%;
+  background: var(--color-accent-700, #3d5872);
+  transition: width 0.3s ease;
+}
+
+.poseProgressMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.poseFailNote {
+  color: #a4392f;
+}
+
+/* — Новый проект: выбор шаблона (макет 7f) — */
+
+.templateOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.templateOption {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  cursor: pointer;
+}
+
+.templateOptionActive {
+  border-color: var(--color-accent-700, #3d5872);
+  background: var(--color-accent-100, #e3e9f0);
+}
+
+.templateTitle {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.templateHint {
+  display: block;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+/* — Пустой проект: приглашение с двумя дорожками — */
+
+.empty {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 40px;
+  background-image: linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-accent) 9%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 9%, transparent) 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.invite {
+  width: 560px;
+  max-width: 100%;
+  padding: 24px 28px;
+  background: #fff;
+  border: 1px solid var(--color-neutral-400, #9b9ea1);
+}
+
+.inviteTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.inviteSub {
+  margin: 6px 0 16px;
+  font-size: 12.5px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.tracks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.track {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+}
+
+.trackTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.trackText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-neutral-800, #3a3d40);
+}
+
+.trackActions {
+  margin-top: auto;
+  padding-top: 6px;
+}

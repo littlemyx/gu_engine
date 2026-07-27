@@ -1,3 +1,5 @@
+import { cleanupLegacyKeys, isBound, storageKey } from '@/project/projectScope';
+
 import { useNarrativeStore } from './narrativeStore';
 import { isCalendarRunActive, resumeCalendarRun } from './calendarRunner';
 import type { CalendarRunState } from './calendarRunState';
@@ -33,7 +35,7 @@ type NarrativeInitializer = {
   init: () => Promise<void>;
 };
 
-export const NARRATIVE_STORE_KEY = 'gu-narrative-state';
+export const NARRATIVE_STORE_KEY = storageKey('gu-narrative-state');
 
 export type InitAction = 'resume' | 'noop';
 
@@ -248,8 +250,14 @@ function subscribeCrossTabProgress(): void {
 /**
  * Fire-and-forget: зовётся до render(). Стор zustand+persist на localStorage
  * гидрируется синхронно при импорте модуля, поэтому состояние здесь уже полное.
+ *
+ * Вкладка без ?project= не привязана ни к какой истории: там нет чего резюмировать
+ * и незачем подписываться на чужие storage-события — она показывает пикер проектов.
  */
 export function initNarrative(): void {
+  cleanupLegacyKeys();
+  if (!isBound) return;
+
   subscribeCrossTabProgress();
   for (const initializer of INITIALIZERS) {
     initializer.init().catch(e => {

@@ -1,0 +1,650 @@
+/* Общие плиты тёмного хрома: рейл, инспектор, док, консоль. */
+
+.rail,
+.inspector {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--gu-chrome);
+  color: var(--gu-ink-85);
+  font-family: var(--font-body);
+}
+
+.rail {
+  border-right: 1px solid var(--gu-hairline);
+}
+
+.inspector {
+  border-left: 1px solid var(--gu-hairline);
+}
+
+.panelHead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gu-ink-50);
+  border-bottom: 1px solid var(--gu-hairline);
+}
+
+.railBody,
+.inspectorBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0;
+}
+
+.inspectorBody {
+  padding: 12px 12px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.placeholder {
+  padding: 12px 10px;
+  font-size: 11px;
+  color: var(--gu-ink-45);
+  line-height: 1.5;
+}
+
+.panelCollapse {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--gu-ink-45);
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  cursor: pointer;
+}
+
+.panelCollapse:hover {
+  color: var(--gu-ink);
+}
+
+/* — секции инспектора — */
+
+.kicker {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gu-ink-45);
+}
+
+.title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 16px;
+  color: var(--gu-ink);
+  margin: 2px 0 0;
+  line-height: 1.2;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-top: 1px solid var(--gu-hairline);
+  padding-top: 10px;
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gu-ink-75);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sectionHead:hover {
+  color: var(--gu-ink);
+}
+
+.field {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.fieldName {
+  flex: none;
+  width: 84px;
+  color: var(--gu-ink-45);
+}
+
+.fieldValue {
+  flex: 1;
+  color: var(--gu-ink-85);
+  word-break: break-word;
+}
+
+.mono {
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+}
+
+.issue {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--gu-signal-fail);
+}
+
+.issueWarning {
+  color: var(--gu-ink-60);
+}
+
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--gu-hairline);
+  padding-top: 10px;
+}
+
+/* — Инспектор прогона: фазы, прогресс, лог, черновик (макет 7g) — */
+
+.runPhases {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.runPhase {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--gu-ink-60);
+}
+
+.runPhaseActive {
+  color: var(--gu-ink);
+  font-weight: 600;
+}
+
+.runPhaseIconDone,
+.runPhaseIconRun,
+.runPhaseIconFail,
+.runPhaseIconPending {
+  flex: none;
+  width: 12px;
+  text-align: center;
+}
+
+.runPhaseIconDone {
+  color: var(--gu-ink-85);
+}
+
+.runPhaseIconRun {
+  color: var(--gu-signal-run);
+}
+
+.runPhaseIconFail {
+  color: var(--gu-signal-fail);
+}
+
+.runPhaseIconPending {
+  color: var(--gu-ink-40);
+}
+
+.runPhaseLabel {
+  min-width: 0;
+}
+
+.runProgressTrack {
+  height: 6px;
+  margin-top: 4px;
+  background: var(--gu-surface-raised);
+}
+
+.runProgressFill {
+  height: 100%;
+  background: var(--gu-signal-run);
+  transition: width 0.3s ease;
+}
+
+.runProgressMeta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--gu-ink-55);
+}
+
+.runLog {
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 6px 8px;
+  background: rgba(0, 0, 0, 0.25);
+  overflow-x: hidden;
+}
+
+.runLogLine {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.runLogInfo {
+  color: var(--gu-ink-60);
+}
+
+.runLogError {
+  color: var(--gu-signal-fail);
+}
+
+.runLogRun {
+  color: var(--gu-signal-run);
+}
+
+.runDraft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--gu-hairline-soft);
+}
+
+.runDraftTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gu-ink-85);
+}
+
+.runDraftNote {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--gu-ink-55);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 2px 7px;
+  border: 1px solid var(--gu-hairline-strong);
+  color: var(--gu-ink-75);
+}
+
+.chipRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+/* Превью спрайта/фона в шапке инспектора. */
+.portrait {
+  display: block;
+  width: 100%;
+  max-height: 132px;
+  object-fit: contain;
+  object-position: left top;
+  margin-top: 8px;
+  border: 1px solid var(--gu-hairline-strong);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* — док и консоль — */
+
+.dock {
+  display: flex;
+  flex-direction: column;
+  /* Док растягивается на всю высоту своей полосы: без этого растянутый
+     мышью док оставлял под собой пустую дыру в цвет хрома. */
+  flex: 1;
+  min-height: 0;
+  background: var(--gu-chrome);
+  border-top: 1px solid var(--gu-hairline-edge);
+  font-family: var(--font-body);
+  color: var(--gu-ink-85);
+}
+
+.dockTabs {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  padding: 0 6px;
+  border-bottom: 1px solid var(--gu-hairline);
+}
+
+.dockTab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--gu-ink-55);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.dockTab:hover {
+  color: var(--gu-ink);
+}
+
+.dockTabActive {
+  color: var(--gu-ink);
+  border-bottom-color: var(--color-accent-400);
+}
+
+.dockSummary {
+  margin-left: auto;
+  align-self: center;
+  padding: 0 10px;
+  font-size: 10.5px;
+  color: var(--gu-ink-50);
+}
+
+.dockToggle {
+  font: inherit;
+  font-size: 11px;
+  color: var(--gu-ink-50);
+  background: transparent;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.dockToggle:hover {
+  color: var(--gu-ink);
+}
+
+.dockBody,
+.consoleBody {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 12px;
+}
+
+.dockGrid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/*
+ * Узкий экран: полоса вкладок остаётся внизу, а тело дока всплывает над
+ * вьюпортом — иначе на 320px высоты панелей смотреть было бы не на что.
+ */
+.dockFloating {
+  position: relative;
+}
+
+.dockSplitFloating {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 240px;
+  max-height: 50vh;
+  background: var(--gu-chrome);
+  border-top: 1px solid var(--gu-hairline-edge);
+  box-shadow: 0 -12px 26px rgba(0, 0, 0, 0.4);
+  z-index: 15;
+}
+
+/* Док = активная вкладка + приколотая справа консоль (380px по макету). */
+.dockSplit {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+}
+
+.consoleColumn {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--gu-hairline);
+}
+
+.consoleHead {
+  flex: none;
+  padding: 6px 12px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gu-ink-50);
+}
+
+.dockActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.dockHint,
+.dockNote {
+  font-size: 10.5px;
+  color: var(--gu-ink-50);
+}
+
+.dockNote {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gu-hairline);
+}
+
+/* Иерархия — цель дропа префабов. */
+.railDrop {
+  outline: 2px solid var(--gu-signal-run);
+  outline-offset: -2px;
+}
+
+.dropHint {
+  padding: 8px 10px;
+  font-size: 10.5px;
+  color: var(--gu-signal-run);
+}
+
+/* — QA — */
+
+.qaList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.qaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.qaBad,
+.qaWarn {
+  flex: none;
+  width: 14px;
+  font-weight: 700;
+}
+
+.qaBad {
+  color: var(--gu-signal-fail);
+}
+
+.qaWarn {
+  color: var(--gu-ink-60);
+}
+
+.qaScope {
+  flex: none;
+  max-width: 220px;
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  color: var(--gu-ink-60);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.qaMessage {
+  flex: 1;
+  min-width: 0;
+  color: var(--gu-ink-85);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.qaAction {
+  flex: none;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--gu-signal-run);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.qaOk {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gu-signal-run);
+}
+
+.qaPolicies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--gu-hairline);
+  font-size: 10px;
+  color: var(--gu-ink-50);
+}
+
+/*
+ * — Легаси-блоки (аудио, позы, настроения локаций) —
+ * Перенесены из плейграунда без дизайна: временная типографика до макета.
+ */
+
+.legacyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--gu-hairline);
+}
+
+.legacyTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--gu-ink-75);
+}
+
+.legacyMeta {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--gu-ink-50);
+}
+
+.legacySelect,
+.legacyTextarea {
+  font: inherit;
+  font-size: 11px;
+  color: var(--gu-ink);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--gu-hairline-strong);
+  border-radius: 0;
+  padding: 3px 6px;
+}
+
+.legacyTextarea {
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  resize: vertical;
+}
+
+.legacySelect:focus,
+.legacyTextarea:focus {
+  outline: 1px solid var(--gu-signal-run);
+  outline-offset: -1px;
+}
+
+.legacySelect option {
+  color: #1a1a1a;
+}
+
+.moodRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.moodName {
+  flex: none;
+  width: 180px;
+  font-size: 11px;
+  color: var(--gu-ink-85);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* Светлые легаси-панели (плеер, графы отношений) на тёмном хроме. */
+.legacyLight {
+  background: #fff;
+  color: #1f2428;
+  padding: 10px 12px;
+  border: 1px solid var(--gu-hairline-strong);
+}
+
+/* — Инспектор запуска аудио (макет 7a) — */
+
+.runPhaseCount {
+  margin-left: auto;
+  color: var(--gu-ink-55);
+}
+
+.audioStyleInput {
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--gu-ink);
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--gu-hairline-soft);
+  padding: 6px 8px;
+  resize: vertical;
+  width: 100%;
+}
+
+.audioStyleInput:focus {
+  outline: 2px solid var(--gu-signal-run);
+  outline-offset: -1px;
+}
+
+.audioForceWarning {
+  font-size: 10px;
+  line-height: 1.4;
+  color: #e7c46a;
+}

@@ -1,0 +1,70 @@
+.root {
+  width: var(--gu-slot-width);
+  height: var(--gu-slot-height);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-size: 8.5px;
+  box-sizing: border-box;
+  border-radius: 0;
+  padding: 0;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+.selected {
+  outline: 2px solid var(--gu-blueprint-700);
+  outline-offset: -1px;
+}
+
+.loc {
+  color: #6f7275;
+  background: #e7e8ea;
+  border: none;
+  font-weight: 400;
+}
+
+.offscreen {
+  color: #c4c6c9;
+  background: transparent;
+  border: none;
+  font-weight: 400;
+}
+
+.done {
+  color: #fff;
+  background: var(--color-accent);
+  border: 1px solid var(--gu-blueprint-400);
+  font-weight: 600;
+}
+
+.open {
+  color: var(--gu-blueprint-700);
+  background: #fff;
+  border: 1px solid var(--gu-blueprint-400);
+  font-weight: 600;
+}
+
+.locked {
+  color: var(--gu-blueprint-700);
+  background: #fff;
+  border: 1px dashed var(--gu-blueprint-400);
+  font-weight: 600;
+}
+
+.failed {
+  color: var(--gu-blueprint-900);
+  background: var(--gu-blueprint-100);
+  border: 1px solid var(--gu-blueprint-700);
+  font-weight: 600;
+}
+
+.empty {
+  color: var(--gu-blueprint-900);
+  background: transparent;
+  border: none;
+  font-weight: 600;
+}

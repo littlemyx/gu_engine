@@ -181,6 +181,8 @@ body {
   gap: 40px;
   z-index: 2;
   transition: opacity var(--fade-out, 400ms) ease;
+  /* Контент растёт от низа вверх; без потолка он заезжает под верхнюю панель. */
+  max-height: calc(100% - 120px);
 }
 
 .stage-content.is-leaving {
@@ -229,6 +231,11 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Хаб с большим кастом даёт больше кнопок, чем влезает в экран.
+     Кап от вьюпорта: у flex-родителя высота auto, и процентный max-height
+     здесь не резолвится. 164px = верхняя панель + нижний отступ контента. */
+  max-height: calc(100vh - 164px);
+  overflow-y: auto;
 }
 
 .stage-choices--end {
@@ -544,6 +551,8 @@ body {
   }
   .stage-choices {
     width: auto;
+    /* В колоночной раскладке кнопки не должны выдавливать текст сцены. */
+    max-height: 45vh;
   }
   .choice-btn {
     min-height: 52px;

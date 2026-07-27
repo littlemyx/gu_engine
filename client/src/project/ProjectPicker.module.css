@@ -1,0 +1,162 @@
+.screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 40px 20px;
+  background: var(--gu-canvas, #f2f2f3);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+.card {
+  width: 520px;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 26px;
+  background: var(--color-bg, #f2f2f3);
+  border: 1px solid var(--color-neutral-400, #b7b7ba);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.2;
+}
+
+.subtitle {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-600, #7a7a7d);
+}
+
+.list {
+  margin: 18px 0 0;
+  max-height: 44vh;
+  overflow: auto;
+  border: 1px solid var(--color-neutral-300, #d4d4d7);
+}
+
+.empty {
+  margin: 18px 0 0;
+  padding: 16px;
+  border: 1px dashed var(--color-neutral-400, #b7b7ba);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-700, #5d5d60);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--color-neutral-200, #e7e7ea);
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.rowMain:hover .name {
+  color: var(--color-accent-700, #416180);
+}
+
+.name {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Проект без имени: название рендерится приглушённым, не как заголовок. */
+.nameUnnamed {
+  composes: name;
+  font-weight: 400;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.meta {
+  font-size: 11px;
+  color: var(--color-neutral-600, #7a7a7d);
+}
+
+/* Удаление — вторичное и тихое: разрушающий акцент только при наведении. */
+.remove {
+  flex: none;
+  background: none;
+  border: 1px solid transparent;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--color-neutral-600, #7a7a7d);
+  cursor: pointer;
+}
+
+.remove:hover {
+  border-color: var(--color-neutral-400, #b7b7ba);
+  color: var(--color-neutral-900, #2b2b2d);
+}
+
+.confirm {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--color-neutral-800, #424244);
+}
+
+.confirmAction {
+  background: none;
+  border: 1px solid var(--color-neutral-500, #98989b);
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.note {
+  margin-top: 14px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--color-neutral-600, #7a7a7d);
+}
+
+.error {
+  margin-top: 14px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-danger, #a5443c);
+  font-size: 11.5px;
+  line-height: 1.4;
+}

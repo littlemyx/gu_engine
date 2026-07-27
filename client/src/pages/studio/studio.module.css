@@ -1,0 +1,145 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--gu-canvas);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+/* Канон 1440: иерархия 258 · вьюпорт · инспектор 316. */
+.grid {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--gu-rail-width) minmax(0, 1fr) var(--gu-inspector-width);
+}
+
+/* Док прижат к низу и не растёт выше трети экрана. */
+.dockSlot {
+  position: relative;
+  flex: none;
+  max-height: 34vh;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.center {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/*
+ * 1280–1439 — компактный: панели ужимаются, но состав экрана тот же.
+ * Класс ставит JS (useBreakpoint), а не media query: тот же брейкпойнт решает,
+ * какие пропсы получают тулбар и инспектор, и два источника правды разошлись бы.
+ */
+.compact .grid {
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+}
+
+.compact .dockSlot {
+  max-height: 28vh;
+}
+
+/* 1024–1279 — рейл сворачивается в иконки, инспектор всплывает поверх. */
+.narrow .grid {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.narrow .dockSlot {
+  max-height: 26vh;
+}
+
+/* На широком экране обёртка инспектора не должна ломать сетку. */
+.contents {
+  display: contents;
+}
+
+/* Дерево на узком экране: тот же рейл, но поверх вьюпорта. */
+.overlayTree {
+  position: absolute;
+  top: 0;
+  left: 44px;
+  bottom: 0;
+  width: 258px;
+  max-width: 70vw;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 14px 0 30px rgba(0, 0, 0, 0.45);
+}
+
+.overlayTree > :last-child {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Инспектор-оверлей: он перекрывает вьюпорт, а не отнимает у него ширину. */
+.overlayInspector {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 300px;
+  max-width: 80vw;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-accent-900, #22303f);
+  box-shadow: -14px 0 30px rgba(0, 0, 0, 0.45);
+}
+
+.overlayClose {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  z-index: 1;
+  font: inherit;
+  font-size: 11px;
+  color: var(--gu-ink-60);
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.overlayClose:hover {
+  color: var(--gu-ink);
+}
+
+/* Язычок «инспектор ›» на узком экране: там инспектор — оверлей, а не колонка. */
+.inspectorHandle {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  z-index: 10;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--gu-ink-85);
+  background: var(--gu-chrome);
+  border: 1px solid var(--gu-hairline-strong);
+  border-right: none;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.inspectorHandle:hover {
+  color: var(--gu-signal-run);
+}
+
+/* <1024 — режим чтения. */
+.readonlyBanner {
+  flex: none;
+  padding: 5px 12px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--gu-ink-85);
+  background: var(--color-accent-700, #3d5872);
+  border-bottom: 1px solid var(--gu-hairline-edge);
+}

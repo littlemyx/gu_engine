@@ -1,0 +1,94 @@
+.root {
+  width: 160px;
+  box-sizing: border-box;
+  padding: 9px 10px;
+  outline-offset: 1px;
+  font-family: var(--font-body);
+  border: 1px solid var(--gu-hairline-soft);
+  background: var(--gu-surface-raised);
+  border-radius: 0;
+  text-align: left;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+button.root:hover {
+  background: var(--gu-hover-bg);
+}
+
+.selected {
+  outline: 2px solid var(--gu-signal-run);
+}
+
+.dragging {
+  border: 1px dashed var(--gu-signal-run);
+  background: rgba(157, 193, 224, 0.12);
+  opacity: 0.85;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.glyph {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--gu-hairline-mark);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  flex: none;
+  color: var(--gu-ink);
+}
+
+.titleCol {
+  min-width: 0;
+}
+
+.title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gu-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kind {
+  font-size: 9.5px;
+  color: var(--gu-ink-55);
+}
+
+.src {
+  font-size: 9.5px;
+  color: var(--gu-ink-55);
+  margin-top: 6px;
+  line-height: 1.35;
+}
+
+.status {
+  font-size: 9.5px;
+  margin-top: 3px;
+  font-weight: 600;
+}
+
+.ok {
+  color: var(--gu-signal-run);
+}
+
+.wait {
+  color: var(--gu-ink-60);
+}
+
+.bad {
+  color: var(--gu-signal-fail);
+}
+
+.muted {
+  color: var(--gu-ink-40);
+}

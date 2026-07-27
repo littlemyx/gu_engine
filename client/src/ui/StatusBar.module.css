@@ -1,0 +1,24 @@
+.root {
+  background: var(--gu-chrome);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 14px;
+  border-top: 1px solid var(--gu-hairline-edge);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: var(--gu-ink-55);
+}
+
+.warning {
+  color: var(--gu-signal-fail);
+}
+
+.right {
+  margin-left: auto;
+  font-family: var(--gu-mono);
+  /* Внутри правого поля может стоять seed-поповер: выравниваем по базовой линии. */
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}

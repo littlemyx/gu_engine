@@ -1,0 +1,134 @@
+/*
+ * Витрина атомов Industry — временный экран Фазы 1. Заменяется шеллом,
+ * но остаётся полезной, пока атомы дорабатываются.
+ */
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--gu-canvas);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+.body {
+  flex: 1;
+  padding: 24px 28px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 17px;
+  margin: 0;
+  letter-spacing: 0.01em;
+}
+
+.note {
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  margin: 0;
+}
+
+.row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px;
+}
+
+/* Плита тёмного хрома: атомы рейла, дока и консоли живут только на ней. */
+.chrome {
+  background: var(--gu-chrome);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chromeRow {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.railBox {
+  width: var(--gu-rail-width);
+  display: flex;
+  flex-direction: column;
+}
+
+.caption {
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+}
+
+.chromeCaption {
+  composes: caption;
+  color: var(--gu-ink-45);
+}
+
+.slotRow {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.slotCase {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.iconRow {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  color: var(--color-accent-700);
+}
+
+.ramp {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.swatch {
+  width: 62px;
+  height: 44px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  font-size: 9px;
+  padding-bottom: 3px;
+  color: #fff;
+}
+
+.swatchDark {
+  color: var(--color-text);
+}

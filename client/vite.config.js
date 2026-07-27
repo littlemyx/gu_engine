@@ -70,6 +70,9 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       globals: true,
+      // Полифилл localStorage: сторы персистятся по пер-проектным ключам, и
+      // подменить хранилище из тела теста уже поздно — см. vitest.setup.ts.
+      setupFiles: ['./vitest.setup.ts'],
       coverage: {
         reporter: ['text', 'json', 'html'],
       },

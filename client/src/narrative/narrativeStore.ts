@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { storageKey } from '@/project/projectScope';
 import type { AnchorBeat, EndingVariant, WorldModel, WorldLocation } from './types';
 import type { AnchorNarrations, Calendar, CastPlan, CharacterSchedule, EventUnit, SpinePlan } from './calendarTypes';
 import type { DialogueUnit } from './dialogueUnit';
@@ -14,6 +15,7 @@ import { buildCommitPatch } from './calendarRunState';
 import { reconcileImagesForWorld } from './imageFingerprint';
 import type { StoryQAStatus } from './storyQA';
 import { migratePersistedNarrativeState, NARRATIVE_STORE_VERSION } from './narrativeMigrations';
+import type { PersistedNarrativeState } from './narrativeMigrations';
 
 /**
  * Стор для procedural-narrative-пилота (календарный пайплайн).
@@ -185,6 +187,41 @@ type NarrativeState = {
   discardCalendarRun: () => void;
 
   setStoryQA: (status: StoryQAStatus | null) => void;
+
+  /**
+   * Новый проект: полный сброс истории и кэшей медиа. Библиотека префабов
+   * живёт отдельным стором и не трогается — она переживает смену истории.
+   */
+  resetAll: () => void;
+};
+
+/**
+ * Пустой проект. Держится отдельной константой, потому что кроме create()
+ * им пользуются resetAll и загрузка проекта из файла: поле, отсутствующее в
+ * старом .guproj, обязано обнулиться, а не протечь из прошлой истории.
+ */
+export const EMPTY_NARRATIVE_DATA: PersistedNarrativeState = {
+  images: {},
+  characters: {},
+  endings: {},
+  worldModel: null,
+  castPlan: null,
+  calendar: null,
+  tagMap: null,
+  anchorNarrations: null,
+  spine: null,
+  schedule: null,
+  eventUnits: {},
+  unitProse: {},
+  spineBeatProse: {},
+  audioBase: null,
+  audioMoodBeds: {},
+  audioSpecialBeds: {},
+  audioByLi: {},
+  audioSfx: {},
+  audioSfxState: null,
+  calendarRun: null,
+  storyQA: null,
 };
 
 const isPlainRecord = (v: unknown): v is Record<string, unknown> =>
@@ -202,27 +239,7 @@ const CLEARED_FROM_SPINE = {
 export const useNarrativeStore = create<NarrativeState>()(
   persist(
     set => ({
-      images: {},
-      characters: {},
-      endings: {},
-      worldModel: null,
-      castPlan: null,
-      calendar: null,
-      tagMap: null,
-      anchorNarrations: null,
-      spine: null,
-      schedule: null,
-      eventUnits: {},
-      unitProse: {},
-      spineBeatProse: {},
-      audioBase: null,
-      audioMoodBeds: {},
-      audioSpecialBeds: {},
-      audioByLi: {},
-      audioSfx: {},
-      audioSfxState: null,
-      calendarRun: null,
-      storyQA: null,
+      ...EMPTY_NARRATIVE_DATA,
 
       setImage: (locKey, state) => {
         set(s => ({ images: { ...s.images, [locKey]: state } }));
@@ -415,9 +432,11 @@ export const useNarrativeStore = create<NarrativeState>()(
       discardCalendarRun: () => set({ calendarRun: null }),
 
       setStoryQA: storyQA => set({ storyQA }),
+
+      resetAll: () => set({ ...EMPTY_NARRATIVE_DATA }),
     }),
     {
-      name: 'gu-narrative-state',
+      name: storageKey('gu-narrative-state'),
       // v11: calendarRun (черновик прогона) + audioSfxState — их дожимает
       // init-система после reload. v10: снос легаси. v9: календарный пайплайн.
       version: NARRATIVE_STORE_VERSION,

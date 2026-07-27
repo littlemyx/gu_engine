@@ -1,0 +1,112 @@
+.root {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Триггер — та же кнопка, что и соседние в панели действий. */
+.trigger {
+  font: inherit;
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  color: var(--gu-ink-85);
+  background: transparent;
+  border: 1px solid var(--gu-hairline-strong);
+  border-radius: 0;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--gu-hover-bg);
+}
+
+.trigger:disabled {
+  color: var(--gu-ink-45);
+  cursor: default;
+}
+
+.triggerOpen {
+  background: var(--gu-hover-bg);
+  border-color: var(--gu-signal-run);
+}
+
+.popover {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 30;
+  width: 236px;
+  margin-top: 4px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--gu-chrome-raised);
+  border: 1px solid var(--gu-hairline-strong);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-body);
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.label {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--gu-ink-50);
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  color: var(--gu-ink);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--gu-hairline-strong);
+  border-radius: 0;
+  padding: 4px 6px;
+}
+
+.input:focus {
+  outline: 1px solid var(--gu-signal-run);
+  outline-offset: -1px;
+}
+
+.action {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 11px;
+  color: var(--gu-ink-85);
+  background: transparent;
+  border: 1px solid var(--gu-hairline-strong);
+  border-radius: 0;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+.action:hover {
+  background: var(--gu-hover-bg);
+}
+
+.hint {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--gu-ink-50);
+}
+
+/* Триггер в статус-баре: поповер раскрывается вверх и прижат к правому краю. */
+.popoverUp {
+  top: auto;
+  bottom: 100%;
+  left: auto;
+  right: 0;
+  margin-top: 0;
+  margin-bottom: 4px;
+}

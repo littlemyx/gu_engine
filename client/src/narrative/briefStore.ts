@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { storageKey } from '@/project/projectScope';
 import type {
   Appearance,
   ArchetypeId,
@@ -74,6 +75,8 @@ type BriefState = {
 
   // top-level
   setFormat: (format: Format) => void;
+  /** Seed детерминированных шагов генерации (расписание персонажей). */
+  setSeed: (seed: number) => void;
 
   // scale
   patchScale: (patch: Partial<BriefScale>) => void;
@@ -93,6 +96,10 @@ type BriefState = {
 
   // love interests
   addLoveInterest: () => void;
+  /** Вставка готовой карточки: импорт брифа и применение префаба персонажа. */
+  addLoveInterestCard: (card: LoveInterestCard) => void;
+  /** Полная замена брифа (импорт файла). */
+  setBrief: (brief: Brief) => void;
   removeLoveInterest: (id: string) => void;
   patchLoveInterest: (id: string, patch: Partial<LoveInterestCard>) => void;
   patchLoveInterestAppearance: (id: string, patch: Partial<Appearance>) => void;
@@ -118,10 +125,32 @@ function blankBrief(): Brief {
   };
 }
 
+/**
+ * Бриф нетронут — автор ещё ничего не вложил. Отличает «новый проект» от
+ * «начатого, но недозаполненного»: подставлять образец поверх второго нельзя,
+ * это молча стёрло бы работу.
+ */
+export function isBlankBrief(brief: Brief): boolean {
+  const { era, place, specifics } = brief.world.setting;
+  return (
+    brief.loveInterests.length === 0 &&
+    !era &&
+    !place &&
+    !specifics &&
+    !brief.world.tone.mood &&
+    brief.world.tone.themes.length === 0 &&
+    !brief.artStyle.referenceDescriptor
+  );
+}
+
 export const useBriefStore = create<BriefState>()(
   persist(
     (set, get) => ({
-      brief: SAMPLE_BRIEF,
+      // Новый проект — чистый лист, а не чужая история про Киру: с
+      // многопроектностью пустой неймспейс стал стартовым состоянием
+      // продукта, и молча подсунутый образец легко сгенерировать за свой.
+      // Образец достаётся явно — кнопкой «Подставить образец».
+      brief: blankBrief(),
 
       resetToSample: () => set({ brief: SAMPLE_BRIEF }),
       resetToBlank: () => set({ brief: blankBrief() }),
@@ -133,6 +162,8 @@ export const useBriefStore = create<BriefState>()(
       resetSelector: () => set({ selector: DEFAULT_SELECTOR_CONFIG }),
 
       setFormat: format => set(s => ({ brief: { ...s.brief, format } })),
+
+      setSeed: seed => set(s => ({ brief: { ...s.brief, seed: Math.trunc(seed) } })),
 
       patchScale: patch => set(s => ({ brief: { ...s.brief, scale: { ...s.brief.scale, ...patch } } })),
 
@@ -154,6 +185,22 @@ export const useBriefStore = create<BriefState>()(
 
       addLoveInterest: () =>
         set(s => ({ brief: { ...s.brief, loveInterests: [...s.brief.loveInterests, newLoveInterest()] } })),
+
+      addLoveInterestCard: card =>
+        set(s => {
+          // Тот же id уже в касте — обновляем карточку, а не заводим двойника.
+          const exists = s.brief.loveInterests.some(li => li.id === card.id);
+          return {
+            brief: {
+              ...s.brief,
+              loveInterests: exists
+                ? s.brief.loveInterests.map(li => (li.id === card.id ? card : li))
+                : [...s.brief.loveInterests, card],
+            },
+          };
+        }),
+
+      setBrief: brief => set({ brief }),
 
       removeLoveInterest: id =>
         set(s => ({
@@ -225,7 +272,7 @@ export const useBriefStore = create<BriefState>()(
         })),
     }),
     {
-      name: 'gu-narrative-brief',
+      name: storageKey('gu-narrative-brief'),
       // v2: scale.branchPointBudget (бюджет глобальных развилок хребта).
       // v3: selector — настройки салиенс-селектора.
       version: 3,

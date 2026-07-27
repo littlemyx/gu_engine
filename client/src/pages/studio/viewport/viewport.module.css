@@ -1,0 +1,938 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  background: var(--gu-canvas);
+}
+
+.tabs {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  background: var(--gu-chrome);
+  border-bottom: 1px solid var(--gu-hairline);
+  padding: 0 6px;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--gu-ink-60);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--gu-ink);
+}
+
+.tabActive {
+  color: var(--gu-ink);
+  border-bottom-color: var(--color-accent-400);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* — Чертёж (React Flow) — */
+
+.blueprintRoot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.viewportBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--color-divider);
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.viewportMeta {
+  flex: 1;
+}
+
+.blueprintFlow {
+  flex: 1;
+  min-height: 0;
+  background: var(--gu-canvas);
+}
+
+/* Чертёжная сетка 20px — тем же голубым, что и рёбра. */
+.flowGrid {
+  --xy-background-pattern-color: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+/* Ручки узлов не рисуются: рёбра цепляются, но точек на карточке нет. */
+.beatHandle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: none;
+  background: transparent;
+  opacity: 0;
+}
+
+.edgeMainFlow {
+  --xy-edge-stroke: var(--gu-blueprint-700);
+  --xy-edge-stroke-width: 1;
+}
+
+.edgeBranchFlow {
+  --xy-edge-stroke: var(--gu-blueprint-400);
+  --xy-edge-stroke-width: 1;
+}
+
+.edgeBranchFlow :global(.react-flow__edge-path) {
+  stroke-dasharray: 4 3;
+}
+
+.blueprintFlow :global(.react-flow__edge-text) {
+  font-family: var(--font-body);
+  font-size: 9px;
+  fill: var(--gu-blueprint-700);
+}
+
+.blueprintFlow :global(.react-flow__edge-textbg) {
+  fill: var(--gu-canvas);
+}
+
+/* Квадратные кнопки камеры в тон дизайн-системе. */
+.flowControls {
+  --xy-controls-button-background-color: #fff;
+  --xy-controls-button-color: var(--gu-blueprint-900);
+  --xy-controls-button-border-color: var(--color-divider);
+  box-shadow: none;
+}
+
+.flowControls :global(.react-flow__controls-button) {
+  border-radius: 0;
+}
+
+/* — Партитура — */
+
+.scoreRoot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.scoreLegend,
+.scoreCodes {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  padding: 6px 12px;
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+
+.scoreLegend {
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.scoreCodes {
+  border-top: 1px solid var(--color-divider);
+}
+
+.scoreCodes b {
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.scoreScroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 12px;
+}
+
+.scoreGrid {
+  display: grid;
+  align-items: center;
+  width: max-content;
+}
+
+.scoreCorner {
+  width: 88px;
+}
+
+.scoreDay {
+  font-family: var(--font-heading);
+  font-size: 11px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  border-left: 1px solid var(--color-neutral-400, #9b9ea1);
+  padding: 2px 0 4px 4px;
+}
+
+.scorePart {
+  font: inherit;
+  font-family: var(--font-body);
+  font-size: 9px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 2px 0 5px;
+  cursor: pointer;
+}
+
+.scorePart:hover {
+  color: var(--color-text);
+}
+
+.scorePartActive {
+  color: var(--color-accent-700, #3d5872);
+  font-weight: 600;
+}
+
+.scoreRowHead,
+.scoreRowHeadButton {
+  width: 88px;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--color-text) 70%, transparent);
+  padding-right: 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.scoreRowHeadButton {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: inherit;
+  font-size: 10.5px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.scoreRowHeadButton:hover {
+  color: var(--color-text);
+}
+
+.scoreRowDot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+}
+
+.scoreCellBox {
+  display: flex;
+  justify-content: center;
+  padding: 2px 1px;
+}
+
+.scoreCoverage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 18px;
+  font-family: var(--font-body);
+  font-size: 9px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+/* — Сценарий — */
+
+.scriptRoot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.scriptBrackets {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scriptBracket {
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--color-divider);
+  border-radius: 0;
+  padding: 1px 7px;
+  cursor: pointer;
+}
+
+.scriptBracketActive {
+  color: var(--color-accent-900, #22303f);
+  border-color: var(--color-accent-700, #3d5872);
+  background: var(--color-accent-100, #e3e9f0);
+  font-weight: 600;
+}
+
+.scriptScroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 18px 26px 40px;
+}
+
+.scriptColumn {
+  max-width: 800px;
+}
+
+.scriptGroup {
+  margin-bottom: 22px;
+}
+
+.scriptSlotHead {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent-700, #3d5872);
+  border-bottom: 1px solid var(--color-accent-300, #b8cadb);
+  padding-bottom: 4px;
+  margin: 0 0 10px;
+}
+
+.scriptBlock {
+  display: grid;
+  grid-template-columns: 1fr 180px;
+  gap: 4px 20px;
+  padding: 8px 10px;
+  margin: 0 -10px 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.scriptBlock:hover {
+  background: color-mix(in srgb, var(--color-text) 3%, transparent);
+}
+
+.scriptBlockSelected {
+  border-color: var(--color-accent-300, #b8cadb);
+  background: var(--color-accent-100, #e3e9f0);
+  outline: 2px solid var(--color-accent-700, #3d5872);
+  outline-offset: -1px;
+}
+
+.scriptBlockDim {
+  opacity: 0.5;
+}
+
+.scriptBlockHead {
+  grid-column: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.scriptBlockTitle {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.scriptBlockMeta {
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+.scriptAnnotation {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+  word-break: break-word;
+}
+
+.scriptEffect {
+  color: var(--color-accent-700, #3d5872);
+}
+
+.scriptFail {
+  color: var(--color-accent-900, #22303f);
+  font-weight: 600;
+}
+
+.scriptBody {
+  grid-column: 1;
+}
+
+.scriptBody p {
+  margin: 4px 0;
+}
+
+.scriptNode {
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+  border-top: 1px dashed var(--color-divider);
+  padding-top: 4px;
+}
+
+.scriptNarration {
+  font-style: italic;
+  color: color-mix(in srgb, var(--color-text) 85%, transparent);
+}
+
+.scriptSpeech b {
+  color: var(--color-accent-700, #3d5872);
+  font-weight: 600;
+}
+
+.scriptEmotion {
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--color-text) 50%, transparent);
+}
+
+.scriptChoice {
+  border-left: 2px solid var(--color-accent-300, #b8cadb);
+  padding-left: 8px;
+  color: color-mix(in srgb, var(--color-text) 80%, transparent);
+}
+
+.scriptChoiceNote {
+  display: block;
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+
+.scriptEmpty {
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--color-text) 45%, transparent);
+}
+
+/* — Карта мира — */
+
+.mapRoot {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.mapScroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background-image: radial-gradient(
+    color-mix(in srgb, var(--color-accent) 16%, transparent) 1px,
+    transparent 1px
+  );
+  background-size: 20px 20px;
+}
+
+.mapCanvas {
+  position: relative;
+}
+
+.mapEdges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mapEdge {
+  stroke: var(--color-neutral-400, #9b9ea1);
+  stroke-width: 1.5;
+}
+
+.mapEdgeActive {
+  stroke: var(--color-accent-700, #3d5872);
+  stroke-width: 2.5;
+}
+
+.mapEdgeLabel {
+  font-family: var(--font-body);
+  font-size: 9px;
+  fill: var(--color-accent-700, #3d5872);
+}
+
+.mapNode {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+  text-align: left;
+  font: inherit;
+  background: #fff;
+  border: 1px solid var(--color-neutral-400, #9b9ea1);
+  border-radius: 0;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+
+.mapNodeSelected {
+  border: 2px solid var(--color-accent-700, #3d5872);
+  background: var(--color-accent-100, #e3e9f0);
+}
+
+.mapNodeUnreachable {
+  border-style: dashed;
+}
+
+.mapNodeTitle {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--color-text);
+}
+
+.mapNodeMeta {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+}
+
+.empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+
+/* — Вкладка «Аудио»: банк треков (макет 7a) — */
+
+.audioRoot {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  align-content: start;
+  padding: 14px 18px;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--color-text);
+}
+
+.audioColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.audioPanel {
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  background: var(--color-bg, #f2f2f3);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.audioPanelHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.audioPanelTag {
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.audioPanelNote {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.audioPrompt {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.audioPromptText {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  background: #fff;
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.audioInstrumental {
+  flex: none;
+  font-size: 10.5px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.audioBaseVariants {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.audioBaseVariant {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  cursor: pointer;
+}
+
+.audioBaseVariantActive {
+  border-color: var(--color-accent-700, #3d5872);
+  background: var(--color-accent-100, #e3e9f0);
+}
+
+.audioBankGrid {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 5px 10px;
+  align-items: center;
+}
+
+.audioRowLabel {
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
+.audioRowMuted {
+  font-size: 11.5px;
+  white-space: nowrap;
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.audioRowMono {
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  color: var(--color-neutral-600, #6f7275);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.audioRowStatus {
+  font-size: 10.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.audioStatusWait {
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.audioStatusBad {
+  color: #a4392f;
+}
+
+.audioStatusMuted {
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.audioVariants {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.audioVariantBtn {
+  font: inherit;
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 3px 6px;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  background: #fff;
+  cursor: pointer;
+}
+
+.audioVariantActive {
+  border-color: var(--color-accent-700, #3d5872);
+  background: var(--color-accent-700, #3d5872);
+  color: #fff;
+}
+
+.audioVariationGrid {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr;
+  gap: 5px 10px;
+  align-items: center;
+}
+
+.audioVariationHead {
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.audioSfxChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.audioSfxChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  padding: 3px 7px;
+  border: 1px solid var(--color-neutral-300, #c4c6c9);
+  background: #fff;
+}
+
+.audioSfxChipWait {
+  border-style: dashed;
+  color: var(--color-neutral-500, #9b9ea1);
+}
+
+.audioSfxChipBad {
+  border-color: #a4392f;
+  color: #a4392f;
+  background: #f7e5e2;
+}
+
+/* Закрываемая вкладка «Аудио»: крестик внутри таба. */
+.tabClose {
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  border: none;
+  background: transparent;
+  color: var(--gu-ink-45);
+  cursor: pointer;
+  padding: 0 0 0 2px;
+}
+
+.tabClose:hover {
+  color: var(--gu-ink);
+}
+
+/* Вкладка-обёртка «Аудио»: label и крестик — две кнопки в одном табе. */
+.tabInner {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* — Вкладка «Отношения»: присутствие и покрытие (макет 7e) — */
+
+.relationsRoot {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-content: start;
+  padding: 14px 18px;
+  max-width: 920px;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--color-text);
+}
+
+.relGrid {
+  display: grid;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.relDays {
+  display: flex;
+}
+
+.relDay {
+  flex: 1;
+  text-align: center;
+  font-size: 9.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.relName {
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.relTrack {
+  display: grid;
+  gap: 1px;
+  height: 16px;
+}
+
+.relCell {
+  display: block;
+  height: 100%;
+}
+
+.relCellOff {
+  background: var(--color-neutral-200, #dcdedf);
+}
+
+.relCellPresent {
+  background: var(--color-accent-100, #e3e9f0);
+}
+
+.relCellMeeting {
+  background: var(--color-accent-400, #8fa9c2);
+}
+
+.relCellAnchor {
+  background: var(--color-accent-900, #22303f);
+}
+
+.relLegend {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.relSwatch {
+  display: inline-block;
+  width: 12px;
+  height: 10px;
+  margin-left: 10px;
+}
+
+.relSwatch:first-child {
+  margin-left: 0;
+}
+
+.relSlotNote {
+  margin-left: auto;
+}
+
+.relCoverage {
+  display: grid;
+  grid-template-columns: 70px 1fr 1fr 1fr;
+  gap: 6px 10px;
+  align-items: center;
+}
+
+.relCoverageCell {
+  font-size: 10.5px;
+  padding: 4px 8px;
+}
+
+.relCoverageOk {
+  background: var(--color-accent-100, #e3e9f0);
+}
+
+.relCoverageWarn {
+  background: #f3ead0;
+  color: #7a5d17;
+}
+
+.relCoverageBad {
+  background: #f7e5e2;
+  color: #a4392f;
+  font-weight: 600;
+}
+
+.relProblems {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--color-neutral-300, #c4c6c9);
+  padding-top: 10px;
+}
+
+.relProblemLine {
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--color-neutral-800, #3a3d40);
+}
+
+.emptyTitle {
+  font-family: var(--font-heading);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}
+
+.emptyAction {
+  margin-top: 12px;
+  display: flex;
+  justify-content: center;
+}

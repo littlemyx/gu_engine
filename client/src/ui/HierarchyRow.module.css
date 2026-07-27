@@ -1,0 +1,70 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 3px 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  color: var(--gu-ink-85);
+  font-weight: 400;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+button.root:hover {
+  background: var(--gu-hover-bg);
+}
+
+.icon {
+  font-size: 10px;
+  flex: none;
+  color: var(--gu-ink-50);
+}
+
+.label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.meta {
+  font-size: 10px;
+  flex: none;
+  color: var(--gu-ink-45);
+}
+
+/* Оси независимы: выделение/приглушение красят строку,
+   сбой и генерация — только иконку и мету. */
+
+.selected {
+  background: var(--gu-selected-bg);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.selected:hover {
+  background: var(--gu-selected-bg);
+}
+
+.dim {
+  color: var(--gu-ink-50);
+}
+
+.failed .icon,
+.failed .meta {
+  color: var(--gu-signal-fail);
+}
+
+.running .icon,
+.running .meta {
+  color: var(--gu-signal-run);
+}
