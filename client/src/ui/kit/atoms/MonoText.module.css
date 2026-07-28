@@ -1,0 +1,32 @@
+.root {
+  display: inline-block;
+  font-family: var(--gu-mono);
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  color: var(--color-neutral-800);
+  background: transparent;
+  padding: 0;
+}
+
+.muted {
+  color: var(--color-neutral-600);
+}
+
+.highlight {
+  background: var(--color-accent-100);
+  padding: 1px 5px;
+}
+
+.onDark {
+  color: var(--gu-ink-85);
+}
+
+.onDark.muted {
+  color: var(--gu-ink-55);
+}
+
+/* Ближайший токен overlay-подсветки на тёмном хроме; точного соответствия
+   исходной 9%-белой заливке в системе нет — см. отчёт задачи. */
+.onDark.highlight {
+  background: var(--gu-hover-bg);
+}

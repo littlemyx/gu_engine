@@ -1,0 +1,40 @@
+.root {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-block;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+}
+
+.light {
+  border-color: var(--color-neutral-400);
+}
+
+/* Макет задаёт полупрозрачный белый ~22% на тёмном хроме — ближайший токен волосяной линии. */
+.dark {
+  border-color: var(--gu-hairline-soft);
+}
+
+.accent {
+  border-color: var(--color-accent);
+}
+
+.selected {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.interactive.light:hover,
+.interactive.accent:hover {
+  border-color: var(--color-accent-600);
+}
+
+.interactive.dark:hover {
+  border-color: var(--gu-ink-45);
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

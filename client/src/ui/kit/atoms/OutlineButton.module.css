@@ -1,0 +1,116 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  letter-spacing: 0.03em;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.regular {
+  font-size: 14px;
+  padding: var(--space-2) calc(var(--space-3) * 1.2);
+}
+
+.compact {
+  font-size: 10.5px;
+  padding: 3px 10px;
+}
+
+/* Светлая рабочая область — тон строится из рабочих --color-*. */
+
+.neutral {
+  border-color: var(--color-divider);
+  color: var(--color-text);
+}
+
+.neutral:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.neutral:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-text) 14%, transparent);
+}
+
+.accent {
+  border-color: var(--color-accent);
+  color: var(--color-accent-700);
+}
+
+.accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.accent:active:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+.danger {
+  border-color: var(--gu-signal-fail-line);
+  color: var(--gu-signal-fail-text);
+}
+
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gu-signal-fail-line) 8%, transparent);
+}
+
+.danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--gu-signal-fail-line) 16%, transparent);
+}
+
+/* Тёмный хром — тон строится из чернил и сигналов, а не из светлых рамп. */
+
+.onDark.neutral {
+  border-color: var(--gu-hairline-mark);
+  color: var(--gu-ink-85);
+}
+
+.onDark.neutral:hover:not(:disabled) {
+  background: var(--gu-hover-bg);
+}
+
+.onDark.neutral:active:not(:disabled) {
+  background: var(--gu-selected-bg);
+}
+
+.onDark.accent {
+  border-color: var(--gu-signal-run);
+  color: var(--gu-signal-run);
+}
+
+.onDark.accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gu-signal-run) 12%, transparent);
+}
+
+.onDark.accent:active:not(:disabled) {
+  background: color-mix(in srgb, var(--gu-signal-run) 20%, transparent);
+}
+
+.onDark.danger {
+  border-color: var(--gu-signal-fail);
+  color: var(--gu-signal-fail);
+}
+
+.onDark.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--gu-signal-fail) 10%, transparent);
+}
+
+.onDark.danger:active:not(:disabled) {
+  background: color-mix(in srgb, var(--gu-signal-fail) 18%, transparent);
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.root:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

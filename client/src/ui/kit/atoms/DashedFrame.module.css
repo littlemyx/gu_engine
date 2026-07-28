@@ -1,0 +1,69 @@
+.root {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-block;
+  background: transparent;
+  border: 1px dashed transparent;
+  border-radius: 0;
+  cursor: default;
+}
+
+.add {
+  border-color: var(--color-neutral-500);
+}
+
+.note {
+  border-color: var(--color-neutral-400);
+}
+
+/* В макете тёмно-кирпичный оттенок без точного токена — берём ближайший сигнал ошибки. */
+.missing {
+  border-color: var(--gu-signal-fail-line);
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive.add:hover {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+}
+
+.interactive.note:hover {
+  border-color: var(--color-neutral-500);
+}
+
+.interactive.missing:hover {
+  border-color: var(--gu-signal-fail-text);
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.onDark.add {
+  border-color: var(--gu-hairline-mark);
+}
+
+.onDark.note {
+  border-color: var(--gu-hairline-soft);
+}
+
+.onDark.missing {
+  border-color: color-mix(in srgb, var(--gu-signal-fail) 60%, transparent);
+}
+
+.onDark.interactive.add:hover {
+  border-color: var(--gu-signal-run);
+  background: color-mix(in srgb, var(--gu-signal-run) 8%, transparent);
+}
+
+.onDark.interactive.note:hover {
+  border-color: color-mix(in srgb, var(--gu-ink) 35%, transparent);
+}
+
+.onDark.interactive.missing:hover {
+  border-color: var(--gu-signal-fail);
+}

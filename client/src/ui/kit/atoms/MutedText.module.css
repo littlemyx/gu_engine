@@ -1,0 +1,20 @@
+.root {
+  font-family: var(--font-body);
+  line-height: 1.4;
+}
+
+.onLight {
+  color: var(--color-neutral-600);
+}
+
+.onLight.quiet {
+  color: var(--color-neutral-500);
+}
+
+.onDark {
+  color: var(--gu-ink-60);
+}
+
+.onDark.quiet {
+  color: var(--gu-ink-45);
+}

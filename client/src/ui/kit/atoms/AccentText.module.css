@@ -1,0 +1,38 @@
+.root {
+  display: inline;
+  font-family: var(--font-body);
+  line-height: 1.4;
+}
+
+.info {
+  color: var(--color-accent-600);
+}
+
+.accent {
+  color: var(--color-accent-700);
+}
+
+.error {
+  color: var(--gu-signal-fail-text);
+}
+
+.warn {
+  color: var(--gu-signal-warn-deep);
+}
+
+/* На тёмном хроме тона строятся из сигналов, а не из светлой рампы. */
+.onDark.info {
+  color: var(--gu-signal-run);
+}
+
+.onDark.accent {
+  color: var(--gu-signal-run);
+}
+
+.onDark.error {
+  color: var(--gu-signal-fail);
+}
+
+.onDark.warn {
+  color: var(--gu-signal-warn-soft);
+}

@@ -1,0 +1,25 @@
+.root {
+  box-sizing: border-box;
+  display: inline-block;
+  border-radius: 0;
+}
+
+.accent {
+  background: var(--color-accent-100);
+}
+
+.whiteOnDark {
+  background: color-mix(in srgb, var(--gu-ink) var(--tone-alpha, 9%), transparent);
+}
+
+.error {
+  background: var(--gu-signal-fail-bg);
+}
+
+.warn {
+  background: var(--gu-signal-warn-bg);
+}
+
+.darkAccent {
+  background: var(--color-accent-900);
+}

@@ -1,0 +1,41 @@
+.root {
+  display: inline-flex;
+  box-sizing: border-box;
+  font-family: var(--gu-mono);
+  line-height: 1.2;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.neutral {
+  color: var(--color-neutral-600);
+}
+
+.accent {
+  color: var(--color-accent-700);
+}
+
+.warn {
+  color: var(--gu-signal-warn-deep);
+}
+
+.error {
+  color: var(--gu-signal-fail-text);
+}
+
+/* На тёмном хроме тона строятся из сигналов и чернил, а не из светлых рамп. */
+.onDark.neutral {
+  color: var(--gu-ink-60);
+}
+
+.onDark.accent {
+  color: var(--gu-signal-run);
+}
+
+.onDark.warn {
+  color: var(--gu-signal-warn-soft);
+}
+
+.onDark.error {
+  color: var(--gu-signal-fail);
+}

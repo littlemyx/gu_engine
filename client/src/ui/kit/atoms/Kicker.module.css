@@ -1,0 +1,32 @@
+.root {
+  display: inline-block;
+  font-family: var(--font-body);
+  line-height: 1.2;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+
+.neutral {
+  color: var(--color-neutral-600);
+}
+
+.accent {
+  color: var(--color-accent-700);
+}
+
+.error {
+  color: var(--gu-signal-fail-text);
+}
+
+.onDark.neutral {
+  color: var(--gu-ink-50);
+}
+
+.onDark.accent {
+  color: var(--gu-signal-run);
+}
+
+.onDark.error {
+  color: var(--gu-signal-fail);
+}

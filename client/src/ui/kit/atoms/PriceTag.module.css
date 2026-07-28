@@ -1,0 +1,36 @@
+.root {
+  display: inline-block;
+  font-family: var(--gu-mono);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.button {
+  font-size: 9.5px;
+  font-weight: 400;
+  opacity: 0.75;
+  color: currentColor;
+}
+
+.standalone {
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 1;
+  color: var(--color-neutral-600);
+}
+
+.total {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 1;
+  color: var(--color-text);
+}
+
+/* На тёмном хроме тон строится из чернил, а не из светлых рамп. */
+.onDark.standalone {
+  color: var(--gu-ink-55);
+}
+
+.onDark.total {
+  color: var(--gu-ink-85);
+}

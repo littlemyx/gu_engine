@@ -1,0 +1,56 @@
+.root {
+  display: inline-block;
+  line-height: 1;
+  font-family: var(--font-body);
+}
+
+.spin {
+  animation: sg-spin 1.2s linear infinite;
+}
+
+@keyframes sg-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.fresh,
+.ok {
+  color: var(--color-accent-700);
+}
+
+.run {
+  color: var(--color-accent-600);
+}
+
+.fail {
+  color: var(--gu-signal-fail-text);
+}
+
+.stale,
+.warn {
+  color: var(--gu-signal-warn-deep);
+}
+
+.none {
+  color: var(--color-neutral-500);
+}
+
+.onDark.fresh,
+.onDark.ok,
+.onDark.run {
+  color: var(--gu-signal-run);
+}
+
+.onDark.fail {
+  color: var(--gu-signal-fail);
+}
+
+.onDark.stale,
+.onDark.warn {
+  color: var(--gu-signal-warn-soft);
+}
+
+.onDark.none {
+  color: var(--gu-ink-40);
+}
