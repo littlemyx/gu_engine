@@ -1,0 +1,98 @@
+.root {
+  position: relative;
+  box-sizing: border-box;
+  display: inline-flex;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 0;
+  cursor: default;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.media {
+  align-items: flex-end;
+  justify-content: center;
+  background-image: repeating-linear-gradient(45deg, var(--color-neutral-200) 0 3px, transparent 3px 7px);
+  border-color: var(--color-neutral-400);
+}
+
+.media:hover {
+  border-color: var(--color-accent);
+}
+
+.media.selected {
+  border-color: var(--color-accent);
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.label {
+  font-family: var(--gu-mono);
+  font-size: 8.5px;
+  line-height: 1;
+  color: var(--color-neutral-700);
+  background: var(--color-bg);
+  padding: 1px 4px;
+  margin-bottom: 2px;
+  max-width: 92%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stub {
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--color-neutral-500);
+  color: var(--color-neutral-600);
+  font-family: var(--gu-mono);
+  font-size: 10px;
+}
+
+.stub:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-700);
+}
+
+/* На тёмном хроме волосяные линии строятся из чернил, а не из светлых рамп. */
+.onDark.media {
+  /* Макет: белая штриховка на малой прозрачной доле — точного токена нет, берём чернило. */
+  background-image: repeating-linear-gradient(45deg, color-mix(in srgb, var(--gu-ink) 6%, transparent) 0 3px, transparent 3px 7px);
+  border-color: var(--gu-hairline-strong);
+}
+
+.onDark.media:hover {
+  /* Макет: белая рамка на большой прозрачной доле — точного токена нет, ближайшее чернило. */
+  border-color: color-mix(in srgb, var(--gu-ink) 55%, transparent);
+}
+
+.onDark.media.selected {
+  border-color: var(--color-accent);
+}
+
+.onDark .label {
+  color: var(--gu-ink-60);
+  /* Макет: тёмная полупрозрачная подложка — прозрачной тёмной рампы нет, берём хром. */
+  background: color-mix(in srgb, var(--gu-chrome) 70%, transparent);
+}
+
+.onDark.stub {
+  border-color: var(--gu-hairline-mark);
+  /* Макет: белый на большой прозрачной доле — см. .onDark.media:hover. */
+  color: color-mix(in srgb, var(--gu-ink) 55%, transparent);
+}
+
+.onDark.stub:hover {
+  border-color: var(--gu-signal-run);
+  color: var(--gu-signal-run);
+}

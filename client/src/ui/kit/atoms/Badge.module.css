@@ -1,0 +1,48 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  line-height: 1.2;
+  padding: 1px 6px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.glyph {
+  line-height: 1;
+}
+
+.neutral {
+  border-color: var(--color-neutral-400);
+  color: var(--color-neutral-700);
+}
+
+.accent {
+  border-color: var(--color-accent);
+  color: var(--color-accent-700);
+}
+
+.error {
+  border-color: var(--gu-signal-fail-edge);
+  color: var(--gu-signal-fail-text);
+}
+
+/* На тёмном хроме рамки и чернила берутся из hairline/ink/сигналов. */
+.onDark.neutral {
+  border-color: var(--gu-hairline-mark);
+  color: var(--gu-ink-75);
+}
+
+.onDark.accent {
+  border-color: var(--gu-signal-run);
+  color: var(--gu-signal-run);
+}
+
+.onDark.error {
+  border-color: color-mix(in srgb, var(--gu-signal-fail) 70%, transparent);
+  color: var(--gu-signal-fail);
+}

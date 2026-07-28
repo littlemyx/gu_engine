@@ -1,0 +1,70 @@
+.input {
+  box-sizing: border-box;
+  width: 200px;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 5px 10px;
+  border: 1px solid var(--gu-line-soft);
+  border-radius: 0;
+  background: var(--gu-paper);
+  color: var(--color-text);
+}
+
+.input::placeholder {
+  color: inherit;
+  opacity: 0.45;
+}
+
+.input:hover:not(:disabled) {
+  border-color: var(--gu-line);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-color: var(--color-accent);
+}
+
+.input:disabled {
+  opacity: 0.45;
+}
+
+.mono {
+  font-family: var(--gu-mono);
+}
+
+.multiline {
+  width: 220px;
+  resize: vertical;
+}
+
+/* Ошибка меняет только рамку — заливка и текст остаются как в обычном состоянии. */
+
+.error {
+  border-color: var(--gu-signal-fail-line);
+}
+
+.error:hover:not(:disabled) {
+  border-color: var(--gu-signal-fail-text);
+}
+
+/* На тёмном хроме поле строится из чернил и сигналов, а не из светлых рамп. */
+
+.onDark {
+  background: var(--gu-surface-raised);
+  border-color: var(--gu-hairline-soft);
+  color: var(--gu-ink);
+}
+
+.onDark:hover:not(:disabled) {
+  border-color: var(--gu-ink-45);
+}
+
+.onDark.error {
+  border-color: color-mix(in srgb, var(--gu-signal-fail) 60%, transparent);
+}
+
+.onDark.error:hover:not(:disabled) {
+  border-color: var(--gu-signal-fail);
+}

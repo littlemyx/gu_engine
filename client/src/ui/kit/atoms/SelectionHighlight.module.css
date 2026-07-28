@@ -1,0 +1,31 @@
+.root {
+  box-sizing: border-box;
+  display: block;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.row,
+.cell {
+  /* Тинт макета точно совпадает с --color-accent на 28% прозрачности. */
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.row {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+.outline {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--color-accent);
+}
+
+/* На тёмном хроме бордюр берёт более светлый тон акцента для контраста. */
+.onDark.row {
+  box-shadow: inset 2px 0 0 var(--color-accent-300);
+}
+
+.onDark.outline {
+  box-shadow: inset 0 0 0 2px var(--color-accent-300);
+}

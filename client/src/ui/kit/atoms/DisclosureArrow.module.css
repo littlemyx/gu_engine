@@ -1,0 +1,33 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 0;
+  line-height: 1;
+  font-family: var(--font-body);
+  color: var(--color-neutral-600);
+}
+
+button.root {
+  cursor: pointer;
+}
+
+button.root:hover {
+  color: var(--color-text);
+}
+
+button.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.onDark {
+  color: var(--gu-ink-50);
+}
+
+button.onDark:hover {
+  color: var(--gu-ink-90);
+}

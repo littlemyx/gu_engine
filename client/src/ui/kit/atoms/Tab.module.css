@@ -1,0 +1,104 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 11px;
+  line-height: 1.2;
+  border-radius: 0;
+  background: transparent;
+  border: none;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* тёмная underline-accent — вкладки тулбара на тёмном хроме */
+.underline {
+  padding: 6px 10px;
+  color: var(--gu-ink-55);
+  box-shadow: none;
+}
+
+.underline:hover {
+  color: var(--gu-ink-85);
+}
+
+.underline.selected {
+  color: var(--gu-ink-90);
+  box-shadow: inset 0 -2px 0 var(--color-accent);
+}
+
+/* документная светлая с ✕ — вкладки открытых документов на светлой рабочей области */
+.document {
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--color-neutral-600);
+  border: 1px solid var(--color-divider);
+}
+
+.document:hover {
+  color: var(--color-text);
+}
+
+.document.selected {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+  color: var(--color-text);
+  border-color: var(--color-accent);
+}
+
+/* док-таба — приглушённые вкладки дока на тёмном хроме */
+.dock {
+  padding: 4px 10px;
+  background: transparent;
+  color: var(--gu-ink-55);
+  border: 1px solid var(--gu-hairline-soft);
+}
+
+.dock:hover {
+  color: var(--gu-ink-85);
+}
+
+.dock.selected {
+  background: var(--gu-selected-bg);
+  color: var(--gu-ink-90);
+}
+
+.notify {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--gu-signal-warn);
+}
+
+/* На светлой документной вкладке точка берёт приглушённую пару сигнала warn. */
+.document .notify {
+  background: var(--gu-signal-warn-deep);
+}
+
+.close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 10px;
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+.close:hover {
+  opacity: 1;
+}
+
+.close:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}

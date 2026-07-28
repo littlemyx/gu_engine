@@ -1,0 +1,117 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.label {
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--color-text);
+}
+
+.value {
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-accent-700);
+}
+
+.track {
+  position: relative;
+  box-sizing: border-box;
+  border: 1px solid var(--color-divider);
+  cursor: pointer;
+  touch-action: none;
+}
+
+.regular .track {
+  height: 6px;
+}
+
+.mini .track {
+  height: 4px;
+}
+
+.fill {
+  height: 100%;
+  background: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  pointer-events: none;
+}
+
+.thumb {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--color-accent-700);
+  pointer-events: none;
+}
+
+.regular .thumb {
+  width: 10px;
+  height: 16px;
+}
+
+.mini .thumb {
+  width: 8px;
+  height: 12px;
+}
+
+.track:hover:not([aria-disabled='true']) {
+  border-color: var(--color-accent);
+}
+
+.track:active:not([aria-disabled='true']) {
+  border-color: var(--color-accent-700);
+}
+
+.track:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+.disabled {
+  opacity: 0.45;
+}
+
+.track[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+/* На тёмном хроме рамка и заливки строятся из чернил/сигналов, а не рамп. */
+.onDark .label {
+  color: var(--gu-ink-75);
+}
+
+.onDark .value {
+  color: var(--gu-ink-85);
+}
+
+.onDark .track {
+  border-color: var(--gu-hairline-mark);
+}
+
+.onDark .fill {
+  background: color-mix(in srgb, var(--gu-blueprint-400) 55%, transparent);
+}
+
+.onDark .thumb {
+  background: var(--gu-signal-run);
+}
+
+.onDark .track:hover:not([aria-disabled='true']) {
+  border-color: var(--gu-ink-85);
+}
+
+.onDark .track:active:not([aria-disabled='true']) {
+  border-color: var(--gu-ink-90);
+}

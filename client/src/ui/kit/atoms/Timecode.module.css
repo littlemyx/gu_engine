@@ -1,0 +1,20 @@
+.root {
+  display: inline-block;
+  font-family: var(--gu-mono);
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.muted {
+  color: var(--gu-muted);
+}
+
+.onDark {
+  color: var(--gu-ink-85);
+}
+
+.onDark.muted {
+  color: var(--gu-ink-50);
+}

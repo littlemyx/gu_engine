@@ -1,0 +1,32 @@
+.root {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  border-radius: 0;
+}
+
+.vertical {
+  width: 1px;
+}
+
+.horizontal {
+  height: 1px;
+}
+
+/* на светлом */
+.root {
+  background: var(--color-neutral-500);
+}
+
+.quiet {
+  background: var(--color-neutral-200);
+}
+
+/* на тёмном */
+.onDark {
+  background: color-mix(in srgb, var(--gu-hairline-soft) 75%, transparent);
+}
+
+.onDark.quiet {
+  background: var(--gu-hairline);
+}

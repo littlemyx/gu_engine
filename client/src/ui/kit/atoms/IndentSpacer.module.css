@@ -1,0 +1,5 @@
+.root {
+  display: inline-block;
+  flex: none;
+  min-height: 22px;
+}

@@ -1,0 +1,27 @@
+.root {
+  display: inline-block;
+  line-height: 1;
+  font-family: var(--font-body);
+}
+
+/*
+ * В макете «ok» — насыщенный зелёный, свой оттенок на светлом и на тёмном.
+ * У кита нет отдельного зелёного токена успеха (см. industry.css) — берём тот
+ * же приём, что и в StatusGlyph: акцентный тон на светлом, --gu-signal-run на
+ * тёмном (то же семейство «done»/«run», которое уже несёт этот смысл в ките).
+ */
+.ok {
+  color: var(--color-accent-700);
+}
+
+.muted {
+  color: var(--gu-line);
+}
+
+.onDark.ok {
+  color: var(--gu-signal-run);
+}
+
+.onDark.muted {
+  color: var(--gu-ink-45);
+}
