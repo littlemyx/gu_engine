@@ -1,0 +1,82 @@
+.root {
+  box-sizing: border-box;
+  display: block;
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  font-family: var(--font-body);
+  text-align: left;
+}
+
+.clickable {
+  appearance: none;
+  background-color: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.active {
+  border-color: var(--color-accent);
+  background: var(--gu-signal-run-bg);
+}
+
+.clickable.active:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.default {
+  border-color: color-mix(in srgb, var(--gu-ink) 15%, transparent);
+  background: transparent;
+}
+
+.clickable.default:hover {
+  background: color-mix(in srgb, var(--gu-ink) 6%, transparent);
+}
+
+.attention {
+  border-color: color-mix(in srgb, var(--gu-signal-fail) 50%, transparent);
+  background: color-mix(in srgb, var(--gu-signal-fail) 7%, transparent);
+}
+
+.clickable.attention:hover {
+  background: color-mix(in srgb, var(--gu-signal-fail) 13%, transparent);
+}
+
+.running {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
+}
+
+.clickable.running:hover {
+  background: color-mix(in srgb, var(--color-accent) 34%, transparent);
+}
+
+.stats {
+  margin: 3px 0;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--gu-ink);
+}
+
+.price {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+}
+
+.priceAccent {
+  color: var(--gu-signal-run);
+}
+
+.priceMuted {
+  color: var(--gu-ink-45);
+}
+
+.priceError {
+  color: var(--gu-signal-fail);
+}

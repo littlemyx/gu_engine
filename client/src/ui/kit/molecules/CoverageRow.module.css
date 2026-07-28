@@ -1,0 +1,26 @@
+.root {
+  display: flex;
+  align-items: center;
+  font-family: var(--font-body);
+}
+
+.label {
+  flex: none;
+  display: inline-block;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cell {
+  flex: none;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyGlyph {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--gu-signal-fail-line);
+}

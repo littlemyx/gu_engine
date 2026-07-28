@@ -152,7 +152,7 @@ const StudioNext = () => {
         </aside>
 
         <main className={styles.viewport}>
-          <ZoneView zone={current} pipeline={pipeline} />
+          <ZoneView zone={current} pipeline={pipeline} brief={brief} />
         </main>
 
         <aside className={styles.inspector}>

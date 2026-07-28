@@ -1,0 +1,12 @@
+.root {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+.note {
+  margin-left: auto;
+}

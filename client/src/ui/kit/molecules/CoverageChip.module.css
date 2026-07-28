@@ -1,0 +1,40 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 0;
+}
+
+.ok {
+  background: var(--color-accent-100);
+  border-color: var(--color-accent-300);
+}
+
+.warn {
+  background: var(--gu-signal-warn-bg);
+  border-color: var(--gu-signal-warn-line);
+}
+
+.error {
+  background: var(--gu-signal-fail-bg);
+  border-color: var(--gu-signal-fail-line);
+}
+
+/* На тёмном хроме тона строятся из сигналов и чернил, а не из светлых рамп. */
+.onDark.ok {
+  background: color-mix(in srgb, var(--gu-signal-run) 14%, transparent);
+  border-color: color-mix(in srgb, var(--gu-signal-run) 40%, transparent);
+}
+
+.onDark.warn {
+  background: color-mix(in srgb, var(--gu-signal-warn) 12%, transparent);
+  border-color: color-mix(in srgb, var(--gu-signal-warn) 50%, transparent);
+}
+
+.onDark.error {
+  background: color-mix(in srgb, var(--gu-signal-fail) 12%, transparent);
+  border-color: color-mix(in srgb, var(--gu-signal-fail) 50%, transparent);
+}

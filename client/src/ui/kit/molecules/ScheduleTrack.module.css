@@ -1,0 +1,41 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--color-text);
+}
+
+.label {
+  flex: none;
+  font-weight: 600;
+}
+
+.grid {
+  position: relative;
+  flex: 1;
+  display: grid;
+  gap: 1px;
+  height: 16px;
+}
+
+.presence,
+.meeting,
+.anchor {
+  grid-row: 1;
+  border-radius: 0;
+}
+
+.presence {
+  background: var(--color-accent-200);
+}
+
+.meeting {
+  background: var(--color-accent);
+}
+
+.anchor {
+  background: var(--color-accent-700);
+}

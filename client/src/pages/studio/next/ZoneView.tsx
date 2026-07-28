@@ -2,14 +2,18 @@ import React from 'react';
 
 import ReadinessRow from '@/ui/kit/molecules/ReadinessRow';
 
+import IdeaZone from './IdeaZone';
+
 import styles from './shell.module.css';
 
+import type { Brief } from '@/narrative/types';
 import type { PipelineModel } from '../derive/pipelineModel';
 import type { Zone } from './zoneModel';
 
 export interface ZoneViewProps {
   zone: Zone;
   pipeline: PipelineModel;
+  brief: Brief;
 }
 
 /**
@@ -20,7 +24,9 @@ export interface ZoneViewProps {
  * называет, чего ещё нет, — это лучше пустого места, по которому непонятно,
  * сломалось что-то или так задумано.
  */
-const ZoneView = ({ zone, pipeline }: ZoneViewProps) => {
+const ZoneView = ({ zone, pipeline, brief }: ZoneViewProps) => {
+  if (zone.id === 'idea') return <IdeaZone brief={brief} />;
+
   const row = pipeline.zones.find(z => z.id === zone.id);
 
   return (

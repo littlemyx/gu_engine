@@ -1,0 +1,25 @@
+.body {
+  box-sizing: border-box;
+}
+
+.trigger {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.trigger:hover > div {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 7%, transparent);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.trigger.onDark:hover > div {
+  border-color: var(--gu-signal-run);
+  background: color-mix(in srgb, var(--gu-signal-run) 8%, transparent);
+}

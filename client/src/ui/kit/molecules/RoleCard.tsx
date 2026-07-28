@@ -54,9 +54,11 @@ const RoleCard = ({
   roleName,
   cast = 'linked',
   castLabel = 'префаб «Кира» v2',
-  note = '2 оверрайда: speechPattern, палитра',
-  hasUpdate = true,
-  updateLabel = 'есть v3 · diff ▾',
+  // Демо-значения макета умолчаниями быть не могут: карточка без обновления
+  // не должна обещать «есть v3», а карточка без оверрайдов — их перечислять.
+  note,
+  hasUpdate = false,
+  updateLabel,
   selected = false,
   onDiff,
 }: RoleCardProps) => {
@@ -73,11 +75,11 @@ const RoleCard = ({
     hasUpdate &&
     (onDiff ? (
       <button type="button" className={`${styles.updateArea} ${styles.updateButton}`} onClick={onDiff}>
-        <FillBadge label={updateLabel} uppercase={false} />
+        <FillBadge label={updateLabel ?? 'есть новая версия'} uppercase={false} />
       </button>
     ) : (
       <span className={styles.updateArea}>
-        <FillBadge label={updateLabel} uppercase={false} />
+        <FillBadge label={updateLabel ?? 'есть новая версия'} uppercase={false} />
       </span>
     ));
 

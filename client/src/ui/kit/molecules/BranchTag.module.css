@@ -1,0 +1,22 @@
+.content {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  box-sizing: border-box;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.plain {
+  background: var(--color-bg);
+}
+
+.tinted {
+  background: color-mix(in srgb, var(--color-accent) 14%, var(--color-bg));
+}
+
+.dot {
+  font-size: 9px;
+  line-height: 1.2;
+  color: var(--color-neutral-500);
+}

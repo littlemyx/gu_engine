@@ -250,6 +250,7 @@ export async function applyProject(
     branchAssignment: project.stores.studio.state.branchAssignment,
     prefabProvenance: project.prefabRefs,
     scriptBracket: 'neutral',
+    castSlots: project.stores.studio.state.castSlots ?? {},
   };
   const briefState = project.stores.brief.state;
   const target = options.target ?? decideApplyTarget(project.projectId, projectId, newProjectId());

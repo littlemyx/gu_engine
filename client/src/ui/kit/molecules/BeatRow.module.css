@@ -1,0 +1,56 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 4px 10px 4px 20px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  color: inherit;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.hoverable:hover {
+  background: color-mix(in srgb, var(--gu-ink) 5%, transparent);
+}
+
+.title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 400;
+  color: var(--gu-ink-85);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.titleSelected {
+  font-weight: 600;
+  color: var(--gu-ink);
+}
+
+.actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+
+.badgeSlot {
+  display: inline-flex;
+  flex: none;
+}

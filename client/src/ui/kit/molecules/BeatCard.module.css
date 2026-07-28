@@ -1,0 +1,86 @@
+.root {
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 0;
+  font: inherit;
+  font-family: var(--font-body);
+  text-align: left;
+  background: none;
+  cursor: default;
+}
+
+.stateDone {
+  border: 1px solid var(--gu-blueprint-line);
+  background: var(--gu-paper);
+}
+
+.stateFailed {
+  border: 1px solid var(--gu-blueprint-700);
+  background: var(--gu-paper);
+}
+
+.stateRunning {
+  border: 1px dashed var(--gu-blueprint-700);
+  background: var(--gu-blueprint-100);
+}
+
+.stateLocked {
+  border: 1px dashed var(--gu-blueprint-400);
+  background: var(--gu-paper);
+}
+
+.dimmed {
+  opacity: 0.3;
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive:hover {
+  box-shadow: 0 0 0 1px var(--color-accent-400);
+}
+
+.interactive:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.kickerRow {
+  display: block;
+}
+
+.titleRow {
+  display: block;
+  margin: 1px 0 2px;
+}
+
+/* Локально переопределяем токен, который читает Heading, вместо правки атома. */
+.titleLocked {
+  --color-text: var(--color-neutral-500);
+}
+
+.status {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+}
+
+.statusDone {
+  color: var(--gu-blueprint-700);
+}
+
+.statusFailed {
+  color: var(--gu-blueprint-900);
+}
+
+.statusRunning {
+  color: var(--gu-blueprint-700);
+}
+
+.statusLocked {
+  color: var(--color-neutral-500);
+}

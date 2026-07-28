@@ -4,6 +4,7 @@ import type { PersistedNarrativeState } from '@/narrative/narrativeMigrations';
 import type { Brief } from '@/narrative/types';
 import type { PrefabKind } from '@/prefabs/prefabTypes';
 import type { SelectorConfig } from 'gu-engine-story-core';
+import type { CastRef } from '../studioProjectStore';
 
 /**
  * Формат файла проекта (.guproj) — ZIP с project.json и бинарными ассетами.
@@ -22,7 +23,7 @@ export const GU_PROJECT_FORMAT = 'gu-project';
 export const GU_PROJECT_SCHEMA_VERSION = 1;
 export const GU_PROJECT_EXTENSION = '.guproj';
 export const BRIEF_STORE_VERSION = 3;
-export const STUDIO_STORE_VERSION = 0;
+export const STUDIO_STORE_VERSION = 1;
 
 export const PROJECT_JSON_PATH = 'project.json';
 export const IMAGES_PREFIX = 'assets/images/';
@@ -94,7 +95,10 @@ export type GuProjectJson = {
   stores: {
     brief: { version: number; state: { brief: Brief; selector: SelectorConfig } };
     narrative: { version: number; state: ProjectNarrativeSlice };
-    studio: { version: number; state: { branchAssignment: Record<string, string> } };
+    studio: {
+      version: number;
+      state: { branchAssignment: Record<string, string>; castSlots: Record<string, CastRef> };
+    };
   };
   prefabRefs: PrefabProvenanceRef[];
   assets: ProjectAssetsManifest;
@@ -197,6 +201,12 @@ export function validateProjectJson(value: unknown): ValidationOk | ValidationFa
           branchAssignment:
             isRecord(studioEntry) && isRecord(studioEntry.state) && isRecord(studioEntry.state.branchAssignment)
               ? (studioEntry.state.branchAssignment as Record<string, string>)
+              : {},
+          // Файл, записанный до кастинг-стола, приходит без слотов — роли в нём
+          // закрыты именами из брифа, и пустой кастинг это честно отражает.
+          castSlots:
+            isRecord(studioEntry) && isRecord(studioEntry.state) && isRecord(studioEntry.state.castSlots)
+              ? (studioEntry.state.castSlots as Record<string, CastRef>)
               : {},
         },
       },

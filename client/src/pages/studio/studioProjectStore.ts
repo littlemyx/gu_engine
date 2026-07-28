@@ -19,6 +19,24 @@ import type { PrefabProvenanceRef } from './projectFile/projectFileFormat';
  * веток.
  */
 
+/**
+ * Как назначена роль кастинг-стола.
+ *
+ * Слот помнит не только id префаба, но и его версию и снимок содержимого:
+ * префабы иммутабельны по версиям, а библиотека — машинная и в .guproj не
+ * едет. Без снимка чужой проект открылся бы с пустыми ролями.
+ */
+export type CastRef = {
+  prefabId: string;
+  version: number;
+  /** linked — следит за библиотекой; forked — отвязан правкой под проект. */
+  mode: 'linked' | 'forked';
+  /** Имя на момент назначения: показывается, даже когда префаба рядом нет. */
+  name: string;
+  /** Копия содержимого — проект самодостаточен. */
+  snapshot: unknown;
+};
+
 /** Персистная часть: ровно она едет в .guproj и в снимок проекта. */
 export type StudioProjectData = {
   /** branchPointId → outcomeId. Настройка показа, не параметр генерации. */
@@ -31,6 +49,8 @@ export type StudioProjectData = {
   prefabProvenance: PrefabProvenanceRef[];
   /** В какой ступени отношений читается «Сценарий». */
   scriptBracket: DialogueVariantBracket;
+  /** Кастинг-стол: id роли → чем она закрыта. Пусто — роль не назначена. */
+  castSlots: Record<string, CastRef>;
 };
 
 type StudioProjectState = StudioProjectData & {
@@ -38,6 +58,7 @@ type StudioProjectState = StudioProjectData & {
   resetBranches: () => void;
   recordPrefabApplied: (ref: PrefabProvenanceRef) => void;
   setScriptBracket: (bracket: DialogueVariantBracket) => void;
+  castRole: (roleId: string, ref: CastRef | null) => void;
 };
 
 /** Пустой проект: чем «Новый проект» отличается от открытой истории. */
@@ -45,6 +66,7 @@ export const EMPTY_STUDIO_PROJECT: StudioProjectData = {
   branchAssignment: {},
   prefabProvenance: [],
   scriptBracket: 'neutral',
+  castSlots: {},
 };
 
 export const useStudioProjectStore = create<StudioProjectState>()(
@@ -67,6 +89,13 @@ export const useStudioProjectStore = create<StudioProjectState>()(
           prefabProvenance: [...s.prefabProvenance.filter(p => p.id !== ref.id), ref],
         })),
       setScriptBracket: scriptBracket => set({ scriptBracket }),
+      castRole: (roleId, ref) =>
+        set(s => {
+          const next = { ...s.castSlots };
+          if (ref == null) delete next[roleId];
+          else next[roleId] = ref;
+          return { castSlots: next };
+        }),
     }),
     {
       name: storageKey('gu-studio-project'),
@@ -75,6 +104,7 @@ export const useStudioProjectStore = create<StudioProjectState>()(
         branchAssignment: s.branchAssignment,
         prefabProvenance: s.prefabProvenance,
         scriptBracket: s.scriptBracket,
+        castSlots: s.castSlots,
       }),
     },
   ),

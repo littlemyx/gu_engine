@@ -1,0 +1,28 @@
+.root {
+  display: grid;
+  width: max-content;
+  font-family: var(--font-body);
+}
+
+.dayCell {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  padding: 2px 0;
+  box-sizing: border-box;
+}
+
+.dayLabel {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.phaseCell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 0 6px;
+  box-sizing: border-box;
+}
