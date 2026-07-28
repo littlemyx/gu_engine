@@ -1,7 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import { DEFAULT_ZONE } from './next/zoneModel';
+
 import type { DialogueVariantBracket } from '@/narrative/types';
+import type { ZoneId } from './next/zoneModel';
 import type { ParsedProject } from './projectFile/parseProject';
 
 /**
@@ -25,6 +28,16 @@ export type Selection =
 export type ViewportTab = 'blueprint' | 'score' | 'script' | 'world' | 'audio' | 'relations';
 /** Консоль в доке не вкладка — она приколота справа и видна всегда. */
 export type DockTab = 'prefabs' | 'assets' | 'qa';
+
+/**
+ * Боковая панель конвейерного шелла. «Структура» — как устроена история,
+ * «Пайплайн» — что из неё уже произведено. Раньше это было одно дерево, и оно
+ * не отвечало толком ни на один из двух вопросов.
+ */
+export type SidebarTab = 'structure' | 'pipeline';
+
+/** Нижняя панель: ведомость конвейера, лента событий, журнал прогонов. */
+export type BottomTab = 'pipeline' | 'feed' | 'runs';
 
 export type ModalState =
   | { kind: 'resetDraft' }
@@ -58,6 +71,10 @@ export const clampPanel = (key: keyof typeof PANEL_LIMITS, value: number): numbe
 
 type StudioState = {
   selection: Selection;
+  /** Текущая зона конвейера. Наверху всегда одна — весь конвейер в доке. */
+  zone: ZoneId;
+  sidebarTab: SidebarTab;
+  bottomTab: BottomTab;
   viewportTab: ViewportTab;
   /** Вкладка «Аудио» открыта (сама вкладка закрываемая, в отличие от четвёрки). */
   audioTabOpen: boolean;
@@ -73,6 +90,9 @@ type StudioState = {
   modal: ModalState;
 
   select: (selection: Selection) => void;
+  setZone: (zone: ZoneId) => void;
+  setSidebarTab: (tab: SidebarTab) => void;
+  setBottomTab: (tab: BottomTab) => void;
   setViewportTab: (tab: ViewportTab) => void;
   /** Открыть вкладку «Аудио» и её инспектор запуска. */
   openAudioTab: () => void;
@@ -93,6 +113,9 @@ export const useStudioStore = create<StudioState>()(
   persist(
     set => ({
       selection: null,
+      zone: DEFAULT_ZONE,
+      sidebarTab: 'structure',
+      bottomTab: 'pipeline',
       viewportTab: 'blueprint',
       audioTabOpen: false,
       relationsTabOpen: false,
@@ -109,6 +132,10 @@ export const useStudioStore = create<StudioState>()(
       // иерархии — точка входа в раздел, а не только в инспектор.
       select: selection =>
         set(selection?.kind === 'audioRun' ? { selection, audioTabOpen: true, viewportTab: 'audio' } : { selection }),
+      setZone: zone => set({ zone }),
+      setSidebarTab: sidebarTab => set({ sidebarTab }),
+      // Клик по вкладке разворачивает свёрнутую панель — как в макете.
+      setBottomTab: bottomTab => set({ bottomTab, dockOpen: true }),
       setViewportTab: viewportTab => set({ viewportTab }),
       openAudioTab: () => set({ audioTabOpen: true, viewportTab: 'audio', selection: { kind: 'audioRun' } }),
       closeAudioTab: () =>
@@ -155,6 +182,9 @@ export const useStudioStore = create<StudioState>()(
       // Выделение и модалка живут только в сессии: после перезагрузки
       // разумнее открыть чистый инспектор, чем ссылаться на исчезнувший узел.
       partialize: s => ({
+        zone: s.zone,
+        sidebarTab: s.sidebarTab,
+        bottomTab: s.bottomTab,
         viewportTab: s.viewportTab,
         audioTabOpen: s.audioTabOpen,
         relationsTabOpen: s.relationsTabOpen,
