@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
@@ -30,12 +31,24 @@ export const STAGE_COST_EST: Record<BulkCalendarPhase, number> = {
   done: 0,
 };
 
+/**
+ * Стадии генерации брифа живут вне календарного прогона (свой автомат, свой
+ * ретрай), поэтому в BulkCalendarPhase им места нет — но деньги те же, и
+ * счётчик обязан их видеть.
+ */
+export const BRIEF_GEN_COST_EST = {
+  hintParse: 0.002,
+  fill: 0.01,
+};
+
 export type CostState = {
   /** Потрачено в текущем прогоне (оценка). */
   spent: number;
   /** Сколько вызовов уже сделано — для «14/24» в тулбаре. */
   calls: number;
   addCall: (phase: BulkCalendarPhase) => void;
+  /** Вызов вне календарного прогона: цена известна, стадии в автомате нет. */
+  addAmount: (usd: number) => void;
   reset: () => void;
 };
 
@@ -45,6 +58,7 @@ export const useRunCost = create<CostState>()(
       spent: 0,
       calls: 0,
       addCall: phase => set(s => ({ spent: s.spent + (STAGE_COST_EST[phase] ?? 0), calls: s.calls + 1 })),
+      addAmount: usd => set(s => ({ spent: s.spent + usd, calls: s.calls + 1 })),
       reset: () => set({ spent: 0, calls: 0 }),
     }),
     { name: storageKey('gu-run-cost') },
@@ -53,6 +67,10 @@ export const useRunCost = create<CostState>()(
 
 export function addRunCost(phase: BulkCalendarPhase): void {
   useRunCost.getState().addCall(phase);
+}
+
+export function addRunCostAmount(usd: number): void {
+  useRunCost.getState().addAmount(usd);
 }
 
 export function resetRunCost(): void {
@@ -65,7 +83,7 @@ export function resetRunCost(): void {
  */
 export function estimateRunCost(brief: Brief): number {
   const liCount = Math.max(1, brief.loveInterests.length);
-  const days = Math.max(1, Math.round(brief.scale.targetDurationMinutes / 20));
+  const days = Math.max(1, Math.round(resolveScale(brief.scale).targetDurationMinutes / 20));
   const beats = Math.max(6, days * 2);
   // Пул событий генерируется по персонажу, диалоги — по юниту в трёх брекетах.
   const units = liCount * 6;

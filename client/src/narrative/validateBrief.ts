@@ -14,21 +14,24 @@ export type BriefIssue = {
 export function validateBrief(brief: Brief): BriefIssue[] {
   const issues: BriefIssue[] = [];
 
-  if (brief.scale.acts < 1) {
+  // null здесь — «авто», а не пропущенное поле: габарит выберет генератор
+  // брифа, а до него resolveBrief подставит дефолт. Проверяем только то, что
+  // автор задал руками.
+  if (brief.scale.acts !== null && brief.scale.acts < 1) {
     issues.push({
       severity: 'error',
       path: 'scale.acts',
       message: 'acts должно быть >= 1',
     });
   }
-  if (brief.scale.commonRouteShare < 0 || brief.scale.commonRouteShare > 1) {
+  if (brief.scale.commonRouteShare !== null && (brief.scale.commonRouteShare < 0 || brief.scale.commonRouteShare > 1)) {
     issues.push({
       severity: 'error',
       path: 'scale.commonRouteShare',
       message: 'commonRouteShare должно быть в [0, 1]',
     });
   }
-  if (brief.world.tone.intensity < 0 || brief.world.tone.intensity > 1) {
+  if (brief.world.tone.intensity !== null && (brief.world.tone.intensity < 0 || brief.world.tone.intensity > 1)) {
     issues.push({
       severity: 'error',
       path: 'world.tone.intensity',

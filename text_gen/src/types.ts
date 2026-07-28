@@ -259,6 +259,52 @@ export interface EndingRequest {
   previousIssues?: string[];
 }
 
+/**
+ * Запрос стадии briefHintParse: свободный текст автора («свалка») →
+ * директивы по полям брифа. Отдельная стадия, потому что разбор заметок и
+ * сочинение контента — разные задачи: смешивать их в одном вызове значит
+ * позволить модели домыслить то, чего автор не писал.
+ */
+export interface BriefHintParseRequest {
+  /** Свободный текст автора как есть. */
+  rawText: string;
+  /** Каталог полей брифа: path + человекочитаемое описание. */
+  fieldCatalog: { path: string; description: string }[];
+  /** Допустимые id архетипов (директива может назвать архетип персонажа). */
+  archetypeIds: string[];
+}
+
+/**
+ * Запрос стадии briefFill: дозаполнение ПУСТЫХ полей брифа. Заполненное
+ * автором приходит в brief и служит контекстом — трогать его нельзя.
+ */
+export interface BriefFillRequest {
+  brief: unknown;
+  /**
+   * Пустые поля — ровно их и только их разрешено заполнять. target — целевой
+   * объём: слов для текста, элементов для списков, карточек для loveInterests.
+   * Зеркало client/src/narrative/buildBriefFillRequest.ts — менять синхронно.
+   */
+  gaps: { path: string; description: string; target: number }[];
+  /**
+   * Поля карточки персонажа. Нужны и при генерации новых карточек (когда
+   * весь loveInterests пуст, отдельных gap-путей у полей ещё нет), и как
+   * справочник объёмов при дозаполнении существующих.
+   */
+  cardFields: { field: string; description: string; target: number }[];
+  /** Директивы из briefHintParse, или null (автор ничего не написал). */
+  directives: { target: string; instruction: string }[] | null;
+  /** Профили архетипов: описание + схема archetypeSpecifics. */
+  archetypeProfiles: Record<string, unknown>;
+  /**
+   * Previously generated patch that failed validation. Present together
+   * with previousIssues during retry-with-feedback flow.
+   */
+  previousAttempt?: unknown | null;
+  /** Issue messages from the previous attempt (verbatim). */
+  previousIssues?: string[];
+}
+
 export type ItemStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 export interface ItemState {

@@ -2,7 +2,7 @@
 
 import type { Client, Options as Options2, TDataShape } from './client';
 import { client } from './client.gen';
-import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateAnchorTransitionData, GenerateAnchorTransitionResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryLeafQaData, GenerateStoryLeafQaResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
+import type { GenerateAnchorBeatData, GenerateAnchorBeatResponses, GenerateAnchorTransitionData, GenerateAnchorTransitionResponses, GenerateBriefFillData, GenerateBriefFillResponses, GenerateBriefHintParseData, GenerateBriefHintParseResponses, GenerateCastPlanData, GenerateCastPlanResponses, GenerateDialogueQaData, GenerateDialogueQaResponses, GenerateDialogueUnitData, GenerateDialogueUnitResponses, GenerateEndingData, GenerateEndingResponses, GenerateEventPoolData, GenerateEventPoolResponses, GenerateSceneTextData, GenerateSceneTextResponses, GenerateSpineData, GenerateSpineResponses, GenerateStoryLeafQaData, GenerateStoryLeafQaResponses, GenerateStoryMasterPromptData, GenerateStoryMasterPromptResponses, GenerateWorldCalendarData, GenerateWorldCalendarResponses, GetBatchStatusData, GetBatchStatusErrors, GetBatchStatusResponses, ListBatchesData, ListBatchesResponses } from './types.gen';
 
 export type Options<TData extends TDataShape = TDataShape, ThrowOnError extends boolean = boolean> = Options2<TData, ThrowOnError> & {
     /**
@@ -155,6 +155,30 @@ export const generateDialogueQa = <ThrowOnError extends boolean = false>(options
  */
 export const generateStoryLeafQa = <ThrowOnError extends boolean = false>(options: Options<GenerateStoryLeafQaData, ThrowOnError>) => (options.client ?? client).post<GenerateStoryLeafQaResponses, unknown, ThrowOnError>({
     url: '/generate/storyLeafQA',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Split the author's free-form notes into per-field directives for the brief
+ */
+export const generateBriefHintParse = <ThrowOnError extends boolean = false>(options: Options<GenerateBriefHintParseData, ThrowOnError>) => (options.client ?? client).post<GenerateBriefHintParseResponses, unknown, ThrowOnError>({
+    url: '/generate/briefHintParse',
+    ...options,
+    headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+    }
+});
+
+/**
+ * Fill the empty fields of a story brief (world, tone, art style, cast)
+ */
+export const generateBriefFill = <ThrowOnError extends boolean = false>(options: Options<GenerateBriefFillData, ThrowOnError>) => (options.client ?? client).post<GenerateBriefFillResponses, unknown, ThrowOnError>({
+    url: '/generate/briefFill',
     ...options,
     headers: {
         'Content-Type': 'application/json',

@@ -23,6 +23,10 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react({
         include: ['**/*.tsx', '**/*.ts'],
+        // Fast Refresh вставляет в модуль преамбулу, которую в браузере ставит
+        // index.html. Под vitest никакого index.html нет, и рендер компонента
+        // падает на «can't detect preamble» ещё до первого теста.
+        fastRefresh: !process.env.VITEST,
       }),
       tsconfigPaths(),
       createHtmlPlugin({

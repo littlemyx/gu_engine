@@ -132,7 +132,17 @@ const Studio = () => {
   const running = calendarGen.phase !== 'idle' && calendarGen.phase !== 'done' && !calendarGen.error;
   const spent = useRunCost(s => s.spent);
   const estimate = useMemo(() => estimateRunCost(brief), [brief]);
-  const briefIssues = useMemo(() => validateBrief(brief), [brief]);
+  // validateBrief ходит по вложенным полям без проверок и падает на брифе с
+  // отсутствующими секциями (импорт чужого файла). Раньше это роняло всю
+  // студию; теперь на нём ещё и держится гейт генерации, так что молчаливое
+  // «бриф сломан» — единственный безопасный исход.
+  const briefIssues = useMemo(() => {
+    try {
+      return validateBrief(brief);
+    } catch {
+      return [{ severity: 'error' as const, path: 'brief', message: 'бриф заполнен не до конца' }];
+    }
+  }, [brief]);
   const briefBlocked = briefIssues.some(i => i.severity === 'error');
   const qaIssues = storyQA?.issues ?? [];
   const qaErrors = qaIssues.filter(i => i.severity === 'error').length;
@@ -456,6 +466,7 @@ const Studio = () => {
         )} из ≈ ${formatCost(estimate)}`}
         qaSummary={`QA: ${qaErrors} ошибок · ${qaWarnings} предупреждений`}
         briefReady={!briefBlocked}
+        briefReason={briefIssues.find(i => i.severity === 'error')?.message}
         onGenerate={() => void calendarGen.run(brief, spine ? { force: true } : undefined)}
         onContinueDraft={() => void calendarGen.run(brief)}
         onCheckStory={() => void qa.run(brief)}

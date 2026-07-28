@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { Brief } from './types';
 import type { CalendarTargets, CastPlan } from './calendarTypes';
 import { computeCalendarTargets } from './calendarTypes';
@@ -18,12 +19,13 @@ export function buildWorldCalendarRequestPayload(
   brief: Brief,
   castPlan: CastPlan | null,
 ): { brief: Brief; castPlan?: CastPlan; targets: WorldCalendarTargets } {
+  const scale = resolveScale(brief.scale);
   return {
     brief,
     castPlan: castPlan ?? undefined,
     targets: {
-      ...computeCalendarTargets(brief.scale.targetDurationMinutes),
-      acts: brief.scale.acts,
+      ...computeCalendarTargets(scale.targetDurationMinutes),
+      acts: scale.acts,
     },
   };
 }

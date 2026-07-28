@@ -224,6 +224,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/GenerateResponse'
 
+  /generate/briefHintParse:
+    post:
+      operationId: generateBriefHintParse
+      summary: Split the author's free-form notes into per-field directives for the brief
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BriefHintParseRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
+  /generate/briefFill:
+    post:
+      operationId: generateBriefFill
+      summary: Fill the empty fields of a story brief (world, tone, art style, cast)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BriefFillRequest'
+      responses:
+        '200':
+          description: Generation batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenerateResponse'
+
   /status:
     get:
       operationId: listBatches
@@ -918,6 +954,111 @@ components:
         briefTone:
           type: string
           description: World tone digest from the brief (mood, themes, intensity).
+
+    BriefHintParseRequest:
+      type: object
+      required:
+        - rawText
+        - fieldCatalog
+        - archetypeIds
+      properties:
+        rawText:
+          type: string
+          description: The author's free-form notes, verbatim.
+        fieldCatalog:
+          type: array
+          description: Brief fields the directives may target.
+          items:
+            type: object
+            required:
+              - path
+              - description
+            properties:
+              path:
+                type: string
+              description:
+                type: string
+        archetypeIds:
+          type: array
+          description: Allowed LI route archetype ids.
+          items:
+            type: string
+
+    BriefFillRequest:
+      type: object
+      required:
+        - brief
+        - gaps
+        - cardFields
+        - archetypeProfiles
+      properties:
+        brief:
+          type: object
+          additionalProperties: true
+          description: Current brief; everything already filled is authored content and must not be touched.
+        gaps:
+          type: array
+          description: |
+            Empty fields — the only ones the model may fill. target is the
+            desired size: words for text, items for lists, cards for
+            loveInterests.
+          items:
+            type: object
+            required:
+              - path
+              - description
+              - target
+            properties:
+              path:
+                type: string
+              description:
+                type: string
+              target:
+                type: number
+        cardFields:
+          type: array
+          description: LI card fields with descriptions and target sizes.
+          items:
+            type: object
+            required:
+              - field
+              - description
+              - target
+            properties:
+              field:
+                type: string
+              description:
+                type: string
+              target:
+                type: number
+        directives:
+          # 3.1: nullable выражается объединением типов, ключевого слова nullable здесь нет.
+          type: [array, 'null']
+          description: Per-field directives from briefHintParse, or null when the author left no notes.
+          items:
+            type: object
+            required:
+              - target
+              - instruction
+            properties:
+              target:
+                type: string
+              instruction:
+                type: string
+        archetypeProfiles:
+          type: object
+          additionalProperties: true
+          description: Map of archetypeId -> trimmed profile (description + archetypeSpecifics schema).
+        previousAttempt:
+          type: object
+          additionalProperties: true
+          nullable: true
+          description: Previously generated patch that failed validation.
+        previousIssues:
+          type: array
+          items:
+            type: string
+          description: Validation issue messages from the previous attempt.
 
     ErrorResponse:
       type: object

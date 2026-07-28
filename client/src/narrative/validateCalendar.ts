@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { Brief, SegmentIssue, WorldModel } from './types';
 import type { Calendar, CastPlan } from './calendarTypes';
 
@@ -30,11 +31,12 @@ export function validateCalendar(
 
   // Границы актов: столько же, сколько актов; начинаются с 0; строго растут; внутри календаря.
   const ab = calendar.actBoundaries;
-  if (ab.length !== brief.scale.acts) {
+  const actCount = resolveScale(brief.scale).acts;
+  if (ab.length !== actCount) {
     issues.push({
       severity: 'error',
       scope: 'calendar/actBoundaries',
-      message: `actBoundaries.length = ${ab.length}, актов в брифе ${brief.scale.acts}`,
+      message: `actBoundaries.length = ${ab.length}, актов в брифе ${actCount}`,
     });
   }
   if (ab[0] !== 0) {

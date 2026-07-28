@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { Brief, SegmentIssue, WorldModel } from './types';
 import type { Calendar, EventUnit, SpineBeat, SpinePlan } from './calendarTypes';
 import { actSlotWindow, effectiveBeatWindow } from './calendarTypes';
@@ -124,6 +125,7 @@ export function validateSpine(
   units: EventUnit[] = [],
 ): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
+  const actCount = resolveScale(brief.scale).acts;
   // Валидируем ТОТ ЖЕ граф, что соберёт компилятор: порядок битов навязывает
   // цепочка, а не флаги LLM. applyBeatChain идемпотентна, так что повторный
   // вызов над уже упорядоченным хребтом ничего не меняет. На стадии генерации
@@ -152,7 +154,7 @@ export function validateSpine(
 
   // Развилки: бюджет и структура исходов.
   const branchPoints = beats.filter(b => b.kind === 'branchPoint');
-  const budget = brief.scale.branchPointBudget ?? 0;
+  const budget = resolveScale(brief.scale).branchPointBudget;
   if (branchPoints.length > budget) {
     issues.push({
       severity: 'error',
@@ -199,11 +201,11 @@ export function validateSpine(
       });
       continue;
     }
-    if (b.act < 1 || b.act > brief.scale.acts) {
+    if (b.act < 1 || b.act > actCount) {
       issues.push({
         severity: 'error',
         scope: `beats/${b.id}/act`,
-        message: `бит "${b.id}" в акте ${b.act}, актов в брифе ${brief.scale.acts}`,
+        message: `бит "${b.id}" в акте ${b.act}, актов в брифе ${actCount}`,
       });
       continue;
     }
@@ -221,11 +223,11 @@ export function validateSpine(
 
   // Финал — в последнем акте и его окно накрывает конец календаря.
   const finale = finales[0];
-  if (finale && finale.act !== brief.scale.acts) {
+  if (finale && finale.act !== actCount) {
     issues.push({
       severity: 'error',
       scope: `beats/${finale.id}/act`,
-      message: `finale "${finale.id}" в акте ${finale.act}, должен быть в последнем (${brief.scale.acts})`,
+      message: `finale "${finale.id}" в акте ${finale.act}, должен быть в последнем (${actCount})`,
     });
   }
 

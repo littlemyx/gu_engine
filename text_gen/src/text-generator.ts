@@ -22,7 +22,9 @@ export type StageId =
   | 'dialogueUnit'
   | 'dialogueQA'
   | 'storyLeafQA'
-  | 'anchorTransition';
+  | 'anchorTransition'
+  | 'briefHintParse'
+  | 'briefFill';
 
 type Tier = 'A' | 'B' | 'C';
 
@@ -40,6 +42,10 @@ const STAGE_TIER: Record<StageId, Tier> = {
   storyLeafQA: 'A',
   // Один вызов на историю, три коротких перехода — самый дешёвый tier.
   anchorTransition: 'C',
+  // Разбор авторских заметок — механическая раскладка по полям.
+  briefHintParse: 'B',
+  // Бриф — вход всего пайплайна: ошибка здесь тиражируется во все стадии.
+  briefFill: 'A',
 };
 
 const DEFAULT_TIER_MODEL: Record<Tier, string> = {
@@ -74,6 +80,8 @@ import type {
   DialogueQARequest,
   StoryLeafQARequest,
   EndingRequest,
+  BriefHintParseRequest,
+  BriefFillRequest,
 } from './types.js';
 
 const SYSTEM_PROMPT = `Ты — опытный сценарист интерактивных визуальных новелл. Твоя задача — создать детальный костяк истории, который станет основой для разработки визуальной новеллы.
@@ -1639,5 +1647,226 @@ export async function processAnchorTransition(batch: BatchState, body: AnchorTra
     item.status = 'failed';
     item.error = err instanceof Error ? err.message : String(err);
     logger.error(`[anchorTransition] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+// ============================================================================
+// BRIEF GENERATION (заполнение брифа из свободных заметок автора)
+// ============================================================================
+
+const BRIEF_HINT_PARSE_SYSTEM_PROMPT = `Ты — редактор брифов романтической визуальной новеллы (romance VN).
+
+Автор свалил в одно поле всё, что у него было в голове: обрывки сеттинга,
+настроение, куски характеров, пожелания по стилю. Твоя задача — РАЗЛОЖИТЬ этот
+текст на директивы по полям брифа. Ты не сочиняешь историю: контент будет
+писать другая стадия, ты только раскладываешь сказанное автором по адресам.
+
+Получаешь:
+  1. Свободный текст автора — как есть.
+  2. Каталог полей брифа: path + что это за поле.
+  3. Список допустимых id архетипов маршрута.
+
+Правила:
+  1. target каждой директивы — ЛИБО path из каталога, ЛИБО "loveInterests"
+     (всё, что касается персонажей: сколько их, кто они, характеры, архетипы),
+     ЛИБО "general" (общий тон и пожелания, не привязанные к одному полю).
+  2. instruction — 1-2 предложения по-русски: что автор хочет видеть в этом
+     поле. Это ИНСТРУКЦИЯ, а не готовое значение поля.
+  3. НИЧЕГО не додумывай. Если автор не сказал про арт-стиль — директивы про
+     арт-стиль нет. Пустой список директив — законный ответ на пустой текст.
+  4. Одна мысль автора может дать несколько директив (место + эпоха + тон), а
+     несколько фраз про одно поле — склеиваются в одну директиву.
+  5. Противоречия автора не разрешай, а передавай обе стороны в instruction:
+     решать будет стадия заполнения.
+
+Пример ниже показывает ТОЛЬКО ФОРМУ ответа — его содержание к твоей задаче
+отношения не имеет.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json.
+{
+  "directives": [
+    { "target": "world.setting.place", "instruction": "Действие в приморском городке, лодочные мастерские." },
+    { "target": "world.tone.mood", "instruction": "Светлая меланхолия, разгар лета." },
+    { "target": "loveInterests", "instruction": "Двое: дочь лодочника и приезжий студент. С дочерью лодочника герой знаком с детства." },
+    { "target": "general", "instruction": "Автор просит держать камерный масштаб: одна улица, одно лето." }
+  ]
+}`;
+
+const BRIEF_FILL_SYSTEM_PROMPT = `Ты — сценарист-сеттер романтических визуальных новелл (romance VN). Ты дозаполняешь бриф истории: придумываешь мир, тон, арт-направление и каст.
+
+Получаешь:
+  1. Бриф — текущее состояние. Что в нём УЖЕ заполнено — работа автора.
+  2. gaps — пустые поля: path, что это за поле, target (целевой объём:
+     слов для текста, элементов для списка, карточек для loveInterests).
+  3. cardFields — поля карточки персонажа с описаниями и объёмами.
+  4. Директивы автора (могут отсутствовать) — разбор его собственных заметок.
+  5. Профили архетипов: описание маршрута и схема archetypeSpecifics.
+
+Железные правила:
+  1. Заполняй ТОЛЬКО поля из gaps. Заполненные поля брифа не переписывай и не
+     возвращай в patch — они контекст, а не материал. Всё, что ты придумываешь,
+     обязано быть СОВМЕСТИМО с ними: если автор уже написал place="university",
+     эпоха и персонажи живут в универе, а не на космической станции.
+  2. Директивы автора важнее твоих идей. Если директива противоречит твоему
+     вкусу — прав автор. Если директив нет вовсе, придумывай свободно, но
+     цельно: мир, тон и каст должны быть одной историей, а не тремя.
+  2a. Примеры значений в описаниях полей показывают ФОРМАТ, а не список, из
+     которого надо выбирать. Назвал автор конкретный период, место или
+     настроение — закодируй ИМЕННО его, даже если среди примеров такого нет.
+     Подменить «конец 80-х» на modern_day потому, что modern_day есть в
+     примерах, — прямая потеря авторского замысла.
+  3. Соблюдай target из gaps/cardFields (±30%). Это ручка «подробность»:
+     target=3 слова — это три слова, а не абзац.
+  4. Язык полей — как в описании поля (description). Поля-токены (era, place,
+     mood, themes, preExistingRelationship, archetypeSpecifics) — латиница
+     snake_case. Арт-стиль — английские описательные фразы для генератора
+     картинок. Всё остальное (specifics, имена, роли, внешность, речь,
+     характер) — по-русски.
+  4a. Если в описании поля сказано «строго одно из: ...» — верни РОВНО одно из
+     перечисленных значений, без синонимов и переводов. Числовые поля —
+     числами (не строками) и строго в указанном диапазоне. Габариты истории
+     (число актов, длительность, доля общего маршрута, число развилок) должны
+     согласовываться между собой и с размером каста: чем больше персонажей и
+     чем длиннее история, тем больше общий маршрут и число актов.
+  5. Персонажи:
+     - Если в gaps есть путь "loveInterests" — весь каст пуст: придумай ровно
+       target полных карточек БЕЗ поля id (id присвоит редактор). В каждой
+       карточке заполни ВСЕ поля из cardFields без исключения: пустая строка
+       или пустой список в новой карточке — это незаполненное поле, а не
+       ответ. Особенно про fears и desires: у каждого персонажа они есть.
+     - Если в gaps есть пути вида "loveInterests[<id>].<поле>" — каст уже
+       существует: верни объекты с ТЕМ ЖЕ id и ТОЛЬКО перечисленными полями.
+     - archetype — строго один из id профилей архетипов.
+     - archetypeSpecifics — строго ключи из схемы этого архетипа. Если у
+       архетипа схемы нет — null.
+     - preExistingRelationship — snake_case-токен или null, если герои
+       незнакомы. Персонажи каста должны отличаться друг от друга: разные
+       роли, темпераменты и манеры речи, а не три оттенка одного характера.
+       Если директивы не назвали архетипы — бери персонажам РАЗНЫЕ.
+  6. Цвета палитры — hex вида "#d8c8b6".
+  7. modelPromptTemplate — английский шаблон промпта для генератора фонов,
+     обязан содержать плейсхолдер {scene_focus}.
+
+Форма ответа: объект patch повторяет вложенную структуру брифа, но содержит
+ТОЛЬКО заполняемые поля.
+
+Пример ниже показывает ТОЛЬКО ФОРМУ ответа. Его мир, имена и формулировки к
+твоей задаче отношения не имеют: не переноси из него ни одного значения.
+
+ВАЖНО: Ответ — СТРОГО валидный JSON, без markdown-обёртки, без \`\`\`json.
+{
+  "patch": {
+    "world": {
+      "setting": { "era": "post_war_1950s", "specifics": "приморский городок в разгар августа, жара, лодочные мастерские" },
+      "tone": { "mood": "wistful", "themes": ["homecoming", "first_love", "small_town"] }
+    },
+    "artStyle": {
+      "referenceDescriptor": "watercolor anime, sun-bleached palette, hand-painted skies",
+      "colorPalette": ["#f2e2c4", "#e0a86a", "#7fa9a3", "#40575e"],
+      "modelPromptTemplate": "watercolor anime, sun-bleached summer light, soft horizon, {scene_focus}"
+    },
+    "loveInterests": [
+      {
+        "name": "Марта",
+        "age": 24,
+        "roleInWorld": "дочь лодочника, чинит моторы в мастерской отца",
+        "appearance": { "hair": "выгоревшие на солнце волосы, собранные наспех", "build": "загорелая, крепкая", "signatureItem": "отцовский нож в чехле" },
+        "speechPattern": "быстрая, насмешливая, договаривает за собеседника",
+        "personality": { "traits": ["упрямая", "щедрая"], "values": ["своё дело"], "fears": ["застрять здесь навсегда"], "desires": ["увидеть материк"] },
+        "archetype": "enemies_to_lovers",
+        "archetypeSpecifics": { "initialConflictSource": "old_family_feud" },
+        "preExistingRelationship": "childhood_rival"
+      }
+    ]
+  }
+}`;
+
+export async function processBriefHintParse(batch: BatchState, body: BriefHintParseRequest): Promise<void> {
+  const itemId = 'briefHintParse';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
+
+    const parts: string[] = [
+      `## Свободный текст автора\n${body.rawText}`,
+      `## Каталог полей брифа\n${JSON.stringify(body.fieldCatalog, null, 2)}`,
+      `## Допустимые архетипы\n${(body.archetypeIds ?? []).join(', ')}`,
+      'Разложи текст автора на директивы по полям. Ничего не додумывай. Только JSON.',
+    ];
+
+    logger.log(`[briefHintParse] batch=${batch.batchId} — generating...`);
+
+    const { text } = await generateText({
+      model: resolveModel('briefHintParse'),
+      system: BRIEF_HINT_PARSE_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!Array.isArray(parsed.directives)) throw new Error('Invalid response: missing directives[]');
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[briefHintParse] batch=${batch.batchId} — completed (${parsed.directives.length} directives)`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[briefHintParse] batch=${batch.batchId} — failed: ${item.error}`);
+  }
+}
+
+export async function processBriefFill(batch: BatchState, body: BriefFillRequest): Promise<void> {
+  const itemId = 'briefFill';
+  const item = batch.items[itemId];
+  item.status = 'processing';
+
+  try {
+    if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
+
+    const parts: string[] = [
+      `## Бриф (заполненное автором — не трогать)\n${JSON.stringify(body.brief, null, 2)}`,
+      `## Пустые поля (gaps) — заполняй только их\n${JSON.stringify(body.gaps, null, 2)}`,
+      `## Поля карточки персонажа\n${JSON.stringify(body.cardFields, null, 2)}`,
+      `## Профили архетипов\n${JSON.stringify(body.archetypeProfiles, null, 2)}`,
+    ];
+
+    parts.push(
+      body.directives && body.directives.length > 0
+        ? `## Директивы автора (важнее твоих идей)\n${JSON.stringify(body.directives, null, 2)}`
+        : '## Директивы автора\nАвтор не оставил заметок — придумывай свободно, но цельно.',
+    );
+
+    const hasFeedback =
+      body.previousAttempt && Array.isArray(body.previousIssues) && body.previousIssues.length > 0;
+    if (hasFeedback) {
+      parts.push(`## ПРЕДЫДУЩАЯ ПОПЫТКА (не прошла валидацию)\n${JSON.stringify(body.previousAttempt, null, 2)}`);
+      parts.push(
+        `## ОШИБКИ ВАЛИДАЦИИ ПРЕДЫДУЩЕЙ ПОПЫТКИ\n${(body.previousIssues ?? []).map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nПри генерации новой версии ОБЯЗАТЕЛЬНО устрани эти ошибки.`,
+      );
+      parts.push('Верни ИСПРАВЛЕННЫЙ patch. Те же правила, тот же формат JSON. Только JSON.');
+    } else {
+      parts.push('Заполни пустые поля брифа. Только JSON.');
+    }
+
+    logger.log(`[briefFill] batch=${batch.batchId} — generating (${body.gaps?.length ?? 0} gaps)...`);
+
+    const { text } = await generateText({
+      model: resolveModel('briefFill'),
+      system: BRIEF_FILL_SYSTEM_PROMPT,
+      prompt: parts.join('\n\n'),
+    });
+
+    const parsed = JSON.parse(text);
+    if (!parsed.patch || typeof parsed.patch !== 'object') throw new Error('Invalid response: missing patch');
+
+    item.status = 'completed';
+    item.result = text;
+    logger.log(`[briefFill] batch=${batch.batchId} — completed`);
+  } catch (err) {
+    item.status = 'failed';
+    item.error = err instanceof Error ? err.message : String(err);
+    logger.error(`[briefFill] batch=${batch.batchId} — failed: ${item.error}`);
   }
 }

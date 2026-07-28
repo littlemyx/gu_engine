@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import {
   generateAnchorBeat,
   generateAnchorTransition,
@@ -438,7 +439,7 @@ async function runPipeline(): Promise<void> {
     // календарь: castPlan идёт до стадии календаря, своего у него ещё нет.
     // Кэшированный трёхступенчатый план не пройдёт валидацию против нового N —
     // и существующая петля retry-с-фидбеком его перегенерирует.
-    const stageCount = arcStageCount(computeCalendarTargets(brief.scale.targetDurationMinutes).days);
+    const stageCount = arcStageCount(computeCalendarTargets(resolveScale(brief.scale).targetDurationMinutes).days);
     const castErrors = (p: CastPlan): string[] =>
       validateCastPlan(p, brief, stageCount)
         .filter(i => i.severity === 'error')

@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { Brief, WorldModel } from './types';
 import type { Calendar } from './calendarTypes';
 
@@ -18,7 +19,7 @@ const MAX_BRANCH_POINTS = 3;
  */
 export function computeSpineTargets(calendar: Calendar, brief: Brief): SpineTargets {
   const raw = Math.round(calendar.slotCount * 0.5);
-  const budget = Math.trunc(brief.scale.branchPointBudget ?? 0);
+  const budget = Math.trunc(resolveScale(brief.scale).branchPointBudget);
   return {
     beatCount: Math.min(MAX_BEATS, Math.max(MIN_BEATS, raw)),
     branchPointBudget: Math.min(MAX_BRANCH_POINTS, Math.max(0, budget)),

@@ -16,7 +16,7 @@ import type {
   WorldTone,
 } from './types';
 import { SAMPLE_BRIEF } from './sampleBrief';
-import { ARCHETYPES } from './archetypes';
+import { defaultArchetypeSpecifics, newLoveInterest } from './loveInterestCard';
 import { DEFAULT_SELECTOR_CONFIG, type SelectorConfig, type SelectorWeights } from 'gu-engine-story-core';
 
 /**
@@ -24,39 +24,6 @@ import { DEFAULT_SELECTOR_CONFIG, type SelectorConfig, type SelectorWeights } fr
  * downstream-артефактов), это стор пользовательского ввода — он персистится
  * в localStorage, чтобы черновик брифа не терялся.
  */
-
-const newLiId = () => `li_${Math.random().toString(36).slice(2, 8)}`;
-
-function emptyAppearance(): Appearance {
-  return { hair: '', build: '', signatureItem: '' };
-}
-function emptyPersonality(): Personality {
-  return { traits: [], values: [], fears: [], desires: [] };
-}
-function defaultArchetypeSpecifics(archetype: ArchetypeId): Record<string, string> | null {
-  const schema = ARCHETYPES[archetype].archetypeSpecificsSchema;
-  if (!schema) return null;
-  const out: Record<string, string> = {};
-  for (const [field, decl] of Object.entries(schema)) {
-    out[field] = decl.examples[0] ?? '';
-  }
-  return out;
-}
-
-function newLoveInterest(archetype: ArchetypeId = 'slow_burn'): LoveInterestCard {
-  return {
-    id: newLiId(),
-    name: '',
-    age: 21,
-    roleInWorld: '',
-    appearance: emptyAppearance(),
-    speechPattern: '',
-    personality: emptyPersonality(),
-    archetype,
-    archetypeSpecifics: defaultArchetypeSpecifics(archetype),
-    preExistingRelationship: null,
-  };
-}
 
 type BriefState = {
   brief: Brief;
@@ -74,7 +41,8 @@ type BriefState = {
   resetToBlank: () => void;
 
   // top-level
-  setFormat: (format: Format) => void;
+  /** null — «авто»: формат выберет генератор брифа. */
+  setFormat: (format: Format | null) => void;
   /** Seed детерминированных шагов генерации (расписание персонажей). */
   setSeed: (seed: number) => void;
 
@@ -108,19 +76,34 @@ type BriefState = {
   patchLoveInterestSpecifics: (id: string, key: string, value: string) => void;
 };
 
-function blankBrief(): Brief {
+/**
+ * Чистый лист. Габариты уходят в null («авто»), а не в дефолты образца:
+ * пока они молча оставались заполненными, «Пусто» врало, а генератор брифа
+ * считал их авторским выбором и не трогал — история всегда выходила на
+ * 4 акта и 30 минут, что бы автор ни написал в заметках.
+ */
+export function blankBrief(): Brief {
   return {
     ...SAMPLE_BRIEF,
+    format: null,
+    scale: {
+      acts: null,
+      targetDurationMinutes: null,
+      branchingDensity: null,
+      commonRouteShare: null,
+      branchPointBudget: null,
+    },
+    endingsProfile: [],
     world: {
       setting: { era: '', place: '', specifics: '' },
-      tone: { mood: '', themes: [], intensity: 0.4 },
+      tone: { mood: '', themes: [], intensity: null },
     },
     artStyle: {
       referenceDescriptor: '',
       colorPalette: [],
       modelPromptTemplate: '',
     },
-    protagonist: { gender: 'female', namePlaceholder: '{player_name}', voiceStyle: 'neutral_minimal' },
+    protagonist: { gender: null, namePlaceholder: '{player_name}', voiceStyle: null },
     loveInterests: [],
   };
 }

@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type {
   AnchorEdge,
   Brief,
@@ -58,7 +59,8 @@ export function deriveLegacyOutline(
   // setup/resolution. actGate-биты уже заявлены под location_enter, поэтому
   // предпочитаем обычные биты и берём actGate только если других нет.
   const isFixed = (id: string) => id === setupId || id === resolutionId;
-  const lateCandidates = ordered.filter(b => b.act >= brief.scale.acts - 1 && !isFixed(b.id) && b.kind !== 'finale');
+  const actCount = resolveScale(brief.scale).acts;
+  const lateCandidates = ordered.filter(b => b.act >= actCount - 1 && !isFixed(b.id) && b.kind !== 'finale');
   const nonGateCandidates = lateCandidates.filter(b => b.kind !== 'actGate');
   const climaxPool = nonGateCandidates.length > 0 ? nonGateCandidates : lateCandidates;
   let climaxId: string | null = climaxPool.length > 0 ? climaxPool[climaxPool.length - 1].id : null;
@@ -144,7 +146,7 @@ export function deriveLegacyOutline(
   }
 
   // ── Акты и привязка локаций ──────────────────────────────────────────────
-  const acts: OutlineAct[] = Array.from({ length: brief.scale.acts }, (_, i) => ({
+  const acts: OutlineAct[] = Array.from({ length: resolveScale(brief.scale).acts }, (_, i) => ({
     act: i + 1,
     purpose: '',
     tone: '',

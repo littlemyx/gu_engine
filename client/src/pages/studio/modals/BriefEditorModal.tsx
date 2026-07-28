@@ -6,6 +6,7 @@ import { BriefEditor } from '@/pages/playground/BriefEditor';
 import ActionButton from '@/ui/ActionButton';
 import { pluralize } from '@/ui/plural';
 
+import BriefGeneratePanel from './BriefGeneratePanel';
 import Modal from './Modal';
 
 import styles from './modals.module.css';
@@ -23,6 +24,7 @@ export interface BriefEditorModalProps {
  */
 const BriefEditorModal = ({ hasStory, onClose }: BriefEditorModalProps) => {
   const brief = useBriefStore(s => s.brief);
+  const [generating, setGenerating] = React.useState(false);
 
   const errors = (() => {
     // validateBrief ходит по вложенным полям без проверок — на полупустом
@@ -56,7 +58,10 @@ const BriefEditorModal = ({ hasStory, onClose }: BriefEditorModalProps) => {
           История уже сгенерирована: правки брифа её обесценят — понадобится перегенерация.
         </div>
       )}
-      <BriefEditor brief={brief} />
+      <BriefGeneratePanel onRunningChange={setGenerating} />
+      <div className={generating ? styles.genBusyForm : undefined}>
+        <BriefEditor brief={brief} />
+      </div>
     </Modal>
   );
 };

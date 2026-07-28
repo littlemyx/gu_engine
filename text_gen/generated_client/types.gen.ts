@@ -485,6 +485,75 @@ export type StoryLeafQaRequest = {
     briefTone: string;
 };
 
+export type BriefHintParseRequest = {
+    /**
+     * The author's free-form notes, verbatim.
+     */
+    rawText: string;
+    /**
+     * Brief fields the directives may target.
+     */
+    fieldCatalog: Array<{
+        path: string;
+        description: string;
+    }>;
+    /**
+     * Allowed LI route archetype ids.
+     */
+    archetypeIds: Array<string>;
+};
+
+export type BriefFillRequest = {
+    /**
+     * Current brief; everything already filled is authored content and must not be touched.
+     */
+    brief: {
+        [key: string]: unknown;
+    };
+    /**
+     * Empty fields — the only ones the model may fill. target is the
+     * desired size: words for text, items for lists, cards for
+     * loveInterests.
+     *
+     */
+    gaps: Array<{
+        path: string;
+        description: string;
+        target: number;
+    }>;
+    /**
+     * LI card fields with descriptions and target sizes.
+     */
+    cardFields: Array<{
+        field: string;
+        description: string;
+        target: number;
+    }>;
+    /**
+     * Per-field directives from briefHintParse, or null when the author left no notes.
+     */
+    directives?: Array<{
+        target: string;
+        instruction: string;
+    }> | null;
+    /**
+     * Map of archetypeId -> trimmed profile (description + archetypeSpecifics schema).
+     */
+    archetypeProfiles: {
+        [key: string]: unknown;
+    };
+    /**
+     * Previously generated patch that failed validation.
+     */
+    previousAttempt?: {
+        [key: string]: unknown;
+    };
+    /**
+     * Validation issue messages from the previous attempt.
+     */
+    previousIssues?: Array<string>;
+};
+
 export type ErrorResponse = {
     error: string;
 };
@@ -680,6 +749,38 @@ export type GenerateStoryLeafQaResponses = {
 };
 
 export type GenerateStoryLeafQaResponse = GenerateStoryLeafQaResponses[keyof GenerateStoryLeafQaResponses];
+
+export type GenerateBriefHintParseData = {
+    body: BriefHintParseRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/briefHintParse';
+};
+
+export type GenerateBriefHintParseResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateBriefHintParseResponse = GenerateBriefHintParseResponses[keyof GenerateBriefHintParseResponses];
+
+export type GenerateBriefFillData = {
+    body: BriefFillRequest;
+    path?: never;
+    query?: never;
+    url: '/generate/briefFill';
+};
+
+export type GenerateBriefFillResponses = {
+    /**
+     * Generation batch accepted
+     */
+    200: GenerateResponse;
+};
+
+export type GenerateBriefFillResponse = GenerateBriefFillResponses[keyof GenerateBriefFillResponses];
 
 export type ListBatchesData = {
     body?: never;

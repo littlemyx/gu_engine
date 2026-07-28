@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { processStoryMasterPrompt, processSceneText, processAnchorBeat, processAnchorTransition, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueUnit, processDialogueQA, processStoryLeafQA, processEnding } from './text-generator.js';
+import { processStoryMasterPrompt, processSceneText, processAnchorBeat, processAnchorTransition, processWorldCalendar, processCastPlan, processEventPool, processSpine, processDialogueUnit, processDialogueQA, processStoryLeafQA, processEnding, processBriefHintParse, processBriefFill } from './text-generator.js';
 import type {
   StoryMasterPromptRequest,
   SceneTextRequest,
@@ -15,6 +15,8 @@ import type {
   DialogueQARequest,
   StoryLeafQARequest,
   EndingRequest,
+  BriefHintParseRequest,
+  BriefFillRequest,
   ItemState,
   BatchState,
 } from './types.js';
@@ -327,6 +329,56 @@ app.post('/generate/ending', (req, res) => {
   logger.log(`[POST /generate/ending] batch=${batchId} kind=${body.kind}`);
 
   processEnding(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/briefHintParse', (req, res) => {
+  const body = req.body as BriefHintParseRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'briefHintParse';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(`[POST /generate/briefHintParse] batch=${batchId} chars=${body.rawText?.length ?? 0}`);
+
+  processBriefHintParse(batch, body);
+
+  res.json({ batchId, itemIds: [itemId] });
+});
+
+app.post('/generate/briefFill', (req, res) => {
+  const body = req.body as BriefFillRequest;
+
+  const batchId = randomUUID();
+  const itemId = 'briefFill';
+
+  const itemStates: Record<string, ItemState> = {
+    [itemId]: { id: itemId, status: 'pending' },
+  };
+
+  const batch: BatchState = {
+    batchId,
+    createdAt: new Date().toISOString(),
+    items: itemStates,
+  };
+  batches.set(batchId, batch);
+
+  logger.log(
+    `[POST /generate/briefFill] batch=${batchId} gaps=${body.gaps?.length ?? 0} directives=${body.directives?.length ?? 0}`,
+  );
+
+  processBriefFill(batch, body);
 
   res.json({ batchId, itemIds: [itemId] });
 });

@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { ArchetypeId, ArchetypeProfile, Brief } from './types';
 import { ARCHETYPES } from './archetypes';
 import { arcStageCount, computeCalendarTargets } from './calendarTypes';
@@ -23,6 +24,6 @@ export function buildCastPlanRequestPayload(brief: Brief): {
   for (const id of usedIds) {
     archetypeProfiles[id] = ARCHETYPES[id];
   }
-  const { days } = computeCalendarTargets(brief.scale.targetDurationMinutes);
+  const { days } = computeCalendarTargets(resolveScale(brief.scale).targetDurationMinutes);
   return { brief, archetypeProfiles, targets: { arcStageCount: arcStageCount(days) } };
 }

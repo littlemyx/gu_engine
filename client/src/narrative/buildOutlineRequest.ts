@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { Brief, ArchetypeProfile, ArchetypeId } from './types';
 import { ARCHETYPES } from './archetypes';
 
@@ -31,18 +32,19 @@ function actWeights(acts: number): number[] {
  * и валидатора.
  */
 export function computeOutlineTargets(brief: Brief): OutlineTargets {
+  const scale = resolveScale(brief.scale);
   const anchorCount = Math.min(
     MAX_ANCHORS,
-    Math.max(MIN_ANCHORS, Math.round(brief.scale.targetDurationMinutes / MINUTES_PER_ANCHOR)),
+    Math.max(MIN_ANCHORS, Math.round(scale.targetDurationMinutes / MINUTES_PER_ANCHOR)),
   );
 
-  const weights = actWeights(brief.scale.acts);
+  const weights = actWeights(scale.acts);
   const anchorsPerAct = weights.map(w => Math.max(1, Math.round(anchorCount * w)));
 
   return {
     anchorCount,
     anchorsPerAct,
-    plotOnlyAnchorCount: Math.round(brief.scale.commonRouteShare * anchorCount),
+    plotOnlyAnchorCount: Math.round(scale.commonRouteShare * anchorCount),
   };
 }
 

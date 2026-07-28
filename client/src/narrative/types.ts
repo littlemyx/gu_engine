@@ -148,18 +148,24 @@ export type Format = 'single_arc' | 'episodic' | 'vignette';
 
 export type BranchingDensity = 'low' | 'medium' | 'high';
 
+/**
+ * Габариты истории. null в любом поле — «авто»: автор значение не задал, его
+ * выбирает генератор брифа, а до генерации подставляет BRIEF_DEFAULTS. Именно
+ * поэтому пайплайн читает габариты не отсюда, а через resolveBrief():
+ * арифметика с null не должна быть даже возможна.
+ */
 export type BriefScale = {
-  acts: number;
-  targetDurationMinutes: number;
-  branchingDensity: BranchingDensity;
+  acts: number | null;
+  targetDurationMinutes: number | null;
+  branchingDensity: BranchingDensity | null;
   /** Доля игры на common route, в [0, 1]. */
-  commonRouteShare: number;
+  commonRouteShare: number | null;
   /**
    * Бюджет глобальных развилок хребта (branchPoint-битов), 0..3.
    * Ветка добавляет guard-ы по спайн-флагам, а не копии контента,
    * поэтому листьев ≤ 2^3, а объём растёт линейно.
    */
-  branchPointBudget: number;
+  branchPointBudget: number | null;
 };
 
 export type WorldSetting = {
@@ -172,8 +178,8 @@ export type WorldSetting = {
 export type WorldTone = {
   mood: string;
   themes: string[];
-  /** sweet/cozy ←→ heavy/melodramatic, в [0, 1]. */
-  intensity: number;
+  /** sweet/cozy ←→ heavy/melodramatic, в [0, 1]. null — «авто». */
+  intensity: number | null;
 };
 
 export type ArtStyle = {
@@ -183,12 +189,16 @@ export type ArtStyle = {
   modelPromptTemplate: string;
 };
 
+export type ProtagonistGender = 'female' | 'male' | 'nonbinary' | 'player_choice';
+export type ProtagonistVoiceStyle = 'neutral_minimal' | 'defined';
+
 export type Protagonist = {
-  gender: 'female' | 'male' | 'nonbinary' | 'player_choice';
+  /** null — «авто». */
+  gender: ProtagonistGender | null;
   /** Плейсхолдер для имени игрока, обычно "{player_name}". */
   namePlaceholder: string;
-  /** Стиль внутренних монологов: blank slate => 'neutral_minimal'. */
-  voiceStyle: 'neutral_minimal' | 'defined';
+  /** Стиль внутренних монологов: blank slate => 'neutral_minimal'. null — «авто». */
+  voiceStyle: ProtagonistVoiceStyle | null;
 };
 
 export type Personality = {
@@ -231,7 +241,8 @@ export type Brief = {
   /** null = случайный seed на каждой генерации. */
   seed: number | null;
   genre: Genre;
-  format: Format;
+  /** null — «авто». */
+  format: Format | null;
   scale: BriefScale;
   endingsProfile: EndingsProfile;
   world: {

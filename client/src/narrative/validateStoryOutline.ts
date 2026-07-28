@@ -1,3 +1,4 @@
+import { resolveScale } from './briefDefaults';
 import type { Brief, SegmentIssue, StoryOutlinePlan } from './types';
 import { directPredecessors, outgoingOf, topoOrderAnchors } from './anchorOrder';
 import { computeOutlineTargets } from './buildOutlineRequest';
@@ -12,6 +13,7 @@ import { computeOutlineTargets } from './buildOutlineRequest';
  */
 export function validateStoryOutline(outline: StoryOutlinePlan, brief: Brief): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
+  const actCount = resolveScale(brief.scale).acts;
   const anchors = outline.anchors;
   const ids = anchors.map(a => a.id);
   const idSet = new Set(ids);
@@ -133,7 +135,7 @@ export function validateStoryOutline(outline: StoryOutlinePlan, brief: Brief): S
     }
   }
 
-  // Акты: не убывают вдоль рёбер, покрывают 1..brief.scale.acts.
+  // Акты: не убывают вдоль рёбер, покрывают 1..scale.acts.
   const anchorById = new Map(anchors.map(a => [a.id, a]));
   for (const e of outline.anchorEdges) {
     const from = anchorById.get(e.from);
@@ -147,21 +149,21 @@ export function validateStoryOutline(outline: StoryOutlinePlan, brief: Brief): S
     }
   }
   const actsPresent = new Set(anchors.map(a => a.act));
-  for (let act = 1; act <= brief.scale.acts; act++) {
+  for (let act = 1; act <= actCount; act++) {
     if (!actsPresent.has(act)) {
       issues.push({
         severity: 'error',
         scope: 'acts/coverage',
-        message: `в акте ${act} нет ни одного якоря (brief.scale.acts = ${brief.scale.acts})`,
+        message: `в акте ${act} нет ни одного якоря (актов в брифе ${actCount})`,
       });
     }
   }
   for (const a of anchors) {
-    if (a.act < 1 || a.act > brief.scale.acts) {
+    if (a.act < 1 || a.act > actCount) {
       issues.push({
         severity: 'error',
         scope: `acts/range/${a.id}`,
-        message: `act ${a.act} вне диапазона 1..${brief.scale.acts}`,
+        message: `act ${a.act} вне диапазона 1..${actCount}`,
       });
     }
   }
@@ -198,7 +200,9 @@ export function validateStoryOutline(outline: StoryOutlinePlan, brief: Brief): S
     issues.push({
       severity: 'warning',
       scope: 'budget/anchors',
-      message: `якорей ${anchors.length} при целевых ${targets.anchorCount} (${brief.scale.targetDurationMinutes} мин)`,
+      message: `якорей ${anchors.length} при целевых ${targets.anchorCount} (${
+        resolveScale(brief.scale).targetDurationMinutes
+      } мин)`,
     });
   }
 
@@ -221,7 +225,9 @@ export function validateStoryOutline(outline: StoryOutlinePlan, brief: Brief): S
     issues.push({
       severity: 'warning',
       scope: 'budget/plot',
-      message: `«чисто сюжетных» якорей (без LI) ${plotOnly} при целевых ~${targets.plotOnlyAnchorCount} (commonRouteShare = ${brief.scale.commonRouteShare})`,
+      message: `«чисто сюжетных» якорей (без LI) ${plotOnly} при целевых ~${
+        targets.plotOnlyAnchorCount
+      } (commonRouteShare = ${resolveScale(brief.scale).commonRouteShare})`,
     });
   }
 

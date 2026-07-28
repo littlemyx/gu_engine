@@ -27,8 +27,14 @@ export interface ShellToolbarProps {
   /** blocked */
   qaSummary?: string;
 
-  /** empty: бриф уже собран — генерация доступна, хребта ещё нет. */
+  /**
+   * Бриф проходит валидацию. Гейтит ВСЁ, что запускает пайплайн, а не только
+   * первый экран: перегенерация поверх готовой истории тратит те же деньги и
+   * так же упирается в сломанный бриф.
+   */
   briefReady?: boolean;
+  /** Первая ошибка брифа — причина, по которой генерация заперта. */
+  briefReason?: string;
 
   onGenerate?: () => void;
   onContinueDraft?: () => void;
@@ -57,6 +63,7 @@ const ShellToolbar = ({
   meter = '',
   qaSummary = '',
   briefReady = false,
+  briefReason,
   onGenerate,
   onContinueDraft,
   onCheckStory,
@@ -71,6 +78,11 @@ const ShellToolbar = ({
     <button type="button" className={`${styles.btn} ${styles.spacer}`} disabled={disabled} onClick={onExport}>
       {disabled ? 'Скачать бандл' : 'Скачать бандл (v2)'}
     </button>
+  );
+
+  /** Правило дизайн-системы: запертая кнопка всегда объясняет причину. */
+  const briefHint = !briefReady && (
+    <span className={styles.hint}>{briefReason ?? 'нужен бриф или каст из префабов'}</span>
   );
 
   if (readonly) {
@@ -107,12 +119,13 @@ const ShellToolbar = ({
   if (mode === 'blocked') {
     return (
       <div className={styles.root}>
-        <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={onGenerate}>
+        <button type="button" className={`${styles.btn} ${styles.primary}`} disabled={!briefReady} onClick={onGenerate}>
           ▶ Сгенерировать
         </button>
-        <button type="button" className={styles.btn} onClick={onRegenerateWithQa}>
+        <button type="button" className={styles.btn} disabled={!briefReady} onClick={onRegenerateWithQa}>
           Перегенерировать с фидбеком QA
         </button>
+        {briefHint}
         <span className={styles.divider} />
         <span className={styles.warning}>{qaSummary}</span>
         {exportBtn(true)}
@@ -131,7 +144,7 @@ const ShellToolbar = ({
         >
           ▶ Сгенерировать
         </button>
-        {!briefReady && <span className={styles.hint}>нужен бриф или каст из префабов</span>}
+        {briefHint}
         <span className={styles.divider} />
         <button type="button" className={styles.btn} onClick={onImportBrief}>
           Импорт брифа…
@@ -146,15 +159,23 @@ const ShellToolbar = ({
 
   return (
     <div className={styles.root}>
-      <button type="button" className={`${styles.btn} ${styles.primary}`} onClick={onGenerate}>
+      <button type="button" className={`${styles.btn} ${styles.primary}`} disabled={!briefReady} onClick={onGenerate}>
         ▶ Сгенерировать
       </button>
-      <button type="button" className={styles.btn} disabled={!canContinueDraft} onClick={onContinueDraft}>
+      <button
+        type="button"
+        className={styles.btn}
+        disabled={!canContinueDraft || !briefReady}
+        onClick={onContinueDraft}
+      >
         Продолжить черновик
       </button>
+      {/* Проверка QA не трогает бриф и не тратит стадии — она читает готовую
+          историю, поэтому остаётся доступной и на сломанном брифе. */}
       <button type="button" className={styles.btn} onClick={onCheckStory}>
         Проверить историю
       </button>
+      {briefHint}
       {!compact && (
         <>
           <span className={styles.divider} />

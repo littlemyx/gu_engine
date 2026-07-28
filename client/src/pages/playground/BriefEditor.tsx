@@ -18,6 +18,21 @@ const IMAGE_SERVER_BASE = 'http://localhost:3007';
 const FORMATS: Format[] = ['single_arc', 'episodic', 'vignette'];
 const ENDINGS: EndingKind[] = ['good', 'normal', 'bad'];
 
+/**
+ * Пустой ввод в числовом поле — это «авто» (null), а не ноль: габарит выберет
+ * генератор брифа. Поэтому здесь нет привычного `Number(v) || 30` — такой
+ * фолбэк молча превращал бы «не задано» в конкретное число.
+ */
+const numOrNull = (raw: string): number | null => {
+  const trimmed = raw.trim();
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+};
+
+/** Пустое значение селекта — тоже «авто». */
+const AUTO = '';
+
 const csv = (a: string[]) => a.join(', ');
 const fromCsv = (s: string) =>
   s
@@ -51,9 +66,10 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
           <Field label="format">
             <select
               className={styles.select}
-              value={brief.format}
-              onChange={e => store.setFormat(e.target.value as Format)}
+              value={brief.format ?? AUTO}
+              onChange={e => store.setFormat(e.target.value === AUTO ? null : (e.target.value as Format))}
             >
+              <option value={AUTO}>авто</option>
               {FORMATS.map(f => (
                 <option key={f} value={f}>
                   {f}
@@ -65,30 +81,36 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
             <input
               type="number"
               className={styles.input}
-              value={brief.scale.acts}
+              value={brief.scale.acts ?? ''}
               min={1}
               max={10}
-              onChange={e => store.patchScale({ acts: Number(e.target.value) || 1 })}
+              placeholder="авто"
+              onChange={e => store.patchScale({ acts: numOrNull(e.target.value) })}
             />
           </Field>
           <Field label="duration (мин)">
             <input
               type="number"
               className={styles.input}
-              value={brief.scale.targetDurationMinutes}
+              value={brief.scale.targetDurationMinutes ?? ''}
               min={5}
               step={5}
-              onChange={e => store.patchScale({ targetDurationMinutes: Number(e.target.value) || 30 })}
+              placeholder="авто"
+              onChange={e => store.patchScale({ targetDurationMinutes: numOrNull(e.target.value) })}
             />
           </Field>
           <Field label="branching">
             <select
               className={styles.select}
-              value={brief.scale.branchingDensity}
+              value={brief.scale.branchingDensity ?? AUTO}
               onChange={e =>
-                store.patchScale({ branchingDensity: e.target.value as Brief['scale']['branchingDensity'] })
+                store.patchScale({
+                  branchingDensity:
+                    e.target.value === AUTO ? null : (e.target.value as Brief['scale']['branchingDensity']),
+                })
               }
             >
+              <option value={AUTO}>авто</option>
               <option value="low">low</option>
               <option value="medium">medium</option>
               <option value="high">high</option>
@@ -98,28 +120,29 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
             <input
               type="number"
               className={styles.input}
-              value={brief.scale.branchPointBudget}
+              value={brief.scale.branchPointBudget ?? ''}
               min={0}
               max={3}
-              onChange={e =>
-                store.patchScale({
-                  branchPointBudget: Math.max(0, Math.min(3, Math.trunc(Number(e.target.value) || 0))),
-                })
-              }
+              placeholder="авто"
+              onChange={e => {
+                const n = numOrNull(e.target.value);
+                store.patchScale({ branchPointBudget: n === null ? null : Math.max(0, Math.min(3, Math.trunc(n))) });
+              }}
             />
           </Field>
           <Field label="common-route share">
             <input
               type="number"
               className={styles.input}
-              value={brief.scale.commonRouteShare}
+              value={brief.scale.commonRouteShare ?? ''}
               min={0.1}
               max={0.9}
               step={0.1}
-              onChange={e => store.patchScale({ commonRouteShare: Number(e.target.value) || 0.3 })}
+              placeholder="авто"
+              onChange={e => store.patchScale({ commonRouteShare: numOrNull(e.target.value) })}
             />
           </Field>
-          <Field label="endings">
+          <Field label={brief.endingsProfile.length === 0 ? 'endings (авто)' : 'endings'}>
             <div className={styles.checkRow}>
               {ENDINGS.map(k => {
                 const checked = brief.endingsProfile.includes(k);
@@ -188,11 +211,12 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
             <input
               type="number"
               className={styles.input}
-              value={brief.world.tone.intensity}
+              value={brief.world.tone.intensity ?? ''}
               min={0}
               max={1}
               step={0.1}
-              onChange={e => store.patchWorldTone({ intensity: Number(e.target.value) || 0 })}
+              placeholder="авто"
+              onChange={e => store.patchWorldTone({ intensity: numOrNull(e.target.value) })}
             />
           </Field>
         </div>
@@ -245,9 +269,14 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
           <Field label="gender">
             <select
               className={styles.select}
-              value={brief.protagonist.gender}
-              onChange={e => store.patchProtagonist({ gender: e.target.value as Brief['protagonist']['gender'] })}
+              value={brief.protagonist.gender ?? AUTO}
+              onChange={e =>
+                store.patchProtagonist({
+                  gender: e.target.value === AUTO ? null : (e.target.value as Brief['protagonist']['gender']),
+                })
+              }
             >
+              <option value={AUTO}>авто</option>
               <option value="female">female</option>
               <option value="male">male</option>
               <option value="nonbinary">nonbinary</option>
@@ -257,11 +286,14 @@ export const BriefEditor: React.FC<{ brief: Brief }> = ({ brief }) => {
           <Field label="voice style">
             <select
               className={styles.select}
-              value={brief.protagonist.voiceStyle}
+              value={brief.protagonist.voiceStyle ?? AUTO}
               onChange={e =>
-                store.patchProtagonist({ voiceStyle: e.target.value as Brief['protagonist']['voiceStyle'] })
+                store.patchProtagonist({
+                  voiceStyle: e.target.value === AUTO ? null : (e.target.value as Brief['protagonist']['voiceStyle']),
+                })
               }
             >
+              <option value={AUTO}>авто</option>
               <option value="neutral_minimal">neutral_minimal</option>
               <option value="defined">defined</option>
             </select>

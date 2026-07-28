@@ -166,6 +166,100 @@
   font-size: 11px;
 }
 
+/* — Бриф: панель генерации над формой — */
+
+.genPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--color-accent-100, #e3e9f0);
+  border: 1px solid var(--color-accent-700, #3d5872);
+}
+
+.genHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.genTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.genMeta {
+  font-size: 10.5px;
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.genTextarea {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: #fff;
+  border: 1px solid var(--color-neutral-400, #9b9ea1);
+  border-radius: 0;
+  padding: 7px 10px;
+  resize: vertical;
+}
+
+.genTextarea:focus {
+  outline: 2px solid var(--color-accent-700, #3d5872);
+  outline-offset: -1px;
+}
+
+.genTextarea:disabled {
+  background: var(--color-neutral-100, #f2f2f3);
+  color: var(--color-neutral-600, #6f7275);
+}
+
+.genVerbosity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.genVerbosity .weightRange {
+  flex: 1;
+  max-width: 220px;
+}
+
+.genVerbosityValue {
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  color: var(--color-neutral-800, #3a3d40);
+}
+
+.genActions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.genStatus {
+  font-size: 11.5px;
+  color: var(--color-neutral-800, #3a3d40);
+}
+
+.genStatusError {
+  color: #a4392f;
+}
+
+/* Пока прогон идёт, форма только читается: правки в неё всё равно переживут
+   слияние, но мигающие под руками поля читаются как сбой. */
+.genBusyForm {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 /* — Режиссура: слайдеры весов и seed-политика (макет 7b) — */
 
 .weightList {
