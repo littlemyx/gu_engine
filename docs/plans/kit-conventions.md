@@ -1,0 +1,185 @@
+# Кит «Industry»: конвенции портирования
+
+Дизайн-кит из claude.ai/design (58 атомов + 161 молекула) переносится в React
+по одному компоненту за задачу. Этот документ — контракт задачи: что на входе,
+что на выходе и как исполнитель сам проверяет, что сделал верно.
+
+## Где что лежит
+
+```
+design_ref/                      # git-ignored, локальная копия дизайн-кита
+  components/<Name>.dc.html      # исходник компонента
+  atoms.json · molecules.json    # реестры: варианты, состояния, состав
+client/src/ui/kit/
+  atoms/<Name>.tsx               # порт
+  atoms/<Name>.module.css
+  atoms/<Name>.test.tsx
+  atoms/<Name>.gallery.tsx
+  molecules/<Name>.{tsx,module.css,test.tsx,gallery.tsx}
+```
+
+Барреля (`index.ts`) нет намеренно: задачи идут параллельно, и общий файл-реестр
+стал бы очередью из конфликтов. Импорт всегда прямой:
+`import Chip from '@/ui/kit/atoms/Chip'`.
+
+Галерея собирается сама — `client/src/ui/kit/collectGallery.ts` глобит
+`./**/*.gallery.tsx`. Появился файл — появился раздел на `/studio/kit`.
+
+## Как читать `.dc.html`
+
+Исходник — декларативный HTML: разметка + инлайновый CSS + объявление пропсов.
+Вложенные `<dc-import name="X">` — это атомы, из которых собрана молекула.
+
+- Пропсы `kebab-case` → `camelCase` (`cast-label` → `castLabel`).
+- Проп с именем `name` в дизайне переименован (там это зарезервированный
+  атрибут); смотри реестр — в React берём осмысленное имя.
+- Слот `children` дизайна → React `children`. Несколько слотов → именованные
+  пропсы типа `ReactNode` (`leading`, `trailing`, `body`).
+- Логика в `<script data-dc-script>` хост-документа — **не** переносится в
+  компонент. Компонент тупой: получает готовые строки и колбэки.
+
+## Правила порта
+
+**Варианты и состояния.** Реестр (`atoms.json` / `molecules.json`) для каждого
+компонента перечисляет `variants` и `states`. Взаимоисключающие — union-проп с
+дефолтом-первым-вариантом; независимые — boolean-пропсы.
+
+```ts
+export type ChipTone = 'accent' | 'accent2' | 'neutral' | 'outline';
+
+export interface ChipProps {
+  text: string;
+  tone?: ChipTone;      // взаимоисключающее → union
+  selected?: boolean;   // независимое → boolean
+  onClick?: () => void;
+}
+```
+
+Маппинг состояния в класс — через `Record`, как в существующем
+`client/src/ui/SlotCell.tsx` (эталон стиля для всего кита).
+
+**Тексты — данные, не хардкод.** Русские подписи приходят пропсами. Внутри
+компонента допустимы только неизменяемые глифы из макета (`✓`, `▾`, `●`).
+
+**Светлое и тёмное.** Дизайновский проп `context: 'на светлом' | 'на тёмном'`
+переносится как `onDark?: boolean` со значением по умолчанию `false` — то же
+умолчание, что и в макете. (В старом ките `@/ui` обратная конвенция `onLight`:
+там умолчанием был тёмный хром. Смешивать их не нужно — кит живёт своей.)
+
+**Пропсы превью не переносим.** `backdrop`, `$preview` и прочее из секции
+«Превью» в `data-props` — это обвязка редактора дизайна, а не компонента.
+В галерее за фон отвечает `dark: true` у случая.
+
+**Компонент чистый.** Запрещены импорты из `@/narrative`, `@/pages`, `@/project`
+и любых сторов. Разрешены: `react`, свой `.module.css`, другие компоненты кита,
+`@/ui/icons`.
+
+**Интерактивность.** Кликабельное — это `<button type="button">`; если колбэка
+нет, рендерим неинтерактивный элемент (`<span>`/`<div>`), как делает `SlotCell`.
+Доступное имя кнопки = её видимый текст, чтобы тест доставал её через
+`getByRole('button', { name })`.
+
+**Шапка файла — обязательна.** Первым комментарием указываем происхождение:
+
+```ts
+/**
+ * Порт `design_ref/components/Chip.dc.html` (atoms.json#Chip).
+ * <одна-две строки: зачем компонент и что кодируют его состояния>
+ */
+```
+
+## CSS
+
+CSS Modules, camelCase-локали (уже настроено в `client/vite.config.js`).
+
+**Цвета — только токенами.** В `.module.css` кита не должно быть ни одного
+`#rrggbb`, `rgb(...)`, `rgba(...)`, `hsl(...)`. Всё берётся из
+`client/src/assets/css/industry.css`:
+
+- рабочая область — `--color-*` (`--color-bg`, `--color-text`, `--color-accent`,
+  рампы `--color-neutral-100..900`, `--color-accent-100..900`);
+- тёмный хром — `--gu-chrome`, `--gu-chrome-raised`, чернила `--gu-ink*`,
+  волосяные линии `--gu-hairline*`;
+- чертёжная рампа — `--gu-blueprint-100/400/700/900/line`;
+- сигналы — `--gu-signal-run`, `--gu-signal-fail` (других цветовых сигналов в
+  системе нет);
+- шрифты `--font-heading` / `--font-body` / `--gu-mono`, шаги `--space-1..8`,
+  радиусы `--radius-sm/md/lg`, тени `--shadow-sm/md/lg`.
+
+Промежуточный оттенок берётся `color-mix(in srgb, var(--token) 40%, transparent)`,
+а не подобранным на глаз хексом.
+
+Если в макете цвет, которому нет токена, — **не хардкодить**: оставить ближайший
+токен и вернуть цвет в отчёте задачи, чтобы токен добавили в `industry.css`
+(этот файл правится только отдельной серийной задачей).
+
+**Форма.** Эстетика чертёжная: прямые углы (`border-radius: 0`), волосяные рамки
+в 1px, засечки-кресты по углам у «чертёжных объектов». Скругление и заливка —
+только там, где они есть в макете.
+
+## Тест
+
+Файл `<Name>.test.tsx`, паттерн — `client/src/ui/ShellToolbar.test.tsx`:
+
+```tsx
+/**
+ * @vitest-environment jsdom
+ */
+import React from 'react';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import Chip, { type ChipTone } from './Chip';
+
+afterEach(cleanup);
+
+const TONES: ChipTone[] = ['accent', 'accent2', 'neutral', 'outline'];
+
+describe.each(TONES)('Chip, тон %s', (tone) => {
+  it('показывает текст', () => {
+    render(<Chip text="черновик" tone={tone} />);
+    expect(screen.getByText('черновик')).toBeTruthy();
+  });
+});
+```
+
+`jest-dom` в проекте нет — проверяем сами свойства DOM (`.disabled`,
+`.textContent`, `getAttribute`). Тест обязан покрыть: каждый вариант, каждое
+состояние из реестра, и — если компонент кликабельный — что колбэк вызывается и
+что без колбэка кнопки нет.
+
+## Галерея
+
+```tsx
+import React from 'react';
+
+import Chip from './Chip';
+
+import type { GalleryCase } from '../galleryTypes';
+
+export const title = 'Chip';
+
+export const cases: GalleryCase[] = [
+  { title: 'accent', node: <Chip text="черновик" tone="accent" /> },
+  // ...по случаю на каждый вариант и состояние
+];
+```
+
+`dark: true` у случая — если компонент живёт на тёмном хроме (панели, тулбар,
+статус-бар): галерея подложит под него нужный фон.
+
+## Критерии приёмки (исполнитель проверяет сам, до сдачи)
+
+Из каталога `client/`:
+
+1. `npx tsc --noEmit` — пусто.
+2. `npx vitest run src/ui/kit/<tier>/<Name>.test.tsx` — зелёный.
+3. `grep -nE '#[0-9a-fA-F]{3,8}|rgba?\(|hsla?\(' src/ui/kit/<tier>/<Name>.module.css`
+   — пусто.
+4. `grep -nE "from '@/(narrative|pages|project)" src/ui/kit/<tier>/<Name>.tsx` — пусто.
+5. `<Name>.gallery.tsx` экспортирует `title` и `cases`, и в `cases` есть случай
+   на каждый вариант и состояние из реестра.
+6. `npx vitest run` — весь набор по-прежнему зелёный (ничего чужого не сломано).
+
+Ровно четыре новых файла, никаких правок вне своего каталога. `industry.css`,
+`routes/index.tsx`, `collectGallery.ts` — не трогать.

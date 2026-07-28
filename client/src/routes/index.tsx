@@ -4,6 +4,7 @@ import Layout from '@/pages/layout';
 import Main from '@/pages/main';
 import Playground from '@/pages/playground';
 import Studio from '@/pages/studio';
+import KitGallery from '@/pages/studio/KitGallery';
 import NotFound from '@/pages/NotFound';
 import ProjectGate from '@/project/ProjectGate';
 
@@ -33,6 +34,8 @@ export default [
         ),
       },
       { path: 'playground-legacy', element: <Playground /> },
+      // Витрина кита: проект не нужен, ProjectGate не оборачиваем.
+      { path: 'studio/kit', element: <KitGallery /> },
     ],
   },
   {

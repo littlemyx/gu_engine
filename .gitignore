@@ -196,3 +196,4 @@ result-game/
 
 # Локальные тестовые выгрузки сцен движка
 game/scenes_*.json
+design_ref/
