@@ -90,7 +90,9 @@ describe('MenuBar, открытие столбца', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Файл' }));
     expect(screen.getByText('Создать проект')).toBeTruthy();
 
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Создать проект' }), { key: 'Escape' });
+    // Бьём по самому пункту: Escape ловит корень бара, а доступное имя кнопки
+    // пункта включает хоткей и смету, и по имени её не найти.
+    fireEvent.keyDown(screen.getByText('Создать проект'), { key: 'Escape' });
     expect(screen.queryByText('Создать проект')).toBeNull();
   });
 });

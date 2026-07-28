@@ -1,0 +1,44 @@
+.button {
+  all: unset;
+  display: inline-flex;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.neutral:hover {
+  background: color-mix(in srgb, var(--color-neutral-400) 12%, transparent);
+}
+
+.neutral:active {
+  background: color-mix(in srgb, var(--color-neutral-400) 20%, transparent);
+}
+
+.accent:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.accent:active {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+/* На тёмном хроме подложки строятся из тех же токенов, что и рамки Badge. */
+.onDark.neutral:hover {
+  background: color-mix(in srgb, var(--gu-hairline-mark) 20%, transparent);
+}
+
+.onDark.neutral:active {
+  background: color-mix(in srgb, var(--gu-hairline-mark) 32%, transparent);
+}
+
+.onDark.accent:hover {
+  background: color-mix(in srgb, var(--gu-signal-run) 12%, transparent);
+}
+
+.onDark.accent:active {
+  background: color-mix(in srgb, var(--gu-signal-run) 20%, transparent);
+}

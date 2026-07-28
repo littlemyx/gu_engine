@@ -1,0 +1,23 @@
+.root {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  text-align: center;
+}
+
+.onLight {
+  background: transparent;
+}
+
+.onDark {
+  background: var(--gu-chrome-raised);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+}

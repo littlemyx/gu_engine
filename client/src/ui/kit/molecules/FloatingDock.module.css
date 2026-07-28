@@ -1,0 +1,44 @@
+.row {
+  display: flex;
+  gap: 1px;
+  background: var(--gu-hairline);
+  width: max-content;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  padding: 6px 14px;
+  background: var(--gu-chrome);
+  border: none;
+  color: var(--gu-ink-75);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 400;
+  border-radius: 0;
+}
+
+button.item {
+  cursor: pointer;
+}
+
+.item:hover {
+  background: var(--gu-chrome-raised);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.active {
+  color: var(--gu-ink);
+  font-weight: 600;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+}

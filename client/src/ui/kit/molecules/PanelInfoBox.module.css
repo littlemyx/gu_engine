@@ -1,0 +1,16 @@
+.root {
+  box-sizing: border-box;
+  display: block;
+  border: 1px solid transparent;
+  border-radius: 0;
+  padding: 8px 10px;
+}
+
+/* Макет задаёт полупрозрачный белый ~15% на тёмном хроме — ближайший токен волосяной линии. */
+.onDark {
+  border-color: var(--gu-hairline-soft);
+}
+
+.onLight {
+  border-color: var(--color-neutral-400);
+}

@@ -1,0 +1,48 @@
+.pad {
+  display: inline-flex;
+  align-items: stretch;
+  padding: 0 var(--space-4);
+}
+
+.trigger {
+  box-sizing: border-box;
+  width: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0 8px;
+  border: none;
+  margin: 0;
+  background: color-mix(in srgb, var(--gu-ink) 4%, transparent);
+  font-family: var(--font-body);
+}
+
+button.trigger {
+  cursor: pointer;
+}
+
+button.trigger:hover {
+  background: color-mix(in srgb, var(--gu-ink) 9%, transparent);
+}
+
+button.trigger:active {
+  background: color-mix(in srgb, var(--gu-ink) 13%, transparent);
+}
+
+button.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.arrow {
+  font-size: 10px;
+  line-height: 1;
+  color: var(--gu-ink-55);
+}
+
+.titleWrap {
+  display: inline-block;
+  writing-mode: vertical-rl;
+  opacity: 0.6;
+}

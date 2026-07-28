@@ -1,0 +1,70 @@
+.root {
+  display: inline-block;
+}
+
+.anchor {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: var(--gu-mono);
+  font-size: 10.5px;
+  color: var(--color-neutral-600);
+}
+
+span.anchor {
+  cursor: default;
+}
+
+.anchor:hover {
+  color: var(--color-text);
+}
+
+.anchor:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.anchor.onDark {
+  color: var(--gu-ink-60);
+}
+
+.anchor.onDark:hover {
+  color: var(--gu-ink);
+}
+
+.panelWrap {
+  margin-top: 6px;
+}
+
+.panel {
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+}
+
+.kickerRow {
+  margin-bottom: 3px;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.inputWrap {
+  flex: 1;
+  min-width: 0;
+}
+
+.inputWrap > input {
+  width: 100%;
+}
+
+.hintRow {
+  margin-top: 6px;
+  line-height: 1.5;
+}

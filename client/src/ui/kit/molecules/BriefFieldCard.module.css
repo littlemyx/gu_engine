@@ -1,0 +1,121 @@
+.card {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  background: var(--gu-paper);
+  font-family: var(--font-body);
+}
+
+.borderEmpty {
+  border: 1px dashed var(--color-neutral-500);
+}
+
+.borderAuto {
+  border: 1px dashed var(--color-accent-400);
+}
+
+.borderFilling {
+  border: 1px solid var(--color-accent-500);
+}
+
+.borderProposed {
+  border: 1px solid var(--color-accent-400);
+}
+
+.borderDone {
+  border: 1px solid var(--gu-line);
+}
+
+.headRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.valueText {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--color-text);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.fillingBox {
+  font-size: 11.5px;
+  color: var(--color-text);
+  font-family: var(--gu-mono);
+  border: 1px solid var(--color-accent-400);
+  background: var(--color-accent-100);
+  padding: 6px 8px;
+}
+
+.placeholderText {
+  margin: 0;
+  font-size: 11px;
+  color: var(--gu-muted);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.autoNote {
+  margin: 0;
+  font-size: 11px;
+  color: var(--gu-muted);
+  line-height: 1.5;
+}
+
+.autoLabel {
+  font-weight: 600;
+  color: var(--gu-ink-dark);
+}
+
+.autoResolvedLabel {
+  color: var(--gu-line);
+}
+
+.autoResolvedValue {
+  color: var(--color-text);
+}
+
+.proposedBox {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--color-text);
+  line-height: 1.5;
+  text-wrap: pretty;
+  border: 1px solid var(--color-accent-300);
+  background: var(--color-accent-100);
+  padding: 6px 8px;
+}
+
+.directiveNote {
+  margin: 0;
+  font-size: 9.5px;
+  color: var(--color-accent-700);
+  line-height: 1.4;
+}
+
+.calendarRow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.calendarFormula {
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  color: var(--gu-blueprint-700);
+  padding-bottom: 6px;
+}
+
+.hintText {
+  margin: 0;
+  font-size: 9.5px;
+  color: var(--gu-muted);
+  line-height: 1.4;
+}

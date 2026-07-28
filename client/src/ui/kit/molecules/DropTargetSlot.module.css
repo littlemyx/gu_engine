@@ -1,0 +1,15 @@
+.slot {
+  box-sizing: border-box;
+  padding: 5px 9px;
+}
+
+.neutral {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--color-neutral-600);
+}
+
+.onDark.neutral {
+  color: var(--gu-ink-45);
+}

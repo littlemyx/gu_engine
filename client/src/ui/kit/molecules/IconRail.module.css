@@ -1,0 +1,29 @@
+.rail {
+  box-sizing: border-box;
+  width: 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-3) 0;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+/* Активный пункт: подложка и чернила берутся из тех же токенов, что уже
+   красят hover/active состояния IconButton на тёмном хроме — просто держим
+   их постоянно включёнными, а не по псевдоклассу. */
+.item.selected > * {
+  background: var(--gu-selected-bg);
+  color: var(--gu-ink);
+}
+
+.note {
+  margin-top: auto;
+  writing-mode: vertical-rl;
+}

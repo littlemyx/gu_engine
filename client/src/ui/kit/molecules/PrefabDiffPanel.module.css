@@ -1,0 +1,32 @@
+.inner {
+  box-sizing: border-box;
+  background: var(--color-bg);
+  padding: var(--space-3) var(--space-4);
+}
+
+.header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.note {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.body {
+  margin-top: var(--space-2);
+  line-height: 1.45;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.footnote {
+  margin-left: auto;
+}

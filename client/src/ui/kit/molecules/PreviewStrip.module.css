@@ -1,0 +1,22 @@
+.root {
+  display: inline-flex;
+  gap: var(--space-1);
+  width: max-content;
+}
+
+.moreTile {
+  display: inline-flex;
+  box-sizing: border-box;
+}
+
+/* DashedFrame — единственный прямой потомок; растягиваем его на всю плитку и
+   центрируем содержимое, не трогая сам атом. */
+.moreTile > div {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-1);
+}

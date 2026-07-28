@@ -1,0 +1,190 @@
+.panel {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) calc(var(--space-3) + 1px);
+  border: 1px solid var(--gu-line);
+  background: var(--gu-paper);
+  font-family: var(--font-body);
+}
+
+.panelRunning {
+  border-color: var(--color-accent-500);
+}
+
+.panelDone {
+  border-color: var(--color-accent-400);
+}
+
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.status {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  font-size: 9.5px;
+  font-weight: 600;
+}
+
+.statusIdle {
+  color: var(--gu-muted);
+}
+
+.statusActive {
+  color: var(--color-accent-700);
+}
+
+.statusRetry {
+  color: var(--gu-signal-warn-text);
+}
+
+.spinner {
+  display: inline-block;
+  animation: gu-brief-spin 1.2s linear infinite;
+}
+
+@keyframes gu-brief-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.notesBlock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.notesBox {
+  border: 1px solid var(--gu-line-soft);
+  background: var(--gu-fill-soft);
+  padding: var(--space-2) var(--space-2);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.notesIdle {
+  color: var(--color-text);
+}
+
+.notesRunning {
+  color: var(--gu-muted);
+}
+
+.directivesRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  align-items: baseline;
+}
+
+.droppedText {
+  font-size: 9px;
+  color: var(--gu-line);
+}
+
+.controlsRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.verbosityGroup {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ticks {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.tick {
+  display: inline-block;
+  width: 14px;
+  height: 9px;
+  border: 1px solid var(--gu-line-soft);
+  background: transparent;
+}
+
+.tickActive {
+  border-color: var(--color-accent-700);
+  background: var(--color-accent);
+}
+
+.verbosityValue {
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  color: var(--color-accent-700);
+}
+
+.verbosityHint {
+  font-size: 9px;
+  color: var(--gu-line);
+}
+
+.actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.phasesRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border-top: 1px solid var(--gu-line-faint);
+  padding-top: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.phaseItem {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-size: 9.5px;
+}
+
+.phaseDone {
+  color: var(--color-accent-700);
+  font-weight: 400;
+}
+
+.phaseCurrent {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.phaseFuture {
+  color: var(--gu-line);
+  font-weight: 400;
+}
+
+.phaseArrow {
+  color: var(--gu-line-soft);
+  margin-left: 3px;
+}
+
+.note {
+  margin-left: auto;
+  font-size: 9.5px;
+}
+
+.noteDefault {
+  color: var(--gu-muted);
+}
+
+.noteRetry {
+  color: var(--gu-signal-warn-text);
+}

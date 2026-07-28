@@ -1,0 +1,68 @@
+.root {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  color: inherit;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: color-mix(in srgb, var(--color-accent) 10%, transparent);
+}
+
+.clickable:active {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.glyphSlot {
+  display: inline-flex;
+  flex: none;
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.35;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--gu-ink-dark);
+}
+
+.nameAccent {
+  color: var(--color-accent-700);
+}
+
+.namePlaying {
+  font-weight: 600;
+}
+
+.durationSlot {
+  display: inline-flex;
+  flex: none;
+}
+
+.overrideNote {
+  flex: none;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--color-accent-700);
+}
