@@ -1,0 +1,167 @@
+/*
+ * Дизайн-система «Industry» — токены из claude.ai/design
+ * (projectId 50fd1217-fe04-4f84-835c-d7e0a9e0570d, _ds/industry-…/styles.css).
+ *
+ * Здесь живут ТОЛЬКО :root-переменные: файл не задаёт глобальных селекторов,
+ * чтобы старые страницы со своими CSS Modules продолжали выглядеть как раньше.
+ *
+ * Шрифты подключены отсюда, а не из index.tsx: резолвер Vite 3 не разбирает
+ * wildcard-подпути в exports-карте @fontsource, а postcss-import — разбирает.
+ */
+@import '@fontsource/barlow/400.css';
+@import '@fontsource/barlow/500.css';
+@import '@fontsource/barlow/600.css';
+@import '@fontsource/barlow-condensed/400.css';
+@import '@fontsource/barlow-condensed/600.css';
+
+:root {
+  --color-bg: #f2f2f3;
+  --color-surface: #e9e9ea;
+  --color-text: #1d1f20;
+  --color-accent: #5980a6;
+  --color-accent-2: #728fab;
+  --color-divider: color-mix(in srgb, #1d1f20 16%, transparent);
+
+  /* Тональные рампы: один общий шаг светлоты в OKLCH, поэтому одинаковые
+     ступени разных ролей совпадают по визуальному весу. */
+  --color-neutral-100: #f5f5f8;
+  --color-neutral-200: #e7e7ea;
+  --color-neutral-300: #d4d4d7;
+  --color-neutral-400: #b7b7ba;
+  --color-neutral-500: #98989b;
+  --color-neutral-600: #7a7a7d;
+  --color-neutral-700: #5d5d60;
+  --color-neutral-800: #424244;
+  --color-neutral-900: #2b2b2d;
+
+  --color-accent-100: #eef6ff;
+  --color-accent-200: #d6ebff;
+  --color-accent-300: #b5d9fd;
+  --color-accent-400: #94bce3;
+  --color-accent-500: #749dc4;
+  --color-accent-600: #597ea3;
+  --color-accent-700: #416180;
+  --color-accent-800: #2c455d;
+  --color-accent-900: #1d2d3d;
+
+  --color-accent-2-100: #eef6ff;
+  --color-accent-2-200: #d6ebff;
+  --color-accent-2-300: #bdd8f2;
+  --color-accent-2-400: #9ebbd8;
+  --color-accent-2-500: #7e9cb8;
+  --color-accent-2-600: #627d98;
+  --color-accent-2-700: #486077;
+  --color-accent-2-800: #314457;
+  --color-accent-2-900: #1f2d3a;
+
+  --font-heading: 'Barlow Condensed', system-ui, sans-serif;
+  --font-heading-weight: 600;
+  --font-body: 'Barlow', system-ui, sans-serif;
+
+  --space-1: 3.4px;
+  --space-2: 6.8px;
+  --space-3: 10.2px;
+  --space-4: 13.6px;
+  --space-6: 20.4px;
+  --space-8: 27.2px;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 7px;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2b2b2d 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2b2b2d 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2b2b2d 22%, transparent);
+}
+
+/*
+ * Слой шелла. Атомы макета «Планирование и генерация» держат часть цветов
+ * литералами (тёмный хром рисуется поверх светлой рабочей области, поэтому
+ * его тона не выводятся из рамп). Здесь они названы, чтобы CSS Modules
+ * не расползались по хардкоду.
+ */
+:root {
+  /* Тёмный хром: панели, тулбар, статус-бар, док, консоль */
+  --gu-chrome: var(--color-accent-900);
+  --gu-chrome-raised: #22303f;
+  --gu-canvas: var(--color-bg);
+
+  /* Чернила на тёмном */
+  --gu-ink: #f2f2f3;
+  --gu-ink-90: rgba(242, 242, 243, 0.9);
+  --gu-ink-85: rgba(242, 242, 243, 0.85);
+  --gu-ink-75: rgba(242, 242, 243, 0.75);
+  --gu-ink-60: rgba(242, 242, 243, 0.6);
+  --gu-ink-55: rgba(242, 242, 243, 0.55);
+  --gu-ink-50: rgba(242, 242, 243, 0.5);
+  --gu-ink-45: rgba(242, 242, 243, 0.45);
+  --gu-ink-40: rgba(242, 242, 243, 0.4);
+
+  /* Волосяные линии на тёмном */
+  --gu-hairline: rgba(255, 255, 255, 0.12);
+  --gu-hairline-soft: rgba(255, 255, 255, 0.2);
+  --gu-hairline-strong: rgba(255, 255, 255, 0.25);
+  --gu-hairline-edge: rgba(255, 255, 255, 0.18);
+  --gu-hairline-mark: rgba(255, 255, 255, 0.3);
+  --gu-selected-bg: rgba(255, 255, 255, 0.14);
+  --gu-hover-bg: rgba(255, 255, 255, 0.07);
+  --gu-surface-raised: rgba(255, 255, 255, 0.05);
+
+  /* Чертёжная рампа рабочей области (A1/A4/A7/A9 макета) */
+  --gu-blueprint-100: #e3e9f0;
+  --gu-blueprint-200: #c9d6e2;
+  --gu-blueprint-400: #8fa9c2;
+  --gu-blueprint-700: #3d5872;
+  --gu-blueprint-900: #22303f;
+  --gu-blueprint-line: #c9cacc;
+
+  /* Самый нижний слой хрома: подложка дока и модальных затемнений */
+  --gu-chrome-deep: #182029;
+
+  /* Чертёж на светлом: заливки, линии и приглушённые чернила рабочей области.
+     Отдельно от рамп --color-neutral-*, потому что рампа задаёт равные шаги
+     светлоты, а это — конкретные тона макета, различимые на глаз. */
+  --gu-paper: #ffffff;
+  --gu-fill-soft: #fbfbfc;
+  --gu-fill: #e6e7e9;
+  --gu-fill-strong: #d6d7d9;
+  --gu-line-faint: #e0e1e3;
+  --gu-line-soft: #c9cacc;
+  --gu-line: #9b9ea1;
+  --gu-muted: #6f7275;
+  --gu-ink-dark: #4a4d50;
+
+  /* Цветовые сигналы. Их три, а не два: кроме генерации и сбоя макет
+     повсеместно рисует предупреждение — «сделано, но требует решения».
+     У каждого сигнала своя тройка для светлой области: заливка, линия, текст. */
+  --gu-signal-run: #9dc1e0;
+  --gu-signal-fail: #ffb0a6;
+  --gu-signal-warn: #e7c46a;
+
+  --gu-signal-run-bg: rgba(89, 128, 166, 0.12);
+  --gu-signal-run-line: rgba(89, 128, 166, 0.28);
+  --gu-signal-run-text: var(--color-accent-700);
+
+  --gu-signal-fail-bg: #f3e2e2;
+  --gu-signal-fail-line: #b96a6a;
+  --gu-signal-fail-text: #8f3a30;
+
+  --gu-signal-warn-bg: #f4ecd7;
+  --gu-signal-warn-line: #d8c78a;
+  --gu-signal-warn-text: #7a6435;
+
+  /* Приглушённая пара warn: макет рисует ею глифы и точечные метки, где
+     насыщенный сигнал спорил бы с текстом рядом. */
+  --gu-signal-warn-soft: #e8d9a0;
+  --gu-signal-warn-deep: #7a5c1e;
+  /* Кромка сбоя на светлом там, где рамка должна читаться сильнее заливки. */
+  --gu-signal-fail-edge: #b04a3d;
+
+  --gu-mono: ui-monospace, Menlo, monospace;
+
+  /* Метрика шелла (канон 1440) */
+  --gu-rail-width: 258px;
+  --gu-inspector-width: 316px;
+  --gu-slot-width: 33px;
+  --gu-slot-height: 24px;
+}
