@@ -1,0 +1,75 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  padding: 3px 10px;
+  border: 1px solid var(--gu-line-soft);
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.root:disabled,
+.root[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Контурная (невыбранная) — светлая рабочая область. */
+
+.root:not(.selected):not(:disabled):hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.root:not(.selected):not(:disabled):active {
+  background: color-mix(in srgb, var(--color-accent) 16%, transparent);
+}
+
+/* Залитая active — тон один и тот же на светлом и на тёмном. */
+
+.selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-bg);
+}
+
+.selected:not(:disabled):hover {
+  background: var(--color-accent-600);
+}
+
+.selected:not(:disabled):active {
+  background: var(--color-accent-700);
+}
+
+.note {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+/* Тёмный хром — контурная опция строится из чернил, а не из светлых рамп; залитая не меняется. */
+
+.onDark:not(.selected) {
+  border-color: var(--gu-hairline-strong);
+  color: var(--gu-ink-75);
+}
+
+.onDark:not(.selected):not(:disabled):hover {
+  background: var(--gu-hover-bg);
+}
+
+.onDark:not(.selected):not(:disabled):active {
+  background: var(--gu-selected-bg);
+}

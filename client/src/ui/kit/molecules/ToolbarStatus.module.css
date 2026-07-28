@@ -1,0 +1,26 @@
+.root {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.normal {
+  color: var(--gu-ink-75);
+}
+
+.info {
+  color: var(--gu-signal-run);
+}
+
+.error {
+  color: var(--gu-signal-fail);
+}
+
+.quiet {
+  color: var(--gu-ink-40);
+}
+
+.end {
+  margin-left: auto;
+}

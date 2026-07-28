@@ -1,0 +1,83 @@
+.palette {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+}
+
+.paletteButton {
+  all: unset;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  cursor: pointer;
+}
+
+.paletteButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.box {
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--color-text) 25%, transparent);
+}
+
+.box:hover {
+  border-color: var(--color-accent-700);
+}
+
+.hex {
+  font-family: var(--gu-mono);
+  font-size: 9px;
+  color: var(--color-neutral-700);
+}
+
+.legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendBox {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in srgb, var(--color-text) 25%, transparent);
+}
+
+.legendLabel {
+  font-size: 10.5px;
+  color: var(--color-text);
+}
+
+.add {
+  all: unset;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-neutral-500);
+  color: var(--color-neutral-600);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.add:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-800);
+  background: var(--color-accent-100);
+}
+
+.add:active {
+  background: var(--color-accent-200);
+}
+
+.add:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

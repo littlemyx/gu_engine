@@ -1,0 +1,78 @@
+.root {
+  --letterform-size: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: var(--letterform-size);
+  height: var(--letterform-size);
+  padding: 0;
+  border-radius: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: calc(var(--letterform-size) * 0.55);
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+
+button.root {
+  cursor: pointer;
+}
+
+.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.outline {
+  background: transparent;
+  border: 1px solid var(--gu-line-soft);
+  color: var(--color-text);
+}
+
+.outline:hover {
+  background: var(--color-accent-100);
+}
+
+.outline:active {
+  background: var(--color-accent-200);
+}
+
+.outline.selected {
+  border: 2px solid var(--color-accent);
+  color: var(--gu-blueprint-700);
+}
+
+.filled {
+  background: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  color: var(--color-bg);
+}
+
+.filled:hover {
+  background: var(--color-accent-600);
+  border-color: var(--color-accent-600);
+}
+
+.filled:active {
+  background: var(--color-accent-700);
+  border-color: var(--color-accent-700);
+}
+
+/* На тёмном хроме контур строится из чернил, а не из светлой рампы; заливка не меняется. */
+.onDark.outline {
+  border-color: var(--gu-hairline-mark);
+  color: var(--gu-ink-85);
+}
+
+.onDark.outline:hover {
+  background: var(--gu-hover-bg);
+}
+
+.onDark.outline:active {
+  background: var(--gu-selected-bg);
+}
+
+.onDark.outline.selected {
+  color: var(--gu-signal-run);
+}

@@ -1,0 +1,47 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  box-sizing: border-box;
+}
+
+.digit {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  line-height: 0.9;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.normal {
+  color: var(--color-text);
+}
+
+.accent {
+  color: var(--color-accent-700);
+}
+
+.quiet {
+  color: var(--gu-line);
+}
+
+.unit {
+  color: var(--gu-muted);
+}
+
+/* На тёмном хроме тона строятся из чернил и сигналов, а не из светлых рамп. */
+.digit.onDark.normal {
+  color: var(--gu-ink-90);
+}
+
+.digit.onDark.accent {
+  color: var(--gu-signal-run);
+}
+
+.digit.onDark.quiet {
+  color: var(--gu-ink-50);
+}
+
+.unit.onDark {
+  color: var(--gu-ink-55);
+}

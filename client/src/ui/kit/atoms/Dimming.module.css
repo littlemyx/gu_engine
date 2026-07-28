@@ -1,0 +1,18 @@
+.root {
+  display: inline-flex;
+}
+
+.placeholder {
+  display: inline-flex;
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-neutral-300);
+  color: var(--color-text);
+  border-radius: 0;
+}
+
+.placeholder.onDark {
+  border-color: var(--gu-hairline-mark);
+  color: var(--gu-ink);
+}

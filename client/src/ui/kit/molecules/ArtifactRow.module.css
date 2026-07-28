@@ -1,0 +1,26 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  background: var(--gu-chrome-raised);
+  font-family: var(--font-body);
+}
+
+.dot {
+  color: var(--gu-ink-40);
+  font-size: 10.5px;
+  line-height: 1;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.pencil {
+  color: var(--gu-ink-75);
+  font-size: 10.5px;
+  line-height: 1;
+}

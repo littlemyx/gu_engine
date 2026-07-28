@@ -1,0 +1,40 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: inherit;
+}
+
+.old {
+  text-decoration: line-through;
+  color: var(--color-neutral-500);
+}
+
+.arrow {
+  color: var(--color-neutral-500);
+}
+
+.value {
+  font-weight: 600;
+}
+
+.value.accent {
+  color: var(--color-accent-700);
+}
+
+.value.plain {
+  color: var(--color-text);
+}
+
+.onDark .old,
+.onDark .arrow {
+  color: var(--gu-ink-45);
+}
+
+.onDark .value.accent {
+  color: var(--color-accent-400);
+}
+
+.onDark .value.plain {
+  color: var(--gu-ink-90);
+}

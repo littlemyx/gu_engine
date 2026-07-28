@@ -1,0 +1,34 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: max-content;
+}
+
+/* Кнопка предпросмотра во включённом виде — макет держит её отдельно от
+   OutlineButton: нажатый вид рисуется чернилами, а не тоном атома. */
+.previewActive {
+  background: transparent;
+  border: 1px solid var(--gu-ink);
+  border-radius: 0;
+  padding: 5px 12px;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--gu-ink);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.previewActive:hover {
+  background: var(--gu-hover-bg);
+}
+
+.previewActive:active {
+  background: var(--gu-selected-bg);
+}
+
+.previewActive:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

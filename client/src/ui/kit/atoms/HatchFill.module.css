@@ -1,0 +1,41 @@
+.root {
+  --hf-a: var(--color-neutral-200);
+  --hf-b: var(--color-bg);
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--gu-line-soft);
+  border-radius: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--hf-a) 0 var(--hf-step),
+    var(--hf-b) var(--hf-step) calc(var(--hf-step) * 2)
+  );
+}
+
+.onDark {
+  --hf-a: var(--gu-chrome-raised);
+  --hf-b: var(--gu-chrome-deep);
+
+  border-color: var(--gu-blueprint-700);
+}
+
+.note {
+  padding: 3px 8px;
+  border: 1px dashed var(--gu-line);
+  font-family: var(--font-body);
+  font-size: 10px;
+  color: var(--gu-muted);
+  background: color-mix(in srgb, var(--color-bg) 70%, transparent);
+}
+
+.onDark .note {
+  border-color: var(--gu-ink-40);
+  color: var(--gu-ink-55);
+  background: transparent;
+}

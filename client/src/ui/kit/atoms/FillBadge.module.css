@@ -1,0 +1,25 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  box-sizing: border-box;
+  background: var(--color-accent);
+  color: var(--color-bg);
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  line-height: 1.5;
+  padding: 1px 6px;
+  border-radius: 0;
+  text-transform: none;
+}
+
+.uppercase {
+  text-transform: uppercase;
+}
+
+.arrow {
+  font-size: 9px;
+  line-height: 1;
+}

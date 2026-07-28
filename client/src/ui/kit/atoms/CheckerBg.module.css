@@ -1,0 +1,21 @@
+.root {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background-image: repeating-conic-gradient(var(--color-neutral-200) 0 25%, var(--gu-paper) 0 50%);
+  background-position: 0 0;
+}
+
+.framed {
+  border-color: var(--color-neutral-400);
+}
+
+.glyph {
+  font-size: 34px;
+  line-height: 1;
+  color: var(--color-accent-700);
+}

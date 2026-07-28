@@ -1,0 +1,10 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: max-content;
+}
+
+.collapsedHint {
+  padding: 0 var(--space-2);
+}

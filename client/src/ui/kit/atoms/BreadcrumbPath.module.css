@@ -1,0 +1,37 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  font-family: var(--font-body);
+  line-height: 1.5;
+}
+
+.separator {
+  color: var(--gu-line);
+}
+
+.segment {
+  color: var(--gu-muted);
+  font-weight: 400;
+}
+
+.current {
+  color: var(--color-accent-700);
+}
+
+.bold {
+  font-weight: 700;
+}
+
+.onDark .separator {
+  color: var(--gu-ink-40);
+}
+
+.onDark .segment {
+  color: var(--gu-ink-60);
+}
+
+.onDark .current {
+  color: var(--gu-signal-run);
+}

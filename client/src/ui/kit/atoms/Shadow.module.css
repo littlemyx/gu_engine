@@ -1,0 +1,30 @@
+.root {
+  display: inline-flex;
+  border-radius: 0;
+}
+
+.sm {
+  box-shadow: var(--shadow-sm);
+}
+
+.md {
+  box-shadow: var(--shadow-md);
+}
+
+.lg {
+  box-shadow: var(--shadow-lg);
+}
+
+.placeholder {
+  width: 132px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--gu-paper);
+  border: 1px solid var(--gu-line-soft);
+  font-family: var(--gu-mono);
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  color: var(--gu-muted);
+}

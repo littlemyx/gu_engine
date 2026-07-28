@@ -1,0 +1,70 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  color: inherit;
+  user-select: none;
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive:disabled {
+  cursor: not-allowed;
+}
+
+.interactive:enabled:hover .dial {
+  border-color: var(--color-accent);
+}
+
+.interactive:enabled:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.disabled {
+  opacity: 0.55;
+}
+
+.dial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  box-sizing: border-box;
+  border: 1px solid var(--color-neutral-500);
+  border-radius: 50%;
+  flex: none;
+}
+
+.checked .dial {
+  border-color: var(--color-accent);
+}
+
+.disabled .dial {
+  border-color: var(--color-neutral-500);
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent-700);
+}
+
+.disabled .dot {
+  background: var(--color-neutral-500);
+}
+
+.label {
+  font-size: 11.5px;
+  color: var(--color-text);
+}

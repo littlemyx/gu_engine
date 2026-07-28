@@ -1,0 +1,112 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.separator {
+  display: block;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--gu-line-faint);
+}
+
+.onDark .separator {
+  background: var(--gu-hairline);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  line-height: 1.5;
+  padding: 4px 10px;
+}
+
+.item:hover:not(.disabled) {
+  background: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.item:active:not(.disabled) {
+  background: color-mix(in srgb, var(--color-text) 14%, transparent);
+}
+
+.item:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.hot {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.mark {
+  width: 12px;
+  flex: none;
+  font-size: 10px;
+  color: var(--color-accent-700);
+}
+
+.label {
+  flex: 1 1 auto;
+}
+
+.price {
+  flex: none;
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  color: var(--color-accent-700);
+}
+
+.hotkey {
+  flex: none;
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  color: var(--gu-muted);
+}
+
+/* Тёмный хром — тон строится из чернил и сигналов, а не из светлых рамп. */
+
+.onDark .item {
+  color: var(--gu-ink-90);
+}
+
+.onDark .item:hover:not(.disabled) {
+  background: var(--gu-hover-bg);
+}
+
+.onDark .item:active:not(.disabled) {
+  background: var(--gu-selected-bg);
+}
+
+.onDark .hot {
+  background: var(--gu-selected-bg);
+}
+
+.onDark .mark {
+  color: var(--gu-signal-run);
+}
+
+.onDark .price {
+  color: var(--gu-signal-run);
+}
+
+.onDark .hotkey {
+  color: var(--gu-ink-45);
+}

@@ -1,0 +1,27 @@
+.root {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-1) var(--space-4);
+  background: var(--gu-chrome);
+  border-top: 1px solid var(--gu-hairline-edge);
+  font-family: var(--font-body);
+}
+
+.item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  white-space: nowrap;
+}
+
+.item:first-child {
+  padding-left: 0;
+}
+
+.right {
+  margin-left: auto;
+  white-space: nowrap;
+}

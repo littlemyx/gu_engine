@@ -1,0 +1,22 @@
+.root {
+  display: inline-block;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+
+/* Точного токена под жёлтый цвет макета нет — берём ближайший сигнал предупреждения. */
+.yellow {
+  background: var(--gu-signal-warn);
+}
+
+.accent {
+  background: var(--color-accent);
+}
+
+.error {
+  background: var(--gu-signal-fail-text);
+}
+
+.error.onDark {
+  background: var(--gu-signal-fail);
+}

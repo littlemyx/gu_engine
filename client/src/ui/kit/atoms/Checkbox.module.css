@@ -1,0 +1,94 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: var(--font-body);
+  color: var(--color-text);
+  user-select: none;
+}
+
+.interactive {
+  cursor: pointer;
+}
+
+.interactive:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  box-sizing: border-box;
+  flex: none;
+  border: 1px solid var(--color-neutral-500);
+  border-radius: 0;
+  background: transparent;
+}
+
+.root.interactive:hover:not(.disabled) .box {
+  border-color: var(--color-accent);
+}
+
+.root.checked .box {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+}
+
+.root.disabled .box {
+  border-style: dashed;
+  border-color: var(--color-neutral-500);
+}
+
+.root.disabled.checked .box {
+  background: var(--color-neutral-400);
+}
+
+.mark {
+  font-size: 9px;
+  line-height: 1;
+  color: var(--gu-paper);
+}
+
+.label {
+  font-size: 11.5px;
+  color: var(--color-text);
+}
+
+/* На тёмном хроме контур и подпись строятся из чернил, а не из светлых рамп. */
+.root.onDark .box {
+  border-color: var(--gu-hairline-mark);
+}
+
+.root.onDark.interactive:hover:not(.disabled) .box {
+  border-color: var(--color-accent-400);
+}
+
+.root.onDark.checked .box {
+  border-color: var(--color-accent-400);
+  background: var(--color-accent-400);
+}
+
+.root.onDark.checked .mark {
+  color: var(--gu-chrome);
+}
+
+.root.onDark.disabled .box {
+  border-color: var(--gu-hairline-mark);
+}
+
+.root.onDark .label {
+  color: var(--gu-ink-85);
+}
