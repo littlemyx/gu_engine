@@ -32,3 +32,25 @@
 .text.waiting {
   color: var(--gu-ink-55);
 }
+
+/*
+ * Светлая раскладка. Рампа --gu-ink-* — это «чернила на тёмном»: почти белые
+ * с разной прозрачностью. На светлом канвасе вьюпорта строка выходила белым
+ * по белому, поэтому здесь берутся чернила и сигнал светлой области теми же
+ * ступенями: 85 → основной текст, 55 → приглушённый, 40 → линия.
+ */
+.onLight .done {
+  color: var(--color-text);
+}
+
+.onLight .problem {
+  color: var(--gu-signal-fail-text);
+}
+
+.onLight .glyph.waiting {
+  color: var(--gu-line);
+}
+
+.onLight .text.waiting {
+  color: var(--gu-muted);
+}

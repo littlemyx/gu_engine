@@ -42,6 +42,18 @@ describe('ReadinessRow, дефолт состояния', () => {
   });
 });
 
+describe('ReadinessRow, светлая раскладка', () => {
+  it('по умолчанию рисуется чернилами тёмного хрома', () => {
+    const { container } = render(<ReadinessRow text="сюжет" state="done" />);
+    expect(container.firstElementChild?.className).not.toMatch(/onLight/);
+  });
+
+  it('onDark={false} переводит строку на чернила светлой области', () => {
+    const { container } = render(<ReadinessRow text="сюжет" state="done" onDark={false} />);
+    expect(container.firstElementChild?.className).toMatch(/onLight/);
+  });
+});
+
 describe('ReadinessRow, некликабельность', () => {
   it('не рендерит кнопку — строка чек-листа не интерактивна', () => {
     render(<ReadinessRow text="аудио" state="done" />);

@@ -106,6 +106,18 @@
   padding: var(--space-6);
 }
 
+/*
+ * Шапка и «пусто» — одни и те же классы в тёмных панелях и в зонах, но зоны
+ * стоят на светлом канвасе вьюпорта, где рампа --gu-ink-* (почти белая, она
+ * нарисована под тёмный хром) не читается. Тёмные плашки внутри зон
+ * (QaZone .detail, ReleaseZone .detail, PreviewZone .frame) этих классов не
+ * содержат — они несут молекулы со своими цветами.
+ */
+.zoneBody .kicker,
+.zoneBody .empty {
+  color: var(--gu-muted);
+}
+
 .stub {
   border: 1px dashed var(--gu-line);
   padding: var(--space-6);

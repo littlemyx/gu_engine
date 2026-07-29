@@ -53,6 +53,7 @@ const ZoneView = ({ zone, pipeline, brief }: ZoneViewProps) => {
               key={artifact.key}
               text={artifact.item ? `${artifact.stage} · ${artifact.item}` : artifact.stage}
               state={artifact.freshness === 'fresh' ? 'done' : artifact.freshness === 'stale' ? 'problem' : 'waiting'}
+              onDark={false}
             />
           ))}
         </div>
