@@ -100,6 +100,10 @@ export const useStudioProjectStore = create<StudioProjectState>()(
     {
       name: storageKey('gu-studio-project'),
       version: STUDIO_STORE_VERSION,
+      // Версия поднята вместе с кастинг-столом. Без migrate zustand просто
+      // выбрасывает состояние старой версии — и проект, сохранённый до
+      // кастинга, терял бы выбор веток и ступень «Сценария» на пустом месте.
+      migrate: persisted => ({ ...EMPTY_STUDIO_PROJECT, ...(persisted as Partial<StudioProjectData>) }),
       partialize: s => ({
         branchAssignment: s.branchAssignment,
         prefabProvenance: s.prefabProvenance,
