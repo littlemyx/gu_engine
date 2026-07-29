@@ -7,7 +7,7 @@ import { useNarrativeStore } from '@/narrative/narrativeStore';
 import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
 import { useStoryQA } from '@/narrative/useStoryQA';
 import { buildCallSheet } from '@/processes/callSheet';
-import { useEventBus } from '@/processes/eventBus';
+import { runCommand, useEventBus } from '@/processes/eventBus';
 import { eventText } from '@/processes/events';
 import { phaseLabel } from '@/processes/runMachine';
 import BottomTabs from '@/ui/kit/molecules/BottomTabs';
@@ -23,6 +23,7 @@ import { deriveStructure } from '../derive/structureModel';
 import ModalHost from '../modals/ModalHost';
 import PrefabsPanel from '../panels/PrefabsPanel';
 import { useProjectFile } from '../projectFile/useProjectFile';
+import PanelResizer from '../shell/PanelResizer';
 import { useStudioStore } from '../studioStore';
 import { useStudioActions } from '../useStudioActions';
 import ArtifactInspector from './ArtifactInspector';
@@ -97,15 +98,14 @@ const StudioNext = () => {
   const railWidth = useStudioStore(s => s.railWidth);
   const inspectorWidth = useStudioStore(s => s.inspectorWidth);
   const dockHeight = useStudioStore(s => s.dockHeight);
+  const setPanelSize = useStudioStore(s => s.setPanelSize);
+  const resetPanelSizes = useStudioStore(s => s.resetPanelSizes);
   const openModal = useStudioStore(s => s.openModal);
 
   const [zoneListOpen, setZoneListOpen] = useState(false);
   // Выделение артефакта живёт в сессии: после перезагрузки разумнее открыть
   // чистый инспектор, чем ссылаться на позицию, которой уже нет.
   const [picked, setPicked] = useState<ArtifactRow | null>(null);
-  // Колл-щит показывается ДО запуска: смету подписывают, а не узнают из
-  // бегущей консоли, когда деньги уже потрачены.
-  const [callSheetOpen, setCallSheetOpen] = useState(false);
   // Однострочное уведомление в статус-баре: что сделал последний поступок.
   // Файловые операции сыплют сюда прогресс — без этого «Сохранить» выглядит
   // как ничего не сделавший пункт меню.
@@ -123,13 +123,22 @@ const StudioNext = () => {
   const { exportGate, exportBundle, archiveDraft } = useStudioActions();
 
   // Прогон идёт — источник истины тот же, что у старого шелла: фаза
-  // календарного прогона, а не событие ленты.
+  // календарного прогона, а не событие ленты. Прогон переживает перезагрузку
+  // (initNarrative дожимает его мимо этого экрана), машина событий — нет.
   const running = calendarGen.phase !== 'idle' && calendarGen.phase !== 'done' && !calendarGen.error;
+  // Колл-щит показывается ДО запуска: смету подписывают, а не узнают из бегущей
+  // консоли, когда деньги уже потрачены. Открыт ли он — состояние машины
+  // прогона, а не отдельный флаг: иначе «идёт ли прогон» опять считалось бы
+  // двумя способами.
+  const callSheetOpen = run.phase === 'callsheet';
 
   const pipeline = useMemo(() => derivePipeline({ index, owns }), [index, owns]);
   // Смета на кнопке — тот же расчёт, что покажет колл-щит перед запуском:
   // цифра в тулбаре и цифра в подписи обязаны совпадать до копейки.
   const sheet = useMemo(() => buildCallSheet({ index, owns, cost: STAGE_COST }), [index, owns]);
+  // План машины — позиции сметы, а не девять стадий пайплайна: прогресс-полоса
+  // считает то же, что автор подписал.
+  const openCallSheet = () => runCommand({ type: 'plan', total: sheet.generate.length });
   const structure = useMemo(
     () =>
       deriveStructure({
@@ -171,8 +180,11 @@ const StudioNext = () => {
     onImportBrief: () => openModal({ kind: 'importBrief' }),
     onDiscardDraft: () => openModal({ kind: 'resetDraft' }),
     onExport: () => (exportGate.ok ? exportBundle() : openModal({ kind: 'exportBlocked' })),
-    onRun: () => setCallSheetOpen(true),
-    onStop: requestStopCalendarRun,
+    onRun: openCallSheet,
+    onStop: () => {
+      requestStopCalendarRun();
+      runCommand({ type: 'stop' });
+    },
     onCheckStory: () => {
       setZone('qa');
       void qa.run(brief);
@@ -226,7 +238,7 @@ const StudioNext = () => {
           previewActive={zone === 'preview'}
           disabled={running}
           loading={running}
-          onRun={() => setCallSheetOpen(true)}
+          onRun={openCallSheet}
           onPreview={() => setZone('preview')}
         />
       </div>
@@ -243,9 +255,28 @@ const StudioNext = () => {
           </div>
         </aside>
 
+        <PanelResizer
+          axis="x"
+          size={railWidth}
+          label="Ширина боковой панели"
+          style={{ left: railWidth }}
+          onResize={value => setPanelSize('rail', value)}
+          onReset={resetPanelSizes}
+        />
+
         <main className={styles.viewport}>
           <ZoneView zone={current} pipeline={pipeline} brief={brief} />
         </main>
+
+        <PanelResizer
+          axis="x"
+          size={inspectorWidth}
+          invert
+          label="Ширина инспектора"
+          style={{ right: inspectorWidth }}
+          onResize={value => setPanelSize('inspector', value)}
+          onReset={resetPanelSizes}
+        />
 
         <aside className={styles.inspector}>
           {picked ? (
@@ -260,6 +291,17 @@ const StudioNext = () => {
       </div>
 
       <div className={styles.dock} style={{ height: dockOpen ? dockHeight : 'auto' }}>
+        {dockOpen && (
+          <PanelResizer
+            axis="y"
+            size={dockHeight}
+            invert
+            label="Высота дока"
+            style={{ top: 0 }}
+            onResize={value => setPanelSize('dock', value)}
+            onReset={resetPanelSizes}
+          />
+        )}
         <BottomTabs
           tabs={BOTTOM_TABS.map(t => ({ label: t.label }))}
           active={BOTTOM_TABS.findIndex(t => t.id === bottomTab)}
@@ -283,12 +325,12 @@ const StudioNext = () => {
           <CallSheetPanel
             callSheet={sheet}
             signing={running}
-            onCancel={() => setCallSheetOpen(false)}
+            onCancel={() => runCommand({ type: 'cancel' })}
             onSign={() => {
-              setCallSheetOpen(false);
               // Подпись и есть запуск: смету подписывают, чтобы прогон пошёл, а
               // не чтобы переключить экран. Продолжение черновика, не force —
               // ведомость уже решила, что считать устаревшим.
+              runCommand({ type: 'sign' });
               setZone(pipeline.nextIncomplete ?? zone);
               void calendarGen.run(brief);
             }}

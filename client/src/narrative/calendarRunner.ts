@@ -52,9 +52,10 @@ import {
 } from './dialogueUnit';
 import { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
 import { storageKey } from '@/project/projectScope';
-import { addRunCost, formatCost, resetRunCost, useRunCost } from './costModel';
+import { addRunCost, formatCost, resetRunCost, STAGE_COST_EST, useRunCost } from './costModel';
 import { recordRunCommit } from '@/artifacts/recordRun';
 import { emitPipelineEvent } from '@/processes/eventBus';
+import { emitRunEvent, type RunEventExtra } from './runEvents';
 
 import { appendRunLog } from './runLog';
 import { validateCalendar } from './validateCalendar';
@@ -326,6 +327,14 @@ export async function startCalendarRun(brief: Brief, options?: BulkCalendarRunOp
     store().beginCalendarRun(resumed);
     // Продолжение доплачивает за остаток, новый прогон считает деньги с нуля.
     if (!continued) resetRunCost();
+    // Первое событие прогона: им машина узнаёт имя прогона (runId рождается
+    // здесь, а подпись под сметой ставилась раньше — см. runMachine.applyEvent).
+    emitPipelineEvent({
+      runId: resumed.runId,
+      phase: 'plan',
+      stage: 'bundle',
+      message: continued ? `продолжаем прогон с стадии ${resumed.phase}` : 'старт прогона',
+    });
     appendRunLog(
       'run',
       continued
@@ -355,6 +364,31 @@ async function runPipeline(): Promise<void> {
   const brief = run0.brief;
   const force = run0.force;
   const seedIssues = run0.seedIssues;
+  const runId = run0.runId;
+
+  /** Сколько вызовов транспорта ушло на элемент — «начато» звучит один раз. */
+  const attemptsSeen = new Map<string, number>();
+  /**
+   * Позиции, о судьбе которых уже доложено. Петля «хребет ⇄ планировщик»
+   * заходит на spine до трёх раз, и без этого одна позиция считалась бы
+   * прогресс-полосой несколько раз.
+   */
+  const reported = new Set<string>();
+
+  const emitRun = (
+    phase: 'start' | 'attempt' | 'fail',
+    bulk: BulkCalendarPhase,
+    item: string | null,
+    extra?: RunEventExtra,
+  ) => emitRunEvent(runId, phase, bulk, item, extra);
+
+  /** Позиция закрыта (сделана или пропущена) — ровно один раз за прогон. */
+  const report = (phase: 'done' | 'skip', bulk: BulkCalendarPhase, item: string | null, extra: RunEventExtra = {}) => {
+    const key = `${bulk}/${item ?? ''}/${extra.artifactKey ?? ''}`;
+    if (reported.has(key)) return;
+    reported.add(key);
+    emitRunEvent(runId, phase, bulk, item, extra);
+  };
 
   /** Актуальное состояние прогона (draft/dirtyStages меняются по ходу). */
   const runNow = (): CalendarRunState => {
@@ -389,6 +423,7 @@ async function runPipeline(): Promise<void> {
 
   const fail = (phase: BulkCalendarPhase, message: string, stageIssues: string[] = []) => {
     appendRunLog('error', `✗ ${phase} · ${message} · черновик сохранён`);
+    emitRun('fail', phase, null, { reason: message });
     store().failCalendarRun(phase, message, [...flattenSoftIssues(runNow().softIssues), ...stageIssues]);
   };
 
@@ -405,10 +440,28 @@ async function runPipeline(): Promise<void> {
     // Останов проверяется перед каждым вызовом: уже оплаченный ответ дожидаемся.
     throwIfStopped();
     const label = itemKey ? `${phase} · ${itemKey}` : phase;
+    const seenKey = `${phase}/${itemKey ?? ''}`;
+    // «Начато» — про взятие позиции в работу, а не про удачный вызов: стадия,
+    // у которой не поднялся даже транспорт, обязана быть видна в ленте.
+    if (!attemptsSeen.has(seenKey)) {
+      attemptsSeen.set(seenKey, 0);
+      emitRun('start', phase, itemKey);
+    }
+    /** Номер вызова транспорта по этой позиции. */
+    const bumpAttempt = (): number => {
+      const n = (attemptsSeen.get(seenKey) ?? 0) + 1;
+      attemptsSeen.set(seenKey, n);
+      return n;
+    };
     const pending = runNow().pendingBatch;
     if (pending && matchPendingBatch(pending, phase, itemKey)) {
       try {
         appendRunLog('pending', `${label} · переподключение к батчу`);
+        // Реаттач денег не стоит: за этот батч заплатила прошлая жизнь вкладки.
+        emitRun('attempt', phase, itemKey, {
+          attempt: bumpAttempt(),
+          message: `${label} · переподключение к батчу`,
+        });
         const result = await pollBatchResult(pending.batchId, parse);
         store().patchCalendarRun({ pendingBatch: null });
         appendRunLog('ok', `${label} ✓`);
@@ -422,6 +475,7 @@ async function runPipeline(): Promise<void> {
     }
     const { batchId } = await start();
     addRunCost(phase);
+    emitRun('attempt', phase, itemKey, { attempt: bumpAttempt(), cost: STAGE_COST_EST[phase] ?? 0 });
     store().patchCalendarRun({ phase, pendingBatch: { phase, itemKey, batchId } });
     try {
       const result = await pollBatchResult(batchId, parse);
@@ -465,6 +519,7 @@ async function runPipeline(): Promise<void> {
 
     if (cachedUsable && cachedErrors.length === 0) {
       putDraft({ castPlan: cached });
+      report('skip', 'cast', null, { reason: 'кэш свеж' });
     } else {
       const basePayload = buildCastPlanRequestPayload(brief);
       let best: { plan: CastPlan; errorCount: number; errors: string[]; feedback: string[] } | null =
@@ -509,6 +564,7 @@ async function runPipeline(): Promise<void> {
       }
       if (best && best.errorCount === 0) {
         putDraft({ castPlan: best.plan });
+        report('done', 'cast', null);
       } else {
         // Деградация: стаб-агенды держат пайплайн живым, автор видит причину.
         const reason = best
@@ -518,6 +574,7 @@ async function runPipeline(): Promise<void> {
           : String(lastAttemptError ?? 'нет ответа');
         putSoftIssues('cast', [`[warning] cast: LLM-стадия не дала валидного плана (${reason}) — использован стаб`]);
         putDraft({ castPlan: buildStubCastPlan(brief) });
+        report('done', 'cast', null, { message: 'каст · стаб-агенды (LLM не дала валидного плана)' });
       }
       markRegenerated('cast');
     }
@@ -547,6 +604,11 @@ async function runPipeline(): Promise<void> {
 
     if (cached && cachedErrors.length === 0) {
       putDraft({ worldModel: cached.world, calendar: cached.calendar, tagMap: cached.tagMap });
+      // Стадия одна, а артефакта два — в учёте мир и календарь разведены, и в
+      // ленте они обязаны быть двумя строками (каскад каста сносит календарь,
+      // но не мир).
+      report('skip', 'world_calendar', null, { reason: 'кэш свеж' });
+      report('skip', 'world_calendar', null, { artifactKey: 'world/', reason: 'кэш свеж' });
     } else {
       try {
         const basePayload = buildWorldCalendarRequestPayload(brief, castPlan);
@@ -588,6 +650,8 @@ async function runPipeline(): Promise<void> {
         }
         if (best && best.errorCount === 0) {
           putDraft({ worldModel: best.artifact.world, calendar: best.artifact.calendar, tagMap: best.artifact.tagMap });
+          report('done', 'world_calendar', null);
+          report('done', 'world_calendar', null, { artifactKey: 'world/' });
           markRegenerated('world_calendar');
         } else if (!best && lastAttemptError) {
           throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
@@ -639,6 +703,7 @@ async function runPipeline(): Promise<void> {
 
     if (cachedSpine && cachedSpineFeedback.length === 0) {
       putDraft({ spine: cachedSpine });
+      report('skip', 'spine', null, { reason: 'кэш свеж' });
       return cachedSpine;
     }
     try {
@@ -680,6 +745,7 @@ async function runPipeline(): Promise<void> {
       }
       if (best && best.errorCount === 0) {
         putDraft({ spine: best.plan });
+        report('done', 'spine', null);
         markRegenerated('spine');
         return best.plan;
       }
@@ -707,6 +773,7 @@ async function runPipeline(): Promise<void> {
     const { value: cachedSchedule } = scalarCache('schedule');
     if (cachedSchedule && scheduleErrorsFor(cachedSchedule, spineLoop).length === 0) {
       putDraft({ schedule: cachedSchedule });
+      report('skip', 'schedule', null, { reason: 'кэш свеж' });
       scheduleLoop = cachedSchedule;
       break;
     }
@@ -714,6 +781,9 @@ async function runPipeline(): Promise<void> {
     const errors = scheduleErrorsFor(built, spineLoop);
     if (errors.length === 0) {
       putDraft({ schedule: built });
+      // Планировщик детерминирован и денег не стоит — событие о нём всё равно
+      // нужно: в ленте это позиция плана, а не служебный шаг.
+      report('done', 'schedule', null);
       markRegenerated('schedule');
       scheduleLoop = built;
       break;
@@ -768,6 +838,7 @@ async function runPipeline(): Promise<void> {
       if (cached && cachedErrors.length === 0) {
         acceptedBeats[anchor.id] = cached;
         putDraft({ spineBeatProse: { [anchor.id]: cached } });
+        report('skip', 'beat_prose', anchor.id, { reason: 'кэш свеж' });
         continue;
       }
 
@@ -804,6 +875,7 @@ async function runPipeline(): Promise<void> {
         if (best && best.errorCount === 0) {
           acceptedBeats[anchor.id] = best.beat;
           putDraft({ spineBeatProse: { [anchor.id]: best.beat } });
+          report('done', 'beat_prose', anchor.id);
         } else if (best) {
           stageIssues.push(`${anchor.id}: проза бита не прошла валидацию: ${best.errors.slice(0, 2).join('; ')}`);
         } else {
@@ -830,6 +902,7 @@ async function runPipeline(): Promise<void> {
     const cachedAnchors = scalarCache('anchorNarrations').value;
     if (cachedAnchors && Object.keys(cachedAnchors).length > 0) {
       putDraft({ anchorNarrations: cachedAnchors });
+      report('skip', 'anchor_transitions', null, { reason: 'кэш свеж' });
     } else {
       try {
         const dayparts = calendar.dayparts;
@@ -848,8 +921,14 @@ async function runPipeline(): Promise<void> {
           raw => parseAnchorTransitions(raw, dayparts.length),
         );
         putDraft({ anchorNarrations: narrations });
+        report('done', 'anchor_transitions', null);
       } catch (e) {
         rethrowIfStopped(e);
+        // Стадия не блокирующая: у компилятора есть статичные подписи. В ленте
+        // это пропуск с причиной, а не сбой прогона.
+        report('skip', 'anchor_transitions', null, {
+          reason: `не сгенерированы (${e instanceof Error ? e.message : String(e)}) — статичные подписи`,
+        });
         putSoftIssues('anchor_transitions', [
           `[warning] переходы частей дня не сгенерированы (${
             e instanceof Error ? e.message : String(e)
@@ -902,6 +981,9 @@ async function runPipeline(): Promise<void> {
       if (cachedPool.length > 0 && cachedPoolFeedback.length === 0) {
         finalUnits.push(...cachedPool);
         putDraft({ eventUnits: Object.fromEntries(cachedPool.map(u => [u.id, u])) });
+        // Адреса «позиция = один LI» в учёте нет (там ключ — юнит), поэтому
+        // событие едет без artifactKey, но с человеческой подписью.
+        report('skip', 'event_pool', li.id, { message: `пропущено: пул ${li.id} — кэш свеж` });
         continue;
       }
 
@@ -960,6 +1042,7 @@ async function runPipeline(): Promise<void> {
         if (best && best.errorCount === 0) {
           finalUnits.push(...best.units);
           putDraft({ eventUnits: Object.fromEntries(best.units.map(u => [u.id, u])) });
+          report('done', 'event_pool', li.id, { message: `готово: пул ${li.id} · юнитов ${best.units.length}` });
         } else if (best) {
           stageIssues.push(`${li.id}: пул не прошёл валидацию: ${best.errors.slice(0, 3).join('; ')}`);
         } else {
@@ -1090,9 +1173,12 @@ async function runPipeline(): Promise<void> {
         });
       if (cachedComplete) {
         putDraft({ unitProse: { [unitKey]: cached } });
+        report('skip', 'dialogue_units', unitKey, { reason: 'кэш свеж' });
         continue;
       }
 
+      // Позиция плана — юнит целиком, а не брекет: в учёте у него один адрес.
+      const issuesBefore = stageIssues.length;
       const units: DialogueUnit[] = [];
       for (const bracket of BRACKETS) {
         // Холодная проза для ступени, вход на которую требует тепла выше
@@ -1246,6 +1332,7 @@ async function runPipeline(): Promise<void> {
           stageIssues.push(`${unitKey}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
+      if (stageIssues.length === issuesBefore) report('done', 'dialogue_units', unitKey);
     }
 
     if (stageIssues.length > 0) {
@@ -1281,6 +1368,7 @@ async function runPipeline(): Promise<void> {
       const cached = mapCache('endings').value[key];
       if (cached && endingErrors(cached, task.kind).length === 0) {
         putDraft({ endings: { [key]: cached } });
+        report('skip', 'ending_prose', key, { reason: 'кэш свеж' });
         continue;
       }
 
@@ -1321,6 +1409,7 @@ async function runPipeline(): Promise<void> {
         if (best && best.errorCount === 0) {
           // liId генератора может отсутствовать/врать — фиксируем свой.
           putDraft({ endings: { [key]: { ...best.ending, kind: task.kind, liId: task.liId } } });
+          report('done', 'ending_prose', key);
         } else if (best) {
           stageIssues.push(`${key}: эпилог не прошёл валидацию: ${best.errors.slice(0, 2).join('; ')}`);
         } else {

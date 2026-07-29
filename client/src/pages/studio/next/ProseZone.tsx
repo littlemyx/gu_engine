@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 
+import { requestStopCalendarRun } from '@/narrative/calendarRunner';
 import { useEventBus } from '@/processes/eventBus';
 import { eventText, eventTone } from '@/processes/events';
 import OutlineButton from '@/ui/kit/atoms/OutlineButton';
@@ -79,7 +80,17 @@ const ProseZone = () => {
             onAction={() => command({ type: 'resume' })}
           />
           <div className={own.checkpointStop}>
-            <OutlineButton label="Остановить" tone="danger" size="compact" onClick={() => command({ type: 'stop' })} />
+            {/* «Стоп» обязан дойти до самого раннера, а не только до машины:
+                иначе полоса замирает, а генерация продолжает тратить деньги. */}
+            <OutlineButton
+              label="Остановить"
+              tone="danger"
+              size="compact"
+              onClick={() => {
+                requestStopCalendarRun();
+                command({ type: 'stop' });
+              }}
+            />
           </div>
         </div>
       )}

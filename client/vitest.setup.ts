@@ -40,3 +40,20 @@ class MemoryStorage implements Storage {
 if (typeof globalThis.localStorage === 'undefined') {
   Object.defineProperty(globalThis, 'localStorage', { value: new MemoryStorage(), writable: false });
 }
+
+/**
+ * Web Locks в тестах — вредны, и убрать их надо здесь же, до первого импорта.
+ *
+ * Замок календарного прогона существует ради одной вещи: чтобы за один прогон
+ * платила одна вкладка браузера. Node ≥22 даёт `navigator.locks` по-настоящему,
+ * а vitest крутит файлы тестов в воркерах ОДНОГО процесса — значит два файла,
+ * трогающих прогон, делят замок как две вкладки. Второй получает «занято»,
+ * молча становится наблюдателем и не делает ничего: тест падает на пустом
+ * состоянии, причём только в общем прогоне сьюта, а поодиночке — зелёный.
+ *
+ * Каждый файл тестов — это отдельная «вкладка», и мешать им нельзя. Раннер без
+ * Web Locks деградирует к внутрифайловому module-guard, а его хватает.
+ */
+if (typeof globalThis.navigator !== 'undefined' && 'locks' in globalThis.navigator) {
+  Object.defineProperty(globalThis.navigator, 'locks', { value: undefined, configurable: true });
+}

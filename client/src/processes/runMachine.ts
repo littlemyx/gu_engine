@@ -32,7 +32,12 @@ export interface RunState {
 export const IDLE: RunState = { phase: 'idle', runId: null, total: 0, completed: 0, spent: 0 };
 
 export type RunCommand =
-  | { type: 'plan'; runId: string; total: number }
+  /**
+   * runId необязателен: он рождается внутри раннера при старте, и шелл,
+   * открывающий смету, его ещё не знает. Прогон назовёт себя сам — первым же
+   * событием (см. applyEvent).
+   */
+  | { type: 'plan'; runId?: string | null; total: number }
   | { type: 'sign' }
   | { type: 'cancel' }
   | { type: 'pause' }
@@ -55,7 +60,7 @@ export function applyCommand(state: RunState, command: RunCommand): RunState {
     case 'plan':
       // Колл-щит показывают только из покоя: посреди прогона смету не пересобрать.
       if (isActive(state)) return state;
-      return { phase: 'callsheet', runId: command.runId, total: command.total, completed: 0, spent: 0 };
+      return { phase: 'callsheet', runId: command.runId ?? null, total: command.total, completed: 0, spent: 0 };
 
     case 'sign':
       return state.phase === 'callsheet' ? { ...state, phase: 'running' } : state;
@@ -83,34 +88,42 @@ export function applyCommand(state: RunState, command: RunCommand): RunState {
 }
 
 export function applyEvent(state: RunState, event: PipelineEvent): RunState {
+  // События двигают только начатый прогон. Иначе одинокое commit-событие
+  // (например, от прогона, дожатого после перезагрузки мимо этого экрана)
+  // перебрасывало бы машину из покоя сразу в «готово».
+  if (state.phase !== 'running' && state.phase !== 'paused' && state.phase !== 'committing') return state;
   // События чужого прогона не наши: вторая вкладка не должна двигать наш счётчик.
   if (state.runId !== null && event.runId !== state.runId) return state;
+  // Подпись ставится до старта раннера, поэтому имени прогона у машины ещё нет:
+  // первое же его событие называет прогон, дальше работает проверка выше.
+  const own: RunState = state.runId === null ? { ...state, runId: event.runId } : state;
 
   switch (event.phase) {
     case 'done':
-    case 'skip':
-      return {
-        ...state,
-        completed: Math.min(state.completed + 1, state.total),
-        spent: state.spent + (event.cost ?? 0),
-      };
+    case 'skip': {
+      const completed = own.completed + 1;
+      // План растёт по факту, а не клампится. Смета считает только то, что уже
+      // есть в учёте, а битов хребта и диалоговых юнитов до первого прогона не
+      // существует вовсе — клампом полоса врала бы «9/9» на середине работы.
+      return { ...own, completed, total: Math.max(own.total, completed), spent: own.spent + (event.cost ?? 0) };
+    }
 
     case 'attempt':
-      return { ...state, spent: state.spent + (event.cost ?? 0) };
+      return { ...own, spent: own.spent + (event.cost ?? 0) };
 
     case 'fail':
       return {
-        ...state,
+        ...own,
         phase: 'failed',
         reason: event.reason ?? 'сбой генерации',
-        spent: state.spent + (event.cost ?? 0),
+        spent: own.spent + (event.cost ?? 0),
       };
 
     case 'commit':
-      return { ...state, phase: 'done', completed: state.total };
+      return { ...own, phase: 'done', completed: own.total };
 
     default:
-      return state;
+      return own;
   }
 }
 

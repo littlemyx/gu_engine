@@ -70,12 +70,16 @@ describe('счётчики', () => {
     expect(state.completed).toBe(2);
   });
 
-  it('прогресс не переваливает за план', () => {
+  // Смета считает только то, что уже есть в учёте: битов хребта и диалоговых
+  // юнитов до первого прогона не существует вовсе. Клампом полоса врала бы
+  // «1 из 1» на середине работы, поэтому план растёт по факту.
+  it('план растёт, когда позиций оказалось больше, чем в смете', () => {
     let state = running(1);
     state = applyEvent(state, ev('done'));
     state = applyEvent(state, ev('done'));
 
-    expect(state.completed).toBe(1);
+    expect(state.completed).toBe(2);
+    expect(state.total).toBe(2);
   });
 
   it('потраченное копится по попыткам, а не по позициям', () => {
@@ -98,6 +102,41 @@ describe('счётчики', () => {
     const alien = stampEvent({ runId: 'r2', phase: 'done', stage: 'spine' } as never);
 
     expect(applyEvent(state, alien)).toBe(state);
+  });
+});
+
+describe('имя прогона', () => {
+  // Подпись под сметой ставится ДО старта раннера, а runId рождается внутри
+  // него — назвать прогон заранее шелл не может.
+  const anonymous = (): RunState => applyCommand(applyCommand(IDLE, { type: 'plan', total: 2 }), { type: 'sign' });
+
+  it('первое событие называет безымянный прогон', () => {
+    const state = applyEvent(anonymous(), ev('done'));
+
+    expect(state.runId).toBe('r1');
+    expect(state.completed).toBe(1);
+  });
+
+  it('назвавшись, прогон перестаёт слушать чужие события', () => {
+    const named = applyEvent(anonymous(), ev('done'));
+    const alien = stampEvent({ runId: 'r2', phase: 'done', stage: 'spine' } as never);
+
+    expect(applyEvent(named, alien)).toBe(named);
+  });
+});
+
+describe('события вне прогона', () => {
+  // Прогон переживает перезагрузку и дожимается мимо этого экрана: его
+  // терминальное событие не имеет права выдать «готово» машине, которая
+  // ничего не запускала.
+  it('покой не двигается ничем', () => {
+    expect(applyEvent(IDLE, ev('commit'))).toBe(IDLE);
+    expect(applyEvent(IDLE, ev('done'))).toBe(IDLE);
+  });
+
+  it('смета не двигается ничем', () => {
+    const state = planned();
+    expect(applyEvent(state, ev('done'))).toBe(state);
   });
 });
 
