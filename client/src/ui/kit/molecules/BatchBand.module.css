@@ -1,0 +1,35 @@
+.root {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 3px 10px;
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--color-neutral-200);
+}
+
+.accent {
+  color: var(--gu-blueprint-700);
+}
+
+.quiet {
+  color: var(--gu-muted);
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  flex: none;
+  white-space: nowrap;
+}

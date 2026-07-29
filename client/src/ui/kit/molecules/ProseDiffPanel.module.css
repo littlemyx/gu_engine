@@ -1,0 +1,23 @@
+.root {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+}
+
+.root > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.kickerRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  margin-bottom: var(--space-1);
+}
+
+.prose {
+  margin: 0;
+  line-height: 1.65;
+}

@@ -1,0 +1,24 @@
+.root {
+  box-sizing: border-box;
+  border-top: 2px solid var(--color-accent);
+}
+
+.warn {
+  border-top-color: var(--gu-signal-warn);
+}
+
+.row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+}
+
+.label {
+  white-space: nowrap;
+}
+
+.note {
+  flex: 1;
+}

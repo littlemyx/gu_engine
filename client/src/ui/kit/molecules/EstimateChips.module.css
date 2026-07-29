@@ -1,0 +1,86 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  box-sizing: border-box;
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 0;
+  white-space: nowrap;
+  cursor: default;
+}
+
+button.chip {
+  cursor: pointer;
+  font: inherit;
+}
+
+button.chip:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.label {
+  color: inherit;
+}
+
+.selected {
+  border-color: var(--color-accent);
+  background: var(--gu-signal-run-bg);
+  color: var(--gu-blueprint-700);
+  font-weight: 600;
+}
+
+button.selected:hover {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+button.selected:active {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.unselected {
+  border-color: var(--gu-line);
+  background: transparent;
+  color: var(--gu-muted);
+  font-weight: 400;
+}
+
+button.unselected:hover {
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+button.unselected:active {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+/* На тёмном хроме тона строятся из чернил и сигналов, а не из светлых рамп. */
+.onDark.selected {
+  border-color: var(--gu-signal-run);
+  background: color-mix(in srgb, var(--gu-signal-run) 14%, transparent);
+  color: var(--gu-signal-run);
+}
+
+.onDark.unselected {
+  border-color: var(--gu-hairline-strong);
+  background: transparent;
+  color: var(--gu-ink-60);
+}
+
+.onDark.chip.selected:hover {
+  background: color-mix(in srgb, var(--gu-signal-run) 22%, transparent);
+}
+
+.onDark.chip.unselected:hover {
+  background: var(--gu-hover-bg);
+}

@@ -1,0 +1,56 @@
+.root {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: default;
+}
+
+/* Кликабельная карточка рендерится как <button> — снимаем UA-хром кнопки. */
+button.root {
+  appearance: none;
+  -webkit-appearance: none;
+  font: inherit;
+  color: inherit;
+  margin: 0;
+}
+
+.idRow {
+  line-height: 1.4;
+}
+
+.metaRow {
+  margin-top: 1px;
+  line-height: 1.4;
+}
+
+.chosen {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.rejected {
+  border-color: var(--gu-hairline);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable.chosen:hover {
+  background: color-mix(in srgb, var(--color-accent) 24%, transparent);
+}
+
+.clickable.rejected:hover {
+  background: var(--gu-hover-bg);
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

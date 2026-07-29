@@ -1,0 +1,51 @@
+.root {
+  font-family: var(--font-body);
+  max-width: 100%;
+}
+
+.kicker {
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--color-neutral-600);
+  margin-bottom: var(--space-1);
+}
+
+.kickerOnDark {
+  color: var(--gu-ink-55);
+}
+
+.body {
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  line-height: 1.8;
+  color: var(--color-neutral-700);
+}
+
+.row {
+  white-space: pre-wrap;
+}
+
+/* AccentText не подходит: у него захардкожен var(--font-body), а здесь нужен
+   моноширинный акцентный сегмент внутри строки трассы — см. missingAtoms. */
+.accentSeg {
+  font-family: var(--gu-mono);
+  font-weight: 700;
+  color: var(--color-accent-700);
+}
+
+.accentSegOnDark {
+  color: var(--gu-signal-run);
+}
+
+.fallback {
+  border: 1px dashed var(--color-neutral-400);
+  padding: 7px 10px;
+  font-size: 10px;
+  line-height: 1.6;
+  margin-top: var(--space-2);
+}
+
+.fallbackOnDark {
+  border-color: var(--gu-hairline-strong);
+}

@@ -1,0 +1,50 @@
+.quoteBox {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-4) var(--space-6);
+  background: var(--gu-paper);
+  border: 1px solid var(--gu-line);
+  font-family: var(--font-body);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-text);
+}
+
+.editorBox {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--gu-hairline-strong);
+  font-family: var(--gu-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--gu-ink);
+}
+
+.pre {
+  margin-bottom: 2px;
+}
+
+.line {
+  display: block;
+}
+
+.quoteHighlight {
+  background: var(--color-accent-100);
+  font-weight: 400;
+}
+
+.editorHighlight {
+  background: color-mix(in srgb, var(--color-accent) 45%, transparent);
+  font-weight: 400;
+}
+
+.post {
+  margin-top: var(--space-2);
+  font-size: 10px;
+  color: var(--gu-muted);
+}
+
+.postDark {
+  margin-top: 2px;
+}

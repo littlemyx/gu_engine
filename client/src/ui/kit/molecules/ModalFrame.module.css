@@ -1,0 +1,21 @@
+.root {
+  box-sizing: border-box;
+  border: 1px solid var(--gu-blueprint-900);
+  background: var(--color-bg);
+  padding: 14px;
+}
+
+.kickerRow {
+  margin-bottom: 4px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.body {
+  margin-top: 10px;
+}

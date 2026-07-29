@@ -1,0 +1,20 @@
+.root {
+  box-sizing: border-box;
+  display: block;
+  font-family: var(--font-body);
+  font-size: 10px;
+  line-height: 1.45;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 0;
+}
+
+.light {
+  border-color: var(--gu-signal-fail-line);
+  color: var(--gu-signal-fail-line);
+}
+
+.dark {
+  border-color: var(--gu-signal-fail);
+  color: var(--gu-signal-fail);
+}

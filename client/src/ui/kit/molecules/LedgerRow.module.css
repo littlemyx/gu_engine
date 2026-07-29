@@ -1,0 +1,106 @@
+.root {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+  gap: var(--space-2);
+  padding: 5px 12px;
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-text);
+  cursor: default;
+}
+
+button.root {
+  appearance: none;
+  font: inherit;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* «готово» — обычная строка на белом с волосяной рамкой. */
+.ready {
+  background: var(--color-bg);
+  border-color: var(--color-neutral-300);
+}
+
+.clickable.ready:hover {
+  background: color-mix(in srgb, var(--color-neutral-900) 4%, var(--color-bg));
+}
+
+/* «пишется» — активная строка: акцентная рамка вдвое толще светлой. */
+.active {
+  background: var(--color-bg);
+  border: 2px solid var(--color-accent);
+  padding: 4px 11px;
+}
+
+/* «очередь» — прозрачная и приглушённая, ждёт своего такта. */
+.queued {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-neutral-500);
+}
+
+.clickable.queued:hover {
+  background: color-mix(in srgb, var(--color-neutral-900) 3%, transparent);
+}
+
+/* Строка внутри примыкающей группы делит нижнюю рамку с соседкой. */
+.expanded {
+  border-bottom: none;
+}
+
+.name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+}
+
+.active .name {
+  font-weight: 700;
+}
+
+.expanded .name {
+  font-weight: 600;
+}
+
+.col {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.statusLabel {
+  color: var(--color-accent-700);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ready .statusLabel {
+  color: var(--color-text);
+  font-weight: 400;
+}
+
+.price {
+  flex: 0 0 auto;
+  text-align: right;
+}

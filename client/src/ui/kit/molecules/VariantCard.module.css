@@ -1,0 +1,43 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.statusInner {
+  display: inline-flex;
+  align-items: center;
+}
+
+.progress {
+  margin-top: var(--space-2);
+}
+
+@keyframes variantCardBlink {
+  0%,
+  55% {
+    opacity: 1;
+  }
+  56%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.cursor {
+  animation: variantCardBlink 1s steps(1) infinite;
+}

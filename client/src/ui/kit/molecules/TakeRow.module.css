@@ -1,0 +1,95 @@
+.root {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+/* Frame — inline-block по умолчанию; строке тейка нужна полная ширина ряда. */
+.frameSlot {
+  display: block;
+}
+
+.frameSlot > * {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.body {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 5px 8px;
+}
+
+.bodyPlain {
+  background: transparent;
+}
+
+.bodySelected {
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.clickable:hover .bodyPlain {
+  background: color-mix(in srgb, var(--gu-ink) 5%, transparent);
+}
+
+.clickable:hover .bodySelected {
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+}
+
+.num {
+  flex: none;
+  font-family: var(--gu-mono);
+  font-weight: 700;
+  font-size: 10.5px;
+  color: var(--gu-signal-run);
+}
+
+.label {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: var(--gu-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status {
+  flex: none;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.statusAccent {
+  color: var(--gu-signal-run);
+}
+
+.statusNeutral {
+  color: var(--gu-ink-50);
+}
+
+.statusError {
+  color: var(--gu-signal-fail);
+}

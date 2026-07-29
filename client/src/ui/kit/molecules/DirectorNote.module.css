@@ -1,0 +1,13 @@
+.body {
+  box-sizing: border-box;
+  padding: 4px 8px;
+}
+
+/*
+ * TextLabel не различает основной и приглушённый текст (нет muted-варианта),
+ * поэтому подсказку приглушаем локально через opacity — без нового цвета.
+ */
+.hint {
+  display: inline-block;
+  opacity: 0.6;
+}

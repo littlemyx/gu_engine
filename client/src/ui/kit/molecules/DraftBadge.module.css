@@ -1,0 +1,12 @@
+.root {
+  display: inline-block;
+  box-sizing: border-box;
+  padding: 3px 9px;
+  border: 1px dashed var(--color-accent-700);
+  border-radius: 0;
+  white-space: nowrap;
+}
+
+.onDark {
+  border-color: var(--gu-signal-run);
+}

@@ -1,0 +1,17 @@
+.root {
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-4);
+  max-width: 100%;
+}
+
+.note {
+  min-width: 0;
+}
+
+.right {
+  margin-left: auto;
+  flex: none;
+  text-align: right;
+}

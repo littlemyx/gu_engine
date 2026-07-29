@@ -1,0 +1,11 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  width: max-content;
+}
+
+/* Локально переопределяем токен, который читает Heading, вместо правки атома. */
+.priceAccent {
+  --color-text: var(--color-accent-700);
+}
