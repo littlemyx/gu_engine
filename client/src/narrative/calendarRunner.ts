@@ -53,6 +53,9 @@ import {
 import { buildDialogueUnitRequestPayload, buildLiCardSummary } from './buildDialogueUnitRequest';
 import { storageKey } from '@/project/projectScope';
 import { addRunCost, formatCost, resetRunCost, useRunCost } from './costModel';
+import { recordRunCommit } from '@/artifacts/recordRun';
+import { emitPipelineEvent } from '@/processes/eventBus';
+
 import { appendRunLog } from './runLog';
 import { validateCalendar } from './validateCalendar';
 import { validateCastPlan } from './validateCastPlan';
@@ -1335,9 +1338,22 @@ async function runPipeline(): Promise<void> {
     }
   }
 
+  const finishedRunId = runNow().runId;
   // Единственная запись в committed-стек за весь прогон.
   store().commitCalendarRun();
-  appendRunLog('ok', `прогон завершён · история обновлена · ≈ ${formatCost(useRunCost.getState().spent)}`);
+  // Учёт коммитится тем же шагом, что и стек: иначе история и знание о том,
+  // из чего она собрана, разъедутся при первом же обрыве.
+  const spent = useRunCost.getState().spent;
+  // runId читается до коммита: после него состояние прогона обнуляется.
+  recordRunCommit(finishedRunId, spent);
+  emitPipelineEvent({
+    runId: finishedRunId,
+    phase: 'commit',
+    stage: 'bundle',
+    cost: spent,
+    message: 'история обновлена',
+  });
+  appendRunLog('ok', `прогон завершён · история обновлена · ≈ ${formatCost(spent)}`);
 }
 
 /** Состав LI не изменился относительно castPlan (id-множества совпадают). */
