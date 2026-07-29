@@ -3,6 +3,10 @@ import React from 'react';
 import ReadinessRow from '@/ui/kit/molecules/ReadinessRow';
 
 import IdeaZone from './IdeaZone';
+import MediaZone from './MediaZone';
+import PreviewZone from './PreviewZone';
+import QaZone from './QaZone';
+import ReleaseZone from './ReleaseZone';
 import ZoneCanvas from './ZoneCanvas';
 
 import styles from './shell.module.css';
@@ -26,7 +30,13 @@ export interface ZoneViewProps {
  * сломалось что-то или так задумано.
  */
 const ZoneView = ({ zone, pipeline, brief }: ZoneViewProps) => {
+  // Каждая зона со своим экраном отдаёт его целиком: шапка готовности у них
+  // своя, а общая нужна только зонам, которые ещё сидят на общем полотне.
   if (zone.id === 'idea') return <IdeaZone brief={brief} />;
+  if (zone.id === 'media') return <MediaZone />;
+  if (zone.id === 'preview') return <PreviewZone />;
+  if (zone.id === 'qa') return <QaZone />;
+  if (zone.id === 'release') return <ReleaseZone pipeline={pipeline} />;
 
   const row = pipeline.zones.find(z => z.id === zone.id);
 

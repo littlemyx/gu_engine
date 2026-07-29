@@ -1,0 +1,61 @@
+.laneHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.row {
+  display: flex;
+}
+
+.spriteRow {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.spriteName {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--color-text);
+}
+
+.poses {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.audioPosition {
+  border-bottom: 1px solid var(--gu-line-faint);
+  padding-bottom: var(--space-2);
+}
+
+.compare {
+  margin-top: var(--space-2);
+  margin-left: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-left: 1px solid var(--gu-line-soft);
+  padding-left: var(--space-3);
+}
+
+/*
+ * PlaybackBadge проектирован под тёмный микс (значения токенов зашиты в саму
+ * молекулу без пропа onDark) — на светлом холсте зоны заворачиваем его в
+ * тёмную плашку-подложку, а не переопределяем цвета молекулы.
+ */
+.playbackChip {
+  display: inline-flex;
+  align-self: flex-start;
+  background: var(--gu-chrome);
+}

@@ -1,0 +1,22 @@
+/* Молекулы `PreviewControls`/`StrictModeToggle`/`FlagsSeed` рисованы под
+   тёмный хром (см. их шапки) — рамка вокруг них держит тот же хром, что и
+   тулбар/статус-бар шелла, чтобы их токены `--gu-ink*` читались как задумано. */
+.frame {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--gu-chrome-raised);
+  border: 1px solid var(--gu-hairline);
+}
+
+.controlsRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.viewportWrap {
+  overflow-x: auto;
+}

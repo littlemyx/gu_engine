@@ -6,6 +6,7 @@ import ScoreView from '../viewport/ScoreView';
 import ScriptView from '../viewport/ScriptView';
 import WorldMapView from '../viewport/WorldMapView';
 import { useStudioProjectStore } from '../studioProjectStore';
+import ProseZone from './ProseZone';
 import { useZoneViews } from './useZoneViews';
 
 import styles from './shell.module.css';
@@ -27,7 +28,10 @@ const TABS: Partial<Record<ZoneId, { id: string; label: string }[]>> = {
     { id: 'world', label: 'Карта мира' },
     { id: 'relations', label: 'Отношения' },
   ],
-  prose: [{ id: 'script', label: 'Сценарий' }],
+  prose: [
+    { id: 'run', label: 'Прогон' },
+    { id: 'script', label: 'Сценарий' },
+  ],
 };
 
 export interface ZoneCanvasProps {
@@ -75,6 +79,7 @@ const ZoneCanvas = ({ zone, fallback }: ZoneCanvasProps) => {
         ) : (
           <Nothing what="отношений" />
         ))}
+      {active === 'run' && <ProseZone />}
       {active === 'script' &&
         (script && script.total > 0 ? (
           <ScriptView model={script} onBracketChange={setBracket} />

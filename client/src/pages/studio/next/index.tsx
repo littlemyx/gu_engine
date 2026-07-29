@@ -18,6 +18,7 @@ import { derivePipeline } from '../derive/pipelineModel';
 import { deriveStructure } from '../derive/structureModel';
 import { useStudioStore } from '../studioStore';
 import ArtifactInspector from './ArtifactInspector';
+import CallSheetPanel from './CallSheetPanel';
 import SidebarPipeline from './SidebarPipeline';
 import SidebarStructure from './SidebarStructure';
 import ZoneView from './ZoneView';
@@ -91,6 +92,9 @@ const StudioNext = () => {
   // Выделение артефакта живёт в сессии: после перезагрузки разумнее открыть
   // чистый инспектор, чем ссылаться на позицию, которой уже нет.
   const [picked, setPicked] = useState<ArtifactRow | null>(null);
+  // Колл-щит показывается ДО запуска: смету подписывают, а не узнают из
+  // бегущей консоли, когда деньги уже потрачены.
+  const [callSheetOpen, setCallSheetOpen] = useState(false);
 
   const { index, owns } = useArtifacts();
   const brief = useBriefStore(s => s.brief);
@@ -139,7 +143,7 @@ const StudioNext = () => {
           label={ahead ? `Продолжить: ${ahead.ru}` : 'Собрать релиз'}
           price={sheet.total > 0 ? `≈$${sheet.total.toFixed(2)}` : 'бесплатно'}
           previewLabel="Превью"
-          onRun={() => setZone(pipeline.nextIncomplete ?? zone)}
+          onRun={() => setCallSheetOpen(true)}
           onPreview={() => setZone('preview')}
         />
       </div>
@@ -189,6 +193,19 @@ const StudioNext = () => {
           </div>
         )}
       </div>
+
+      {callSheetOpen && (
+        <CallSheetPanel
+          callSheet={sheet}
+          onCancel={() => setCallSheetOpen(false)}
+          onSign={() => {
+            setCallSheetOpen(false);
+            // Прогон отсюда пока не запускается: зона «Генерация» показывает
+            // ленту, а запуск остаётся за старым шеллом до врезки.
+            setZone(pipeline.nextIncomplete ?? zone);
+          }}
+        />
+      )}
 
       <StatusBar
         items={[
