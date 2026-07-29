@@ -2,13 +2,17 @@ import React, { useMemo, useState } from 'react';
 
 import { useArtifacts } from '@/artifacts/useArtifacts';
 import { useBriefStore } from '@/narrative/briefStore';
+import { requestStopCalendarRun } from '@/narrative/calendarRunner';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
+import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
+import { useStoryQA } from '@/narrative/useStoryQA';
 import { buildCallSheet } from '@/processes/callSheet';
 import { useEventBus } from '@/processes/eventBus';
 import { eventText } from '@/processes/events';
 import { phaseLabel } from '@/processes/runMachine';
 import BottomTabs from '@/ui/kit/molecules/BottomTabs';
 import MenuBar from '@/ui/kit/molecules/MenuBar';
+import MenuPanel from '@/ui/kit/molecules/MenuPanel';
 import StatusBar from '@/ui/kit/molecules/StatusBar';
 import ToolbarActions from '@/ui/kit/molecules/ToolbarActions';
 import ToolbarStatus from '@/ui/kit/molecules/ToolbarStatus';
@@ -16,9 +20,14 @@ import ZoneSwitcher from '@/ui/kit/molecules/ZoneSwitcher';
 
 import { derivePipeline } from '../derive/pipelineModel';
 import { deriveStructure } from '../derive/structureModel';
+import ModalHost from '../modals/ModalHost';
+import PrefabsPanel from '../panels/PrefabsPanel';
+import { useProjectFile } from '../projectFile/useProjectFile';
 import { useStudioStore } from '../studioStore';
+import { useStudioActions } from '../useStudioActions';
 import ArtifactInspector from './ArtifactInspector';
 import CallSheetPanel from './CallSheetPanel';
+import { buildMenu, runMenuItem } from './menuModel';
 import SidebarPipeline from './SidebarPipeline';
 import SidebarStructure from './SidebarStructure';
 import ZoneView from './ZoneView';
@@ -54,19 +63,20 @@ const STAGE_COST: StageCost = {
   release: 0,
 };
 
-const MENU = [
-  { name: 'Файл', items: [{ label: 'Новый проект…' }, { label: 'Открыть…' }, { label: 'Сохранить' }] },
-  { name: 'Правка', items: [{ label: 'Бриф истории…' }] },
-  { name: 'Проект', items: [{ label: 'Префабы…' }, { label: 'Экспорт игры' }] },
-  { name: 'Прогон', items: [{ label: 'Продолжить конвейер' }, { label: 'Остановить', separator: true }] },
-  { name: 'Вид', items: [{ label: 'Структура' }, { label: 'Пайплайн' }] },
-];
-
 const BOTTOM_TABS: { id: BottomTab; label: string }[] = [
   { id: 'pipeline', label: 'Пайплайн' },
   { id: 'feed', label: 'Лента' },
   { id: 'runs', label: 'Прогоны' },
+  { id: 'prefabs', label: 'Префабы' },
 ];
+
+/** Позы генерируются в зоне «Медиа»: колл-щит меню их не запускает. */
+const NO_POSE_GEN = {
+  status: { state: 'idle' } as const,
+  poseStatuses: {},
+  onStart: () => {},
+  disabledReason: 'позы генерируются в зоне «Медиа»',
+};
 
 /**
  * Шелл «Конвейер».
@@ -87,6 +97,7 @@ const StudioNext = () => {
   const railWidth = useStudioStore(s => s.railWidth);
   const inspectorWidth = useStudioStore(s => s.inspectorWidth);
   const dockHeight = useStudioStore(s => s.dockHeight);
+  const openModal = useStudioStore(s => s.openModal);
 
   const [zoneListOpen, setZoneListOpen] = useState(false);
   // Выделение артефакта живёт в сессии: после перезагрузки разумнее открыть
@@ -95,12 +106,25 @@ const StudioNext = () => {
   // Колл-щит показывается ДО запуска: смету подписывают, а не узнают из
   // бегущей консоли, когда деньги уже потрачены.
   const [callSheetOpen, setCallSheetOpen] = useState(false);
+  // Однострочное уведомление в статус-баре: что сделал последний поступок.
+  // Файловые операции сыплют сюда прогресс — без этого «Сохранить» выглядит
+  // как ничего не сделавший пункт меню.
+  const [notice, setNotice] = useState<string | null>(null);
 
   const { index, owns } = useArtifacts();
   const brief = useBriefStore(s => s.brief);
   const narrative = useNarrativeStore();
   const run = useEventBus(s => s.run);
   const feed = useEventBus(s => s.recent);
+
+  const calendarGen = useBulkCalendarGeneration();
+  const qa = useStoryQA();
+  const projectFile = useProjectFile(setNotice);
+  const { exportGate, exportBundle, archiveDraft } = useStudioActions();
+
+  // Прогон идёт — источник истины тот же, что у старого шелла: фаза
+  // календарного прогона, а не событие ленты.
+  const running = calendarGen.phase !== 'idle' && calendarGen.phase !== 'done' && !calendarGen.error;
 
   const pipeline = useMemo(() => derivePipeline({ index, owns }), [index, owns]);
   // Смета на кнопке — тот же расчёт, что покажет колл-щит перед запуском:
@@ -126,23 +150,82 @@ const StudioNext = () => {
   const current = zoneById(zone);
   const ahead = nextZone(zone);
 
+  // Экспорт: чистый гейт качает бандл сразу, заблокированный — открывает
+  // модалку с причинами, где обход есть, но требует осознанного чекбокса.
+  const menu = buildMenu({
+    running,
+    projectBusy: projectFile.busy,
+    hasStory: narrative.spine != null,
+    hasDraft: calendarGen.hasDraft,
+    exportBlocked: !exportGate.ok,
+    sidebarTab,
+    bottomTab,
+    dockOpen,
+    onNewProject: () => openModal({ kind: 'newProject' }),
+    onOpenProject: () => void projectFile.pickAndStageOpen(),
+    // Вкладка без ?project= показывает пикер: там и живёт список проектов.
+    onSwitchProject: () => window.location.assign('/studio-next'),
+    onSaveProject: () => void projectFile.saveProject(),
+    onSaveProjectAs: () => void projectFile.saveProjectAs(),
+    onOpenBrief: () => openModal({ kind: 'brief' }),
+    onImportBrief: () => openModal({ kind: 'importBrief' }),
+    onDiscardDraft: () => openModal({ kind: 'resetDraft' }),
+    onExport: () => (exportGate.ok ? exportBundle() : openModal({ kind: 'exportBlocked' })),
+    onRun: () => setCallSheetOpen(true),
+    onStop: requestStopCalendarRun,
+    onCheckStory: () => {
+      setZone('qa');
+      void qa.run(brief);
+    },
+    onSidebarTab: setSidebarTab,
+    onBottomTab: setBottomTab,
+    onToggleDock: toggleDock,
+  });
+
   return (
     <div className={styles.shell}>
-      <MenuBar items={MENU} logoText="GU ENGINE" project={projectName} />
+      <MenuBar
+        items={menu}
+        logoText="GU ENGINE"
+        project={projectName}
+        onPick={(column, label) => runMenuItem(menu, column, label)}
+      />
 
       <div className={styles.toolbar}>
-        <ZoneSwitcher
-          kickerLabel="Зона"
-          zoneLabel={zoneLabel(current)}
-          open={zoneListOpen}
-          onToggle={() => setZoneListOpen(v => !v)}
-        />
+        <span className={styles.zonePicker}>
+          <ZoneSwitcher
+            kickerLabel="Зона"
+            zoneLabel={zoneLabel(current)}
+            open={zoneListOpen}
+            onToggle={() => setZoneListOpen(v => !v)}
+          />
+          {zoneListOpen && (
+            <span className={styles.zoneMenu}>
+              {/* Без кикера: заголовок панели рисуется НАД ней и налезает на
+                  вкладки боковой панели под тулбаром. */}
+              <MenuPanel
+                width={220}
+                items={ZONES.map(z => ({
+                  label: zoneLabel(z),
+                  mark: z.id === zone ? 'radio' : 'none',
+                }))}
+                onPick={i => {
+                  setZone(ZONES[i].id);
+                  setZoneListOpen(false);
+                }}
+              />
+            </span>
+          )}
+        </span>
         <ToolbarStatus text={statusText(pipeline)} tone={pipeline.totalStale > 0 ? 'error' : 'normal'} />
         <span className={styles.toolbarNote}>пайплайн целиком — во вкладке «Пайплайн» нижней панели</span>
         <ToolbarActions
           label={ahead ? `Продолжить: ${ahead.ru}` : 'Собрать релиз'}
           price={sheet.total > 0 ? `≈$${sheet.total.toFixed(2)}` : 'бесплатно'}
           previewLabel="Превью"
+          previewActive={zone === 'preview'}
+          disabled={running}
+          loading={running}
           onRun={() => setCallSheetOpen(true)}
           onPreview={() => setZone('preview')}
         />
@@ -190,30 +273,54 @@ const StudioNext = () => {
             )}
             {bottomTab === 'feed' && <Feed events={feed} />}
             {bottomTab === 'runs' && <p className={styles.empty}>Прогонов ещё не было.</p>}
+            {bottomTab === 'prefabs' && <PrefabsPanel hasStory={narrative.spine != null} onApplied={setNotice} />}
           </div>
         )}
       </div>
 
       {callSheetOpen && (
-        <CallSheetPanel
-          callSheet={sheet}
-          onCancel={() => setCallSheetOpen(false)}
-          onSign={() => {
-            setCallSheetOpen(false);
-            // Прогон отсюда пока не запускается: зона «Генерация» показывает
-            // ленту, а запуск остаётся за старым шеллом до врезки.
-            setZone(pipeline.nextIncomplete ?? zone);
-          }}
-        />
+        <div className={styles.modalLayer}>
+          <CallSheetPanel
+            callSheet={sheet}
+            signing={running}
+            onCancel={() => setCallSheetOpen(false)}
+            onSign={() => {
+              setCallSheetOpen(false);
+              // Подпись и есть запуск: смету подписывают, чтобы прогон пошёл, а
+              // не чтобы переключить экран. Продолжение черновика, не force —
+              // ведомость уже решила, что считать устаревшим.
+              setZone(pipeline.nextIncomplete ?? zone);
+              void calendarGen.run(brief);
+            }}
+          />
+        </div>
       )}
+
+      <ModalHost
+        exportGate={exportGate}
+        onExportAnyway={exportBundle}
+        onDiscardDraft={() => calendarGen.discardDraft()}
+        onArchiveDraft={archiveDraft}
+        onOpenQaReport={() => setZone('qa')}
+        onNotify={setNotice}
+        audioGen={{ onGenerate: () => setZone('media'), disabledReason: 'аудио запускается в зоне «Медиа»' }}
+        poseGen={NO_POSE_GEN}
+      />
 
       <StatusBar
         items={[
           { text: phaseLabel(run.phase), emphasis: run.phase !== 'idle' },
+          ...(notice ? [{ text: notice, tone: 'info' as const }] : []),
           { text: `зона: ${current.ru}` },
           { text: pipeline.totalStale > 0 ? `устарело: ${pipeline.totalStale}` : 'всё свежее' },
         ]}
-        right={run.total > 0 ? `${run.completed}/${run.total} · ≈$${run.spent.toFixed(2)}` : undefined}
+        right={
+          running
+            ? `прогон · ${calendarGen.phase} · ${calendarGen.progress.completed}/${calendarGen.progress.total}`
+            : run.total > 0
+            ? `${run.completed}/${run.total} · ≈$${run.spent.toFixed(2)}`
+            : undefined
+        }
       />
     </div>
   );
