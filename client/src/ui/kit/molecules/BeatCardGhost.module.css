@@ -1,0 +1,17 @@
+.root {
+  box-sizing: border-box;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border: 1px dashed var(--color-accent-700);
+  border-radius: 0;
+  background: var(--color-accent-100);
+  padding: var(--space-2);
+}
+
+.onDark {
+  border-color: var(--gu-hairline-mark);
+  background: color-mix(in srgb, var(--gu-signal-run) 10%, transparent);
+}

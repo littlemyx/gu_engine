@@ -1,0 +1,30 @@
+.body {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.hatchLayer {
+  position: absolute;
+  inset: 0;
+}
+
+.labelSlot {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: 5px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sep {
+  color: var(--gu-muted);
+  font-size: 9.5px;
+}

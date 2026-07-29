@@ -1,0 +1,75 @@
+.root {
+  box-sizing: border-box;
+  width: 100%;
+  background: var(--gu-paper);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  padding: var(--space-4) var(--space-4);
+}
+
+.heading {
+  font-family: var(--font-heading);
+  font-size: 12px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-accent-700);
+  border-bottom: 1px solid var(--color-accent-300);
+  padding-bottom: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr var(--script-ann-width, 180px);
+  gap: 4px 20px;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.transitionRow {
+  grid-column: 1 / -1;
+  font-family: var(--font-heading);
+  font-size: 11.5px;
+  font-weight: var(--font-heading-weight);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-neutral-500);
+  margin: var(--space-3) 0 2px;
+}
+
+.prose {
+  font-style: italic;
+}
+
+.prose.farewell {
+  border-top: 1px dashed var(--color-neutral-300);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.speech {
+  display: block;
+}
+
+.choiceOuter {
+  margin: 2px 0;
+}
+
+.choiceInner {
+  border: 1px solid var(--color-accent-300);
+  padding: 6px 10px;
+}
+
+.annotation {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 4px;
+}
+
+.annotationAccent {
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  color: var(--color-accent-700);
+}

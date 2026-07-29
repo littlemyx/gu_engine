@@ -1,0 +1,55 @@
+.root {
+  display: inline-block;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+/*
+ * `ToneSurface` — `display:inline-block` и без прокинутого `style`, поэтому
+ * сама по себе не растягивается на всю ширину `Frame`. Заставляем её
+ * рендер-узел заполнить контейнер снаружи, не трогая файл атома (тот же
+ * приём, что и `.toneStretch` в `TrackRow.module.css`).
+ */
+.toneStretch {
+  display: block;
+}
+
+.toneStretch > * {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 7;
+  overflow: hidden;
+}
+
+.glyphSlot {
+  position: absolute;
+  bottom: -6px;
+  line-height: 0.9;
+}
+
+.glyphSlotLeft {
+  left: 8%;
+}
+
+.glyphSlotRight {
+  right: 8%;
+}
+
+.labelSlot {
+  position: absolute;
+  top: 8px;
+}
+
+.labelSlotLeft {
+  left: 8%;
+}
+
+.labelSlotRight {
+  right: 8%;
+}

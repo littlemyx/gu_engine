@@ -1,0 +1,50 @@
+.root {
+  box-sizing: border-box;
+  border-radius: 0;
+  font-family: var(--font-body);
+}
+
+.onLight {
+  background: transparent;
+  padding: 0;
+}
+
+.onDark {
+  background: var(--gu-chrome-raised);
+  padding: 12px 14px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 3px 10px;
+  font-size: 11px;
+}
+
+.label,
+.value {
+  display: flex;
+  align-items: center;
+}
+
+.rule {
+  grid-column: 1 / -1;
+  display: flex;
+}
+
+.totalLabel,
+.totalValue {
+  padding-top: 3px;
+}
+
+.totalValue {
+  font-family: var(--gu-mono);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--color-neutral-800);
+}
+
+.totalValueOnDark {
+  color: var(--gu-ink-85);
+}

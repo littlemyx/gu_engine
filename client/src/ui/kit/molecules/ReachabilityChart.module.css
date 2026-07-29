@@ -1,0 +1,80 @@
+.frame {
+  box-sizing: border-box;
+  width: 100%;
+  position: relative;
+  border: 1px solid var(--gu-line);
+  background: transparent;
+  padding: var(--space-3) var(--space-4) var(--space-3);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.label {
+  width: 90px;
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 8px;
+  box-sizing: border-box;
+  border: 1px solid var(--gu-blueprint-line);
+  position: relative;
+  display: block;
+}
+
+.fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+}
+
+.fillDefault {
+  background: var(--color-accent);
+}
+
+.fillWarn {
+  background: var(--gu-line);
+}
+
+.fillQuiet {
+  background: var(--gu-blueprint-400);
+}
+
+.count {
+  width: 26px;
+  flex: none;
+  text-align: right;
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.countDefault {
+  color: var(--gu-blueprint-700);
+}
+
+.countWarn {
+  color: var(--gu-signal-fail-text);
+}
+
+.countQuiet {
+  color: var(--gu-muted);
+}

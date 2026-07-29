@@ -1,0 +1,31 @@
+.root {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.root.onDark {
+  padding: var(--space-2) var(--space-3);
+  background: var(--gu-chrome-raised);
+}
+
+.glyph {
+  flex: none;
+  width: 12px;
+  font-weight: 700;
+}
+
+.title {
+  flex: none;
+}
+
+.meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}

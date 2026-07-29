@@ -1,0 +1,25 @@
+.root {
+  box-sizing: border-box;
+  position: relative;
+  border: 1px solid var(--gu-blueprint-900);
+  background: var(--color-bg);
+}
+
+.kickerRow {
+  margin-bottom: 4px;
+}
+
+.titleRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.meta {
+  margin-left: auto;
+}
+
+.body {
+  margin-top: var(--space-3);
+}

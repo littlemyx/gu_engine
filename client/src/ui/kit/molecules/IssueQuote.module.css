@@ -1,0 +1,6 @@
+.root {
+  display: inline-block;
+  box-sizing: border-box;
+  /* Подложка ~4% на тёмном хроме — у Frame нет варианта fill для такого тона, см. missingAtoms. */
+  background: color-mix(in srgb, var(--gu-ink) 4%, transparent);
+}

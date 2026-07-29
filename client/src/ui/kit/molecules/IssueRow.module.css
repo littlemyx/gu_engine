@@ -1,0 +1,85 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  padding: 6px 12px;
+  background: var(--gu-paper);
+  border: 1px solid var(--gu-blueprint-line);
+  border-radius: 0;
+  font-family: var(--font-body);
+  text-align: left;
+}
+
+button.root {
+  appearance: none;
+  -webkit-appearance: none;
+  color: inherit;
+  font: inherit;
+}
+
+.blocker {
+  border-color: var(--gu-blueprint-700);
+}
+
+.warning {
+  border-color: var(--gu-blueprint-line);
+}
+
+.selected {
+  border-color: var(--color-accent);
+  box-shadow: inset 0 0 0 1px var(--color-accent);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+button.clickable:hover {
+  background: var(--color-neutral-100);
+}
+
+button.root:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.badge {
+  flex: none;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: nowrap;
+  border-radius: 0;
+}
+
+.badgeBlocker {
+  padding: 2px 7px;
+  border: none;
+  background: var(--gu-blueprint-700);
+  color: var(--gu-paper);
+}
+
+.badgeWarning {
+  padding: 1px 6px;
+  border: 1px solid var(--gu-blueprint-700);
+  background: transparent;
+  color: var(--gu-blueprint-700);
+}
+
+.text {
+  flex: 1;
+  min-width: 0;
+}
+
+.action {
+  flex: none;
+  font-size: 10px;
+  font-family: var(--font-body);
+  color: var(--gu-blueprint-700);
+  white-space: nowrap;
+}

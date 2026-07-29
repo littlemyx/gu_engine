@@ -1,0 +1,37 @@
+.root {
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+.onLight {
+  background: transparent;
+  padding: 0;
+}
+
+.onDark {
+  background: var(--gu-chrome-raised);
+  padding: 12px 16px;
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.label,
+.value {
+  display: flex;
+  align-items: center;
+}
+
+.track {
+  margin-top: 2px;
+}

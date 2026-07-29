@@ -1,0 +1,65 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 7px 12px;
+  background: var(--gu-paper);
+  border: 1px solid transparent;
+  border-radius: 0;
+  font-family: var(--font-body);
+}
+
+.active {
+  border-color: var(--gu-blueprint-700);
+}
+
+.resolved {
+  border-color: var(--gu-line-soft);
+}
+
+.glyph {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.action {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.actionActive {
+  color: var(--gu-blueprint-700);
+}
+
+.actionResolved {
+  color: var(--gu-muted);
+}
+
+.actionClickable {
+  cursor: pointer;
+  outline: none;
+}
+
+.actionClickable:hover {
+  text-decoration: underline;
+}
+
+.actionClickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

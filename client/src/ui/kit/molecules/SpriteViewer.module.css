@@ -1,0 +1,37 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  font-family: var(--font-body);
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/*
+ * Полупрозрачная белая плашка под бейджем — в макете `rgba(255,255,255,.85)`
+ * поверх шахматки. Сам атом `Badge` фона не рисует (только рамка и текст), а
+ * его тон `neutral` даёт рамку `--color-neutral-400`, не точный `-300` макета
+ * — доводка локальная, атом остаётся нетронутым (см. отчёт задачи).
+ */
+.badgeSlot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: color-mix(in srgb, var(--gu-paper) 85%, transparent);
+}
+
+.caption {
+  display: flex;
+  flex-direction: column;
+}
+
+.captionLine {
+  line-height: 1.6;
+}

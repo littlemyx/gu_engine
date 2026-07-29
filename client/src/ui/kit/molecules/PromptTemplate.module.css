@@ -1,0 +1,29 @@
+.root {
+  display: block;
+  font-family: var(--font-body);
+  box-sizing: border-box;
+}
+
+.boxWrap {
+  display: block;
+}
+
+.boxWrapLight {
+  background: var(--gu-paper);
+}
+
+.boxWrapDark {
+  background: color-mix(in srgb, var(--gu-ink) 6%, transparent);
+}
+
+.parts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0;
+  line-height: 1.5;
+}
+
+.note {
+  margin-top: 4px;
+}

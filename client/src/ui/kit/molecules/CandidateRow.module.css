@@ -1,0 +1,88 @@
+.root {
+  box-sizing: border-box;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-body);
+  text-align: left;
+  color: inherit;
+}
+
+.winner {
+  padding: 2px 6px;
+}
+
+.name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.outcome {
+  flex: none;
+}
+
+.outcomeMuted {
+  color: var(--color-neutral-500);
+}
+
+.outcomeMutedDark {
+  color: var(--gu-ink-60);
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+/* Лидер, светлый хром. */
+.winner.clickable:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.winner:not(.onDark) {
+  background: color-mix(in srgb, var(--color-accent) 14%, transparent);
+}
+
+.winner.clickable:active {
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+
+/* Лидер, тёмный хром. */
+.winner.onDark {
+  background: var(--gu-selected-bg);
+}
+
+.winner.onDark.clickable:hover {
+  background: var(--gu-hairline-edge);
+}
+
+.winner.onDark.clickable:active {
+  background: color-mix(in srgb, var(--gu-selected-bg), var(--gu-hairline-mark));
+}
+
+/* Обычная строка, светлый хром. */
+.root:not(.winner):not(.onDark).clickable:hover {
+  background: color-mix(in srgb, var(--color-text) 6%, transparent);
+}
+
+.root:not(.winner):not(.onDark).clickable:active {
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+}
+
+/* Обычная строка, тёмный хром. */
+.root:not(.winner).onDark.clickable:hover {
+  background: var(--gu-hover-bg);
+}
+
+.root:not(.winner).onDark.clickable:active {
+  background: color-mix(in srgb, var(--gu-selected-bg), var(--gu-hairline-mark));
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
