@@ -55,7 +55,7 @@ import { storageKey } from '@/project/projectScope';
 import { addRunCost, formatCost, resetRunCost, STAGE_COST_EST, useRunCost } from './costModel';
 import { recordRunCommit } from '@/artifacts/recordRun';
 import { emitPipelineEvent } from '@/processes/eventBus';
-import { emitRunEvent, type RunEventExtra } from './runEvents';
+import { artifactKeyOf, emitRunEvent, type RunEventExtra } from './runEvents';
 
 import { appendRunLog } from './runLog';
 import { validateCalendar } from './validateCalendar';
@@ -307,7 +307,14 @@ export async function startCalendarRun(brief: Brief, options?: BulkCalendarRunOp
     const prev = store().calendarRun;
     const continued = shouldReuseDraft(prev, brief, force);
     const resumed: CalendarRunState = continued
-      ? { ...(prev as CalendarRunState), status: 'running', error: null, issues: [], seedIssues: options?.seedIssues }
+      ? {
+          ...(prev as CalendarRunState),
+          status: 'running',
+          error: null,
+          issues: [],
+          seedIssues: options?.seedIssues,
+          plan: options?.plan,
+        }
       : {
           status: 'running',
           force,
@@ -318,6 +325,7 @@ export async function startCalendarRun(brief: Brief, options?: BulkCalendarRunOp
           softIssues: {},
           brief,
           seedIssues: options?.seedIssues,
+          plan: options?.plan,
           dirtyStages: [],
           draft: {},
           pendingBatch: null,
@@ -365,6 +373,8 @@ async function runPipeline(): Promise<void> {
   const force = run0.force;
   const seedIssues = run0.seedIssues;
   const runId = run0.runId;
+  /** Воля автора из подписанной сметы: что запрещено трогать. */
+  const skipSet = new Set(run0.plan?.skip ?? []);
 
   /** Сколько вызовов транспорта ушло на элемент — «начато» звучит один раз. */
   const attemptsSeen = new Map<string, number>();
@@ -420,6 +430,32 @@ async function runPipeline(): Promise<void> {
 
   const putSoftIssues = (stage: string, issues: string[]) =>
     store().patchCalendarRun({ softIssues: { ...runNow().softIssues, [stage]: issues } });
+
+  /** Позицию автор запретил трогать (замок в смете или решение «оставить моё»). */
+  const isKept = (phase: BulkCalendarPhase, item: string | null): boolean => {
+    const key = artifactKeyOf(phase, item);
+    return key != null && skipSet.has(key);
+  };
+
+  /**
+   * Запертый скаляр: committed-значение уезжает в черновик как есть — тот же
+   * ход, что кэш-хит, потому что коммит заменяет поля стека целиком. Замок
+   * сильнее и каскада, и «пересобрать всё»: иначе кнопка полной пересборки
+   * тихо стирала бы ровно то, что автор просил не трогать.
+   *
+   * null означает «запирать было нечего»: артефакта нет в истории. Молча
+   * пропустить значило бы оставить дыру, поэтому стадия считается обычным
+   * порядком, а автор получает замечание.
+   */
+  const keepLocked = <K extends DraftScalarField>(phase: BulkCalendarPhase, field: K): CommittedStack[K] | null => {
+    if (!isKept(phase, null)) return null;
+    const value = committedStack()[field];
+    if (value == null) {
+      putSoftIssues(phase, [`[warning] ${phase}: запертого артефакта нет в истории — стадия посчитана заново`]);
+      return null;
+    }
+    return value;
+  };
 
   const fail = (phase: BulkCalendarPhase, message: string, stageIssues: string[] = []) => {
     appendRunLog('error', `✗ ${phase} · ${message} · черновик сохранён`);
@@ -517,7 +553,11 @@ async function runPipeline(): Promise<void> {
     const cachedUsable = cached != null && sameCastMembers(cached, brief);
     const cachedErrors = cachedUsable ? castErrors(cached) : [];
 
-    if (cachedUsable && cachedErrors.length === 0) {
+    const keptCast = keepLocked('cast', 'castPlan');
+    if (keptCast) {
+      putDraft({ castPlan: keptCast });
+      report('skip', 'cast', null, { reason: 'заперто автором' });
+    } else if (cachedUsable && cachedErrors.length === 0) {
       putDraft({ castPlan: cached });
       report('skip', 'cast', null, { reason: 'кэш свеж' });
     } else {
@@ -602,13 +642,34 @@ async function runPipeline(): Promise<void> {
         : null;
     const cachedErrors = cached ? artifactErrors(cached) : [];
 
-    if (cached && cachedErrors.length === 0) {
-      putDraft({ worldModel: cached.world, calendar: cached.calendar, tagMap: cached.tagMap });
-      // Стадия одна, а артефакта два — в учёте мир и календарь разведены, и в
-      // ленте они обязаны быть двумя строками (каскад каста сносит календарь,
-      // но не мир).
-      report('skip', 'world_calendar', null, { reason: 'кэш свеж' });
-      report('skip', 'world_calendar', null, { artifactKey: 'world/', reason: 'кэш свеж' });
+    // Стадия одна, а артефакта два, и запирают их по отдельности: каскад каста
+    // сносит календарь, но не модель мира. Поэтому запертая половина переживает
+    // стадию, даже если вторая половина считается заново.
+    const keptWorld = skipSet.has('world/') ? committedStack().worldModel : null;
+    const keptCalendar = skipSet.has('calendar/') ? committedStack().calendar : null;
+    const keptTagMap = skipSet.has('calendar/') ? committedStack().tagMap : null;
+    const withKept = (a: WorldCalendarArtifact): CalendarDraft => ({
+      worldModel: keptWorld ?? a.world,
+      calendar: keptCalendar ?? a.calendar,
+      tagMap: keptTagMap ?? a.tagMap,
+    });
+    /** О каждой половине пары докладываем отдельной строкой. */
+    const reportPair = (phase: 'done' | 'skip', reason?: string) => {
+      report(keptCalendar ? 'skip' : phase, 'world_calendar', null, {
+        reason: keptCalendar ? 'заперто автором' : reason,
+      });
+      report(keptWorld ? 'skip' : phase, 'world_calendar', null, {
+        artifactKey: 'world/',
+        reason: keptWorld ? 'заперто автором' : reason,
+      });
+    };
+
+    if (keptWorld && keptCalendar && keptTagMap) {
+      putDraft({ worldModel: keptWorld, calendar: keptCalendar, tagMap: keptTagMap });
+      reportPair('skip');
+    } else if (cached && cachedErrors.length === 0) {
+      putDraft(withKept(cached));
+      reportPair('skip', 'кэш свеж');
     } else {
       try {
         const basePayload = buildWorldCalendarRequestPayload(brief, castPlan);
@@ -649,9 +710,8 @@ async function runPipeline(): Promise<void> {
           }
         }
         if (best && best.errorCount === 0) {
-          putDraft({ worldModel: best.artifact.world, calendar: best.artifact.calendar, tagMap: best.artifact.tagMap });
-          report('done', 'world_calendar', null);
-          report('done', 'world_calendar', null, { artifactKey: 'world/' });
+          putDraft(withKept(best.artifact));
+          reportPair('done');
           markRegenerated('world_calendar');
         } else if (!best && lastAttemptError) {
           throw lastAttemptError instanceof Error ? lastAttemptError : new Error(String(lastAttemptError));
@@ -693,6 +753,14 @@ async function runPipeline(): Promise<void> {
 
   /** Стадия spine; scheduleFeedback делает кэш (включая draft) невалидным. */
   const runSpineStage = async (scheduleFeedback: string[]): Promise<SpinePlan | null> => {
+    // Запертый хребет не двигают даже ошибки планировщика: фидбек-петля ниже
+    // это учитывает и не гоняет заведомо одинаковые раунды.
+    const keptSpine = keepLocked('spine', 'spine');
+    if (keptSpine) {
+      putDraft({ spine: keptSpine });
+      report('skip', 'spine', null, { reason: 'заперто автором' });
+      return keptSpine;
+    }
     const { value: cachedSpine, source } = scalarCache('spine');
     const cachedSpineErrors = cachedSpine ? spineErrors(cachedSpine) : [];
     // Затравки story QA бьют только по committed-кэшу: хребет, посчитанный в
@@ -770,6 +838,13 @@ async function runPipeline(): Promise<void> {
     if (!spineLoop) return; // fail уже записан стадией
 
     publish('schedule', 3);
+    const keptSchedule = keepLocked('schedule', 'schedule');
+    if (keptSchedule) {
+      putDraft({ schedule: keptSchedule });
+      report('skip', 'schedule', null, { reason: 'заперто автором' });
+      scheduleLoop = keptSchedule;
+      break;
+    }
     const { value: cachedSchedule } = scalarCache('schedule');
     if (cachedSchedule && scheduleErrorsFor(cachedSchedule, spineLoop).length === 0) {
       putDraft({ schedule: cachedSchedule });
@@ -787,6 +862,17 @@ async function runPipeline(): Promise<void> {
       markRegenerated('schedule');
       scheduleLoop = built;
       break;
+    }
+    // Запертый хребет петля исправить не может — каждый следующий раунд вернёт
+    // тот же план. Честнее сказать это сразу, чем сжечь два круга впустую.
+    if (isKept('spine', null)) {
+      fail(
+        'schedule',
+        `расписание не прошло валидацию (${errors.length} ошибок), а хребет заперт автором — ` +
+          `подстроить его под расписание прогон не вправе: снимите замок или поправьте бит вручную`,
+        errors,
+      );
+      return;
     }
     if (round === MAX_SCHEDULE_ROUNDS) {
       fail(
@@ -831,6 +917,16 @@ async function runPipeline(): Promise<void> {
         validateAnchorBeat(b, anchor.id, outgoingIds, liNames)
           .filter(i => i.severity === 'error')
           .map(formatIssue);
+
+      // Запертый бит переживает даже протухший каскад: замок сильнее свежести,
+      // поэтому committed-значение берётся мимо mapCache.
+      const keptBeat = isKept('beat_prose', anchor.id) ? committedStack().spineBeatProse[anchor.id] : undefined;
+      if (keptBeat) {
+        acceptedBeats[anchor.id] = keptBeat;
+        putDraft({ spineBeatProse: { [anchor.id]: keptBeat } });
+        report('skip', 'beat_prose', anchor.id, { reason: 'заперто автором' });
+        continue;
+      }
 
       // anchor.id === beat.id по построению адаптера — кэш ищем по нему же.
       const cached = mapCache('spineBeatProse').value[anchor.id];
@@ -899,8 +995,12 @@ async function runPipeline(): Promise<void> {
   // «Подождать» в игре нет. Стадия НЕ блокирующая: у компилятора есть статичные
   // фолбэки, и падать из-за необязательного колорита — несоразмерно.
   {
+    const keptAnchors = keepLocked('anchor_transitions', 'anchorNarrations');
     const cachedAnchors = scalarCache('anchorNarrations').value;
-    if (cachedAnchors && Object.keys(cachedAnchors).length > 0) {
+    if (keptAnchors) {
+      putDraft({ anchorNarrations: keptAnchors });
+      report('skip', 'anchor_transitions', null, { reason: 'заперто автором' });
+    } else if (cachedAnchors && Object.keys(cachedAnchors).length > 0) {
       putDraft({ anchorNarrations: cachedAnchors });
       report('skip', 'anchor_transitions', null, { reason: 'кэш свеж' });
     } else {
@@ -963,6 +1063,25 @@ async function runPipeline(): Promise<void> {
 
     const committedPoolAllowed = committedAllowed('eventUnits', force, runNow().dirtyStages);
 
+    /**
+     * Запертые встречи этого персонажа. Замок держит юнит, но не отменяет
+     * пересчёт остального пула: генерация идёт пулом на персонажа, а запирают
+     * отдельную встречу. Поэтому запертые committed-юниты вливаются в черновик
+     * ПОВЕРХ сгенерированных — по совпадающему id побеждает запертый.
+     */
+    const keptUnitsOf = (liId: string): EventUnit[] =>
+      Object.values(committedStack().eventUnits).filter(
+        u => u.participants[0] === liId && skipSet.has(`event_pool/${u.id}`),
+      );
+
+    const keepUnits = (units: EventUnit[]) => {
+      if (units.length === 0) return;
+      putDraft({ eventUnits: Object.fromEntries(units.map(u => [u.id, u])) });
+      for (const u of units) {
+        report('skip', 'event_pool', u.id, { artifactKey: `event_pool/${u.id}`, reason: 'заперто автором' });
+      }
+    };
+
     for (const li of brief.loveInterests) {
       // Пул этого LI: сначала черновик прогона, иначе committed-кэш. Смешивать
       // нельзя — иначе к свежему пулу приклеятся юниты прошлого прогона.
@@ -984,6 +1103,7 @@ async function runPipeline(): Promise<void> {
         // Адреса «позиция = один LI» в учёте нет (там ключ — юнит), поэтому
         // событие едет без artifactKey, но с человеческой подписью.
         report('skip', 'event_pool', li.id, { message: `пропущено: пул ${li.id} — кэш свеж` });
+        keepUnits(keptUnitsOf(li.id));
         continue;
       }
 
@@ -1043,6 +1163,7 @@ async function runPipeline(): Promise<void> {
           finalUnits.push(...best.units);
           putDraft({ eventUnits: Object.fromEntries(best.units.map(u => [u.id, u])) });
           report('done', 'event_pool', li.id, { message: `готово: пул ${li.id} · юнитов ${best.units.length}` });
+          keepUnits(keptUnitsOf(li.id));
         } else if (best) {
           stageIssues.push(`${li.id}: пул не прошёл валидацию: ${best.errors.slice(0, 3).join('; ')}`);
         } else {
@@ -1120,6 +1241,14 @@ async function runPipeline(): Promise<void> {
       if (!li) continue;
 
       const unitKey = unit.id;
+      // Запертая проза встречи не переписывается — мимо кэша и каскада.
+      const keptProse = isKept('dialogue_units', unit.id) ? committedStack().unitProse[unit.id] : undefined;
+      if (keptProse && keptProse.length > 0) {
+        putDraft({ unitProse: { [unit.id]: keptProse } });
+        report('skip', 'dialogue_units', unit.id, { reason: 'заперто автором' });
+        continue;
+      }
+
       const unitErrors = (u: DialogueUnit): string[] =>
         validateDialogueUnit(u, li.id)
           .filter(i => i.severity === 'error')
@@ -1365,6 +1494,12 @@ async function runPipeline(): Promise<void> {
 
     for (const [key, task] of wanted) {
       const li = task.liId ? liById.get(task.liId) ?? null : null;
+      const keptEnding = isKept('ending_prose', key) ? committedStack().endings[key] : undefined;
+      if (keptEnding) {
+        putDraft({ endings: { [key]: keptEnding } });
+        report('skip', 'ending_prose', key, { reason: 'заперто автором' });
+        continue;
+      }
       const cached = mapCache('endings').value[key];
       if (cached && endingErrors(cached, task.kind).length === 0) {
         putDraft({ endings: { [key]: cached } });

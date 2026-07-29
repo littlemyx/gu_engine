@@ -332,7 +332,15 @@ const StudioNext = () => {
               // ведомость уже решила, что считать устаревшим.
               runCommand({ type: 'sign' });
               setZone(pipeline.nextIncomplete ?? zone);
-              void calendarGen.run(brief);
+              // Обещание сметы «пропущу, заперто» едет вместе с запуском: без
+              // этого прогон спокойно переписал бы то, что автор запер.
+              void calendarGen.run(brief, {
+                plan: {
+                  skip: sheet.positions.filter(p => p.action === 'locked-skip').map(p => p.key),
+                  force: [],
+                  keepFresh: [],
+                },
+              });
             }}
           />
         </div>

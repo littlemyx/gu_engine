@@ -45,6 +45,29 @@ export type BulkCalendarProgress = { completed: number; total: number };
  * Затравки бьют только по committed-кэшу: артефакт, уже сгенерированный В ЭТОМ
  * прогоне (лежит в draft), их учёл — при resume регенерировать его снова не надо.
  */
+/**
+ * План подписанной сметы: чего прогон не имеет права трогать и что обязан
+ * пересчитать вопреки кэшу. Ключи — адреса артефактов (`ArtifactKey`).
+ *
+ * Это мост, а не второй оркестратор. Раннер по-прежнему решает сам, что
+ * протухло (`dirtyStages`), — план лишь накладывает поверх волю автора: замки
+ * и решения по конфликтам. Без него колл-щит обещал «пропущу, заперто», а
+ * прогон спокойно перезаписывал запертое.
+ */
+export type RunPlan = {
+  /** Заперто автором или «оставить моё»: не трогать ни данных, ни денег. */
+  skip: string[];
+  /** «Дубль»: пересчитать, даже если кэш валиден. */
+  force: string[];
+  /**
+   * Подмножество skip — то, что автор оставил своим при протухших входах.
+   * После коммита их отпечаток освежается без нового дубля (см. recordRun).
+   */
+  keepFresh: string[];
+};
+
+export const EMPTY_RUN_PLAN: RunPlan = { skip: [], force: [], keepFresh: [] };
+
 export type BulkCalendarRunOptions = {
   seedIssues?: {
     spine?: string[];
@@ -59,6 +82,8 @@ export type BulkCalendarRunOptions = {
    * Медиа (фоны/спрайты/аудио) прогон не трогает вовсе.
    */
   force?: boolean;
+  /** Воля автора из подписанной сметы. Без неё прогон ведёт себя как раньше. */
+  plan?: RunPlan;
 };
 
 /** Скалярные поля стека (один артефакт на прогон). */
@@ -134,6 +159,8 @@ export type CalendarRunState = {
   /** Снапшот брифа на старте: resume не должен смешивать два разных брифа. */
   brief: Brief;
   seedIssues?: BulkCalendarRunOptions['seedIssues'];
+  /** Персистится: прогон, дожатый после перезагрузки, обязан уважать те же замки. */
+  plan?: RunPlan;
   dirtyStages: CalendarCascadeStage[];
   draft: CalendarDraft;
   pendingBatch: CalendarPendingBatch | null;
