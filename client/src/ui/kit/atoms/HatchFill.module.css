@@ -25,6 +25,13 @@
   border-color: var(--gu-blueprint-700);
 }
 
+.toneAccent {
+  --hf-a: transparent;
+  --hf-b: var(--color-accent-200);
+
+  border-color: var(--color-accent-700);
+}
+
 .note {
   padding: 3px 8px;
   border: 1px dashed var(--gu-line);

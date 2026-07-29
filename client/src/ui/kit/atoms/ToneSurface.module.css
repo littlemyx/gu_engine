@@ -23,3 +23,19 @@
 .darkAccent {
   background: var(--color-accent-900);
 }
+
+.accent200 {
+  background: var(--color-accent-200);
+}
+
+.accent400 {
+  background: var(--color-accent-400);
+}
+
+.accent700 {
+  background: var(--color-accent-700);
+}
+
+.run {
+  background: var(--gu-signal-run-bg);
+}

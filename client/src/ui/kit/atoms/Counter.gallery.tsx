@@ -16,4 +16,7 @@ export const cases: GalleryCase[] = [
   { title: 'статусный · accent · на тёмном', dark: true, node: <Counter value="4/9" tone="accent" onDark /> },
   { title: 'статусный · warn · на тёмном', dark: true, node: <Counter value="8/9" tone="warn" onDark /> },
   { title: 'статусный · error · на тёмном', dark: true, node: <Counter value="9/9" tone="error" onDark /> },
+  { title: 'сплошной тон · на тёмном (strong)', dark: true, node: <Counter value="128" onDark strong /> },
+  { title: 'гарнитура · body', node: <Counter value="4/9" font="body" /> },
+  { title: 'гарнитура · body · на тёмном', dark: true, node: <Counter value="4/9" font="body" onDark tone="accent" /> },
 ];

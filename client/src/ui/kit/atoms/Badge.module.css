@@ -16,6 +16,12 @@
   line-height: 1;
 }
 
+/* Без рамки и паддинга — голый цветной текст статуса. Цвет остаётся от тона. */
+.plain {
+  border: none;
+  padding: 0;
+}
+
 .neutral {
   border-color: var(--color-neutral-400);
   color: var(--color-neutral-700);

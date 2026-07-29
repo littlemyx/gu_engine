@@ -71,4 +71,28 @@ export const cases: GalleryCase[] = [
       </Slot>
     ),
   },
+  {
+    title: 'тон accent',
+    node: (
+      <Slot>
+        <HatchFill tone="accent" />
+      </Slot>
+    ),
+  },
+  {
+    title: 'тон accent · своя note',
+    node: (
+      <Slot>
+        <HatchFill tone="accent" note="ещё не написано" />
+      </Slot>
+    ),
+  },
+  {
+    title: 'тон accent · узкий шаг (как SpineBar)',
+    node: (
+      <Slot>
+        <HatchFill tone="accent" step={4} note="" />
+      </Slot>
+    ),
+  },
 ];

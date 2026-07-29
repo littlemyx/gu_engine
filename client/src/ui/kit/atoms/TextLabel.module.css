@@ -13,3 +13,37 @@
 .onDark {
   color: var(--gu-ink-85);
 }
+
+/* Тона на светлом. */
+.muted {
+  color: var(--gu-muted);
+}
+
+.accent {
+  color: var(--color-accent-700);
+}
+
+.error {
+  color: var(--gu-signal-fail-text);
+}
+
+.warn {
+  color: var(--gu-signal-warn-deep);
+}
+
+/* Тона на тёмном хроме строятся из сигналов и ink-рампы, а не из светлой. */
+.onDark.muted {
+  color: var(--gu-ink-60);
+}
+
+.onDark.accent {
+  color: var(--gu-signal-run);
+}
+
+.onDark.error {
+  color: var(--gu-signal-fail);
+}
+
+.onDark.warn {
+  color: var(--gu-signal-warn-soft);
+}

@@ -36,6 +36,22 @@ export const cases: GalleryCase[] = [
     ),
   },
   {
+    title: 'ring · accent-900 (по умолчанию, как в макете)',
+    node: (
+      <SelectionHighlight variant="ring">
+        <Row>выбранная карточка</Row>
+      </SelectionHighlight>
+    ),
+  },
+  {
+    title: 'ring · tone accent, offset 6px',
+    node: (
+      <SelectionHighlight variant="ring" outlineTone="accent" outlineOffset={6}>
+        <Row>выбранная карточка</Row>
+      </SelectionHighlight>
+    ),
+  },
+  {
     title: 'row · на тёмном',
     dark: true,
     node: (
@@ -64,6 +80,17 @@ export const cases: GalleryCase[] = [
       <SelectionHighlight variant="outline" onDark>
         <Row>
           <span style={{ color: 'var(--gu-ink-85)' }}>выбранная строка</span>
+        </Row>
+      </SelectionHighlight>
+    ),
+  },
+  {
+    title: 'ring · на тёмном',
+    dark: true,
+    node: (
+      <SelectionHighlight variant="ring" onDark>
+        <Row>
+          <span style={{ color: 'var(--gu-ink-85)' }}>выбранная карточка</span>
         </Row>
       </SelectionHighlight>
     ),

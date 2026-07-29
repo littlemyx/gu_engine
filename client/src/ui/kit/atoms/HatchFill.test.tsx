@@ -57,4 +57,34 @@ describe('HatchFill', () => {
     const darkRoot = dark.firstElementChild as HTMLElement;
     expect(darkRoot.style.getPropertyValue('--hf-step')).toBe('14px');
   });
+
+  it('дефолтный тон — neutral, класс не меняется без tone', () => {
+    const { container: implicit } = render(<HatchFill />);
+    const implicitClass = implicit.firstElementChild?.className ?? '';
+    cleanup();
+
+    const { container: explicit } = render(<HatchFill tone="neutral" />);
+    const explicitClass = explicit.firstElementChild?.className ?? '';
+
+    expect(explicitClass).toBe(implicitClass);
+  });
+
+  it('тон accent получает отдельный класс от neutral', () => {
+    const { container: neutral } = render(<HatchFill tone="neutral" />);
+    const neutralClass = neutral.firstElementChild?.className ?? '';
+    cleanup();
+
+    const { container: accent } = render(<HatchFill tone="accent" />);
+    const accentClass = accent.firstElementChild?.className ?? '';
+
+    expect(accentClass).not.toBe(neutralClass);
+    expect(accentClass.length).toBeGreaterThan(neutralClass.length);
+  });
+
+  it('тон accent сочетается с onDark, не ломая рендер', () => {
+    const { container, getByText } = render(<HatchFill tone="accent" onDark note="ещё нет" />);
+    const root = container.firstElementChild as HTMLElement;
+    expect(root.className).toContain('onDark');
+    expect(getByText('ещё нет')).toBeTruthy();
+  });
 });

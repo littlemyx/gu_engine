@@ -34,3 +34,35 @@
 .onDark.total {
   color: var(--gu-ink-85);
 }
+
+/* Смета внутри карточки набрана основным шрифтом, не моно. */
+.fontBody {
+  font-family: var(--font-body);
+}
+
+/* Тон кодирует состояние стадии и перекрывает цвет варианта — правила ниже
+   идут после блоков вариантов/onDark, чтобы при равной специфичности
+   побеждать именно по цвету. */
+.toneAccent {
+  color: var(--color-accent-700);
+}
+
+.toneMuted {
+  color: var(--color-neutral-500);
+}
+
+.toneError {
+  color: var(--gu-signal-fail-text);
+}
+
+.onDark.toneAccent {
+  color: var(--gu-signal-run);
+}
+
+.onDark.toneMuted {
+  color: var(--gu-ink-45);
+}
+
+.onDark.toneError {
+  color: var(--gu-signal-fail);
+}

@@ -14,4 +14,12 @@ export const cases: GalleryCase[] = [
   { title: 'accent · на тёмном', dark: true, node: <Badge label="linked" glyph="⇄" tone="accent" onDark /> },
   { title: 'error · на тёмном', dark: true, node: <Badge label="stale" glyph="◐" tone="error" onDark /> },
   { title: 'без глифа', node: <Badge label="префаб" /> },
+  { title: 'plain · neutral', node: <Badge label="заперт" variant="plain" /> },
+  { title: 'plain · accent', node: <Badge label="проза ✓" tone="accent" variant="plain" /> },
+  { title: 'plain · error', node: <Badge label="нет прозы" glyph="▨" tone="error" variant="plain" /> },
+  {
+    title: 'plain · на тёмном',
+    dark: true,
+    node: <Badge label="генерируется" glyph="⟳" tone="accent" variant="plain" onDark />,
+  },
 ];

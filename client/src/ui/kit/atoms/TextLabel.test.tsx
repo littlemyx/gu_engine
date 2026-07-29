@@ -5,7 +5,7 @@ import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import TextLabel from './TextLabel';
+import TextLabel, { type TextLabelTone } from './TextLabel';
 
 afterEach(cleanup);
 
@@ -46,5 +46,41 @@ describe('TextLabel', () => {
 
     const node = screen.getByText('Слот сцены') as HTMLElement;
     expect(node.style.fontSize).toBe('11.5px');
+  });
+
+  it('по умолчанию тон normal не добавляет тоновый класс', () => {
+    render(<TextLabel text="Слот сцены" />);
+
+    const node = screen.getByText('Слот сцены') as HTMLElement;
+    expect(node.className).not.toMatch(/muted|accent|error|warn/);
+  });
+
+  const TONES: TextLabelTone[] = ['muted', 'accent', 'error', 'warn'];
+
+  describe.each(TONES)('тон %s', tone => {
+    it('получает отдельный класс на светлом', () => {
+      const { container: normal } = render(<TextLabel text="Слот сцены" />);
+      const normalClass = normal.firstElementChild?.className ?? '';
+      cleanup();
+
+      const { container: toned } = render(<TextLabel text="Слот сцены" tone={tone} />);
+      expect(toned.firstElementChild?.className).not.toBe(normalClass);
+    });
+
+    it('получает отдельный класс на тёмном относительно normal на тёмном', () => {
+      const { container: normal } = render(<TextLabel text="Слот сцены" onDark />);
+      const normalClass = normal.firstElementChild?.className ?? '';
+      cleanup();
+
+      const { container: toned } = render(<TextLabel text="Слот сцены" onDark tone={tone} />);
+      expect(toned.firstElementChild?.className).not.toBe(normalClass);
+    });
+
+    it('сочетается с bold, не теряя тоновый класс', () => {
+      render(<TextLabel text="Слот сцены" tone={tone} bold />);
+
+      const node = screen.getByText('Слот сцены') as HTMLElement;
+      expect(node.className).toMatch(new RegExp(tone));
+    });
   });
 });

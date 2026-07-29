@@ -55,3 +55,53 @@ describe('Counter, доп. пропсы', () => {
     expect(screen.getByText('×3')).toBeTruthy();
   });
 });
+
+describe('Counter, сплошной тон (strong)', () => {
+  it('по умолчанию выключен — не меняет класс', () => {
+    const { container: plain } = render(<Counter value="4/9" onDark />);
+    const plainClass = plain.firstElementChild?.className ?? '';
+    cleanup();
+
+    const { container: withStrong } = render(<Counter value="4/9" onDark strong={false} />);
+    expect(withStrong.firstElementChild?.className).toBe(plainClass);
+  });
+
+  it('на тёмном добавляет отдельный класс', () => {
+    const { container: muted } = render(<Counter value="4/9" onDark />);
+    const mutedClass = muted.firstElementChild?.className ?? '';
+    cleanup();
+
+    const { container: solid } = render(<Counter value="4/9" onDark strong />);
+    expect(solid.firstElementChild?.className).not.toBe(mutedClass);
+  });
+
+  it('на светлом не ломает рендер', () => {
+    render(<Counter value="4/9" strong />);
+
+    expect(screen.getByText('4/9')).toBeTruthy();
+  });
+});
+
+describe('Counter, гарнитура (font)', () => {
+  it('по умолчанию — моноширинная, отдельного класса нет', () => {
+    render(<Counter value="4/9" />);
+
+    const el = screen.getByText('4/9') as HTMLElement;
+    expect(el.className).not.toMatch(/body/i);
+  });
+
+  it('font="body" переключает класс гарнитуры', () => {
+    const { container: mono } = render(<Counter value="4/9" />);
+    const monoClass = mono.firstElementChild?.className ?? '';
+    cleanup();
+
+    const { container: body } = render(<Counter value="4/9" font="body" />);
+    expect(body.firstElementChild?.className).not.toBe(monoClass);
+  });
+
+  it('font="body" сочетается с тоном и onDark', () => {
+    render(<Counter value="4/9" tone="accent" onDark font="body" />);
+
+    expect(screen.getByText('4/9')).toBeTruthy();
+  });
+});

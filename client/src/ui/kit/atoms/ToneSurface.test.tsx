@@ -9,7 +9,17 @@ import ToneSurface, { type ToneSurfaceTone } from './ToneSurface';
 
 afterEach(cleanup);
 
-const TONES: ToneSurfaceTone[] = ['accent', 'whiteOnDark', 'error', 'warn', 'darkAccent'];
+const TONES: ToneSurfaceTone[] = [
+  'accent',
+  'whiteOnDark',
+  'error',
+  'warn',
+  'darkAccent',
+  'accent200',
+  'accent400',
+  'accent700',
+  'run',
+];
 
 describe.each(TONES)('ToneSurface, тон %s', tone => {
   it('оборачивает контент и получает свой класс подложки', () => {
@@ -67,5 +77,39 @@ describe('ToneSurface, пропсы вида', () => {
     );
 
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('ToneSurface, акцентная рампа', () => {
+  it('accent-200, accent-400, accent-700 и accent-900 (darkAccent) получают разные классы подложки', () => {
+    const steps: ToneSurfaceTone[] = ['accent200', 'accent400', 'accent700', 'darkAccent'];
+    const classNames = steps.map(tone => {
+      render(
+        <ToneSurface tone={tone}>
+          <span>{tone}</span>
+        </ToneSurface>,
+      );
+      const root = screen.getByText(tone).parentElement as HTMLElement;
+      cleanup();
+      return root.className;
+    });
+
+    expect(new Set(classNames).size).toBe(steps.length);
+  });
+
+  it('тон run отличается от error и warn — три разных сигнальных класса', () => {
+    const signals: ToneSurfaceTone[] = ['run', 'error', 'warn'];
+    const classNames = signals.map(tone => {
+      render(
+        <ToneSurface tone={tone}>
+          <span>{tone}</span>
+        </ToneSurface>,
+      );
+      const root = screen.getByText(tone).parentElement as HTMLElement;
+      cleanup();
+      return root.className;
+    });
+
+    expect(new Set(classNames).size).toBe(signals.length);
   });
 });

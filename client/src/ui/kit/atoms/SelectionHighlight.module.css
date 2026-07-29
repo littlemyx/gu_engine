@@ -21,6 +21,22 @@
   box-shadow: inset 0 0 0 2px var(--color-accent);
 }
 
+/* Внешнее кольцо: не съедает границу содержимого, отступ задаётся пропом outlineOffset. */
+.ring {
+  background: transparent;
+  box-shadow: none;
+  outline-style: solid;
+  outline-width: 2px;
+}
+
+.ring.toneAccent {
+  outline-color: var(--color-accent);
+}
+
+.ring.toneAccent900 {
+  outline-color: var(--color-accent-900);
+}
+
 /* На тёмном хроме бордюр берёт более светлый тон акцента для контраста. */
 .onDark.row {
   box-shadow: inset 2px 0 0 var(--color-accent-300);
@@ -28,4 +44,8 @@
 
 .onDark.outline {
   box-shadow: inset 0 0 0 2px var(--color-accent-300);
+}
+
+.onDark.ring {
+  outline-color: var(--color-accent-300);
 }

@@ -69,6 +69,35 @@ describe('DisclosureArrow, подпись', () => {
   });
 });
 
+describe('DisclosureArrow, направление', () => {
+  it('по умолчанию (down) поведение не меняется', () => {
+    render(<DisclosureArrow expanded={false} onToggle={() => {}} />);
+    expect(screen.getByRole('button').textContent).toBe('▸');
+  });
+
+  it('right: свёрнуто ▸, развёрнуто ◂', () => {
+    const { rerender } = render(<DisclosureArrow direction="right" expanded={false} onToggle={() => {}} />);
+    expect(screen.getByRole('button').textContent).toBe('▸');
+
+    rerender(<DisclosureArrow direction="right" expanded onToggle={() => {}} />);
+    expect(screen.getByRole('button').textContent).toBe('◂');
+  });
+
+  it('left: свёрнуто ◂, развёрнуто ▸', () => {
+    const { rerender } = render(<DisclosureArrow direction="left" expanded={false} onToggle={() => {}} />);
+    expect(screen.getByRole('button').textContent).toBe('◂');
+
+    rerender(<DisclosureArrow direction="left" expanded onToggle={() => {}} />);
+    expect(screen.getByRole('button').textContent).toBe('▸');
+  });
+
+  it('немая стрелка (без onToggle) тоже учитывает direction', () => {
+    render(<DisclosureArrow direction="left" expanded={false} />);
+    const node = screen.getByText('◂');
+    expect(node.tagName).toBe('SPAN');
+  });
+});
+
 describe('DisclosureArrow на тёмном', () => {
   it('получает отдельный класс, а не тот же, что на светлом', () => {
     const { container: light } = render(<DisclosureArrow onToggle={() => {}} />);

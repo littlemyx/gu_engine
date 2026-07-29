@@ -39,6 +39,22 @@ export const cases: GalleryCase[] = [
     ),
   },
   {
+    title: 'blueprint-400',
+    node: (
+      <Frame tone="blueprint-400">
+        <Content>тон blueprint-400</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'blueprint-700',
+    node: (
+      <Frame tone="blueprint-700">
+        <Content>тон blueprint-700</Content>
+      </Frame>
+    ),
+  },
+  {
     title: 'selected',
     node: (
       <Frame tone="light" selected>
@@ -51,6 +67,72 @@ export const cases: GalleryCase[] = [
     node: (
       <Frame tone="light" interactive={false}>
         <Content>без фокуса и hover</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'dashed — running',
+    node: (
+      <Frame tone="accent" dashed>
+        <Content>идёт генерация</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'dashed — locked',
+    node: (
+      <Frame tone="blueprint-400" dashed>
+        <Content>заблокировано</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'fill: paper — open',
+    node: (
+      <Frame tone="accent" fill="paper">
+        <Content>открыто</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'fill: blueprint — locked',
+    node: (
+      <Frame tone="blueprint-400" fill="blueprint" dashed>
+        <Content>заблокировано</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'fill: paper — failed',
+    node: (
+      <Frame tone="accent" fill="paper" selected>
+        <Content>ошибка генерации</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'асимметричный паддинг 8×10',
+    node: (
+      <Frame tone="light" paddingY={8} paddingX={10}>
+        <Content>8px 10px</Content>
+      </Frame>
+    ),
+  },
+  {
+    title: 'block — на всю ширину',
+    node: (
+      <div style={{ width: 220 }}>
+        <Frame tone="light" block>
+          <Content>display: block</Content>
+        </Frame>
+      </div>
+    ),
+  },
+  {
+    title: 'кликабельная (button)',
+    node: (
+      <Frame tone="accent" onClick={() => {}}>
+        <Content>кликни меня</Content>
       </Frame>
     ),
   },

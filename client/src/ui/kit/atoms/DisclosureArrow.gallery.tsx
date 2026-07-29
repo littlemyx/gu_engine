@@ -21,4 +21,25 @@ export const cases: GalleryCase[] = [
     dark: true,
     node: <DisclosureArrow expanded onDark onToggle={() => {}} />,
   },
+  {
+    title: 'direction=right · collapsed (▸)',
+    node: <DisclosureArrow direction="right" expanded={false} onToggle={() => {}} />,
+  },
+  {
+    title: 'direction=right · expanded (◂)',
+    node: <DisclosureArrow direction="right" expanded onToggle={() => {}} />,
+  },
+  {
+    title: 'direction=left · collapsed (◂)',
+    node: <DisclosureArrow direction="left" expanded={false} onToggle={() => {}} />,
+  },
+  {
+    title: 'direction=left · expanded (▸)',
+    node: <DisclosureArrow direction="left" expanded onToggle={() => {}} />,
+  },
+  {
+    title: 'direction=right · на тёмном (для PanelSpine)',
+    dark: true,
+    node: <DisclosureArrow direction="right" expanded={false} onDark onToggle={() => {}} />,
+  },
 ];

@@ -39,3 +39,13 @@
 .onDark.error {
   color: var(--gu-signal-fail);
 }
+
+/* Сплошной тон для счётчиков статистики на тёмном хроме — вместо приглушённого ink-60. */
+.onDark.strong {
+  color: var(--gu-ink);
+}
+
+/* Текстовая гарнитура вместо моноширинной по умолчанию. */
+.body {
+  font-family: var(--font-body);
+}

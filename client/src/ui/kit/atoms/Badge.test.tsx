@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import Badge, { type BadgeTone } from './Badge';
 
+import styles from './Badge.module.css';
+
 afterEach(cleanup);
 
 const TONES: BadgeTone[] = ['neutral', 'accent', 'error'];
@@ -64,5 +66,28 @@ describe('Badge, интерактивность', () => {
     render(<Badge label="authored" />);
 
     expect(screen.queryByRole('button')).toBeNull();
+  });
+});
+
+describe('Badge, вариант', () => {
+  it('по умолчанию outline — с рамкой', () => {
+    const { container } = render(<Badge label="authored" />);
+    const root = container.firstElementChild as HTMLElement;
+
+    expect(root.className).not.toContain(styles.plain);
+  });
+
+  it('plain снимает рамку и паддинг', () => {
+    const { container } = render(<Badge label="проза ✓" tone="accent" variant="plain" />);
+    const root = container.firstElementChild as HTMLElement;
+
+    expect(root.className).toContain(styles.plain);
+  });
+
+  it('plain по-прежнему показывает подпись и глиф', () => {
+    render(<Badge label="генерируется" glyph="⟳" variant="plain" />);
+
+    expect(screen.getByText('генерируется')).toBeTruthy();
+    expect(screen.getByText('⟳').getAttribute('aria-hidden')).toBe('true');
   });
 });
