@@ -1,0 +1,38 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+.kicker {
+  margin-bottom: 3px;
+}
+
+.box {
+  position: relative;
+}
+
+.box input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.hasArrow input {
+  padding-right: 22px;
+}
+
+.arrow {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9px;
+  line-height: 1;
+  color: var(--color-neutral-400);
+  pointer-events: none;
+}
+
+.hint {
+  margin-top: 3px;
+}

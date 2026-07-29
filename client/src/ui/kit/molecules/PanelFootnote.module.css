@@ -1,0 +1,14 @@
+.root {
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-top: 1px solid transparent;
+  line-height: 1.5;
+}
+
+.onDark {
+  border-top-color: var(--gu-hairline);
+}
+
+.onLight {
+  border-top-color: var(--color-neutral-200);
+}

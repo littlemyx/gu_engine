@@ -1,0 +1,27 @@
+.sub {
+  margin-top: 4px;
+}
+
+.tracks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.track {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-neutral-300);
+  padding: 14px 16px;
+}
+
+.trackDesc {
+  flex: 1;
+  margin-top: 6px;
+}
+
+.trackAction {
+  margin-top: 12px;
+}

@@ -1,0 +1,91 @@
+.root {
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--color-text);
+}
+
+.info {
+  flex: 1;
+  min-width: 0;
+}
+
+.name {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nameMuted {
+  color: var(--color-neutral-500);
+}
+
+.deleteTrigger {
+  flex: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--color-neutral-500);
+  cursor: pointer;
+}
+
+.deleteTrigger:hover {
+  color: var(--gu-signal-fail-text);
+}
+
+.deleteTrigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Панель подтверждения удаления собрана локально: у `Frame` нет тона
+   'error'/'fail' (граница + фон сигнала сразу), см. missingAtoms отчёта. */
+.confirmPanel {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--gu-signal-fail-line);
+  background: var(--gu-signal-fail-bg);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+}
+
+.confirmText {
+  flex: 1;
+}
+
+.cancelButton {
+  flex: none;
+  background: none;
+  border: none;
+  margin: 0;
+  padding: 3px 6px;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--gu-signal-fail-text);
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  text-decoration: underline;
+}
+
+.cancelButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}

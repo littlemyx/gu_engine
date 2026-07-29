@@ -1,0 +1,28 @@
+.root {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+  font-size: 11.5px;
+  color: var(--color-text);
+}
+
+.glyph {
+  width: 13px;
+  flex: none;
+  font-weight: 700;
+}
+
+.path {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.value {
+  flex: 1 1 auto;
+  min-width: 0;
+  line-height: 1.4;
+}

@@ -1,0 +1,51 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-family: var(--font-body);
+  font-size: 12px;
+}
+
+/* Триггер — своя разметка, а не атом SelectValue: макет требует убирать
+   стрелку (arrow=false) и переключать семейство шрифта (mono), а атом ни
+   того, ни другого не умеет — см. missingAtoms в отчёте порта. */
+.trigger {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid var(--gu-hairline-strong);
+  border-radius: 0;
+  background: transparent;
+  padding: 4px 10px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--gu-ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.mono {
+  font-family: var(--gu-mono);
+}
+
+.changed {
+  border-color: var(--color-accent);
+}
+
+.trigger:hover:not(:disabled) {
+  background: var(--gu-hover-bg);
+}
+
+.trigger:active:not(:disabled) {
+  background: var(--gu-selected-bg);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

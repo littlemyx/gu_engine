@@ -1,0 +1,28 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.meta {
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  white-space: nowrap;
+}
+
+.metaOk {
+  color: var(--color-neutral-500);
+  font-weight: 400;
+}
+
+.metaError {
+  color: var(--color-accent-900);
+  font-weight: 600;
+}
+
+.body {
+  font-size: 10.5px;
+  color: var(--color-neutral-600);
+}
