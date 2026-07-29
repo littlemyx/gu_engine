@@ -25,7 +25,11 @@ const Panel = ({ children }: { children: React.ReactNode }) => (
   </div>
 );
 
-const VerticalBox = ({ children }: { children: React.ReactNode }) => (
+/**
+ * Атом — только полоска: размерами панелей в витрине заведует сама витрина,
+ * ровно как в шелле этим занимается механизм рамок.
+ */
+const VerticalBox = ({ first = 120 }: { first?: number }) => (
   <div
     style={{
       display: 'flex',
@@ -35,13 +39,15 @@ const VerticalBox = ({ children }: { children: React.ReactNode }) => (
       border: '1px solid var(--color-neutral-300)',
     }}
   >
-    <Panel>панель A</Panel>
-    {children}
+    <div style={{ width: first, display: 'flex' }}>
+      <Panel>панель A</Panel>
+    </div>
+    <ResizeHandle orientation="vertical" label="Ширина панели A" valueNow={first} />
     <Panel>панель B</Panel>
   </div>
 );
 
-const HorizontalBox = ({ children }: { children: React.ReactNode }) => (
+const HorizontalBox = ({ first = 60 }: { first?: number }) => (
   <div
     style={{
       display: 'flex',
@@ -51,35 +57,16 @@ const HorizontalBox = ({ children }: { children: React.ReactNode }) => (
       border: '1px solid var(--color-neutral-300)',
     }}
   >
-    <Panel>панель A</Panel>
-    {children}
+    <div style={{ height: first, display: 'flex' }}>
+      <Panel>панель A</Panel>
+    </div>
+    <ResizeHandle orientation="horizontal" label="Высота панели A" valueNow={first} />
     <Panel>панель B</Panel>
   </div>
 );
 
 export const cases: GalleryCase[] = [
-  {
-    title: 'вертикальная (по умолчанию)',
-    node: (
-      <VerticalBox>
-        <ResizeHandle orientation="vertical" split={50} />
-      </VerticalBox>
-    ),
-  },
-  {
-    title: 'вертикальная · сдвинутая',
-    node: (
-      <VerticalBox>
-        <ResizeHandle orientation="vertical" split={70} />
-      </VerticalBox>
-    ),
-  },
-  {
-    title: 'горизонтальная',
-    node: (
-      <HorizontalBox>
-        <ResizeHandle orientation="horizontal" split={35} />
-      </HorizontalBox>
-    ),
-  },
+  { title: 'вертикальная (по умолчанию)', node: <VerticalBox /> },
+  { title: 'вертикальная · панель шире', node: <VerticalBox first={180} /> },
+  { title: 'горизонтальная', node: <HorizontalBox /> },
 ];

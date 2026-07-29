@@ -6,7 +6,7 @@ import { recomputeAll } from './fingerprint';
 import { reconcile } from './migrate';
 import { briefOwn, collectPresence } from './presence';
 import { topoOrder } from './stageGraph';
-import { onGenerated } from './transitions';
+import { onGenerated, onKeepOwn } from './transitions';
 
 import type { ArtifactIndex } from './types';
 
@@ -22,8 +22,14 @@ import type { ArtifactIndex } from './types';
  * Запертое не трогается — за это отвечает `onGenerated`. Артефакты, чей
  * отпечаток не изменился (прогон взял их из кэша), тоже не переписываются:
  * лишний дубль в истории — это ложь о том, что работа была.
+ *
+ * `keepFresh` — строки, по которым автор в смете выбрал «оставить моё». Их
+ * отпечаток тоже освежается (конфликт закрыт), но дубль не заводится: прогон
+ * их не касался. Штамповать это можно только ЗДЕСЬ, после коммита: прогон мог
+ * пересобрать предков, и лишь пост-коммитный пересчёт даёт тот отпечаток, при
+ * котором авторская строка действительно свежа.
  */
-export function recordRunCommit(runId: string, spent?: number): void {
+export function recordRunCommit(runId: string, spent?: number, keepFresh: string[] = []): void {
   const n = useNarrativeStore.getState();
   const brief = useBriefStore.getState().brief;
 
@@ -51,11 +57,14 @@ export function recordRunCommit(runId: string, spent?: number): void {
   const current = recomputeAll(withNew, topoOrder(), owns);
 
   const next: ArtifactIndex = { ...withNew };
+  const kept = new Set(keepFresh);
   let touched = 0;
 
   for (const [key, meta] of Object.entries(withNew)) {
     if (meta.fingerprint === current[key]) continue;
-    next[key] = onGenerated(meta, { fingerprint: current[key], runId, cost: costPerItem(spent, present) });
+    next[key] = kept.has(key)
+      ? onKeepOwn(meta, current[key])
+      : onGenerated(meta, { fingerprint: current[key], runId, cost: costPerItem(spent, present) });
     touched += 1;
   }
 

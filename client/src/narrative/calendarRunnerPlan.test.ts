@@ -102,3 +102,47 @@ describe('прогон обходит запертое', () => {
     expect(castTransport).toHaveBeenCalled();
   });
 });
+
+describe('прогон переснимает то, на что заказали дубль', () => {
+  /** Каст, проходящий validateCastPlan без ошибок: без «дубля» он — кэш. */
+  const validCast = {
+    members: [
+      {
+        id: 'kira',
+        isLI: true,
+        agenda: {
+          goals: Array.from({ length: 8 }, (_, i) => ({ arcStage: i + 1, goal: `ступень ${i + 1}` })),
+          idealRelationship: 'тепло',
+          worstRelationship: 'холод',
+          locationTags: { home: ['дом'] },
+          weeklyPattern: {
+            утро: [{ tag: 'home', weight: 1 }],
+            день: [{ tag: 'home', weight: 1 }],
+            вечер: [{ tag: 'home', weight: 1 }],
+          },
+        },
+      },
+    ],
+  } as unknown as CastPlan;
+
+  beforeEach(() => {
+    clearRunLog();
+    castTransport.mockClear();
+    otherTransport.mockClear();
+    setEventSink(memorySink());
+    useEventBus.setState({ recent: [], run: IDLE });
+    useNarrativeStore.setState({ calendarRun: null, castPlan: validCast, worldModel: null, calendar: null });
+  });
+
+  it('этот же кэш без «дубля» прогон берёт даром', async () => {
+    await startCalendarRun(brief);
+
+    expect(castTransport).not.toHaveBeenCalled();
+  });
+
+  it('«дубль» гонит стадию заново, даже если кэш валиден', async () => {
+    await startCalendarRun(brief, { plan: { skip: [], force: ['cast/'], keepFresh: [] } });
+
+    expect(castTransport).toHaveBeenCalled();
+  });
+});

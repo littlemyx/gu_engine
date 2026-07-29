@@ -64,6 +64,20 @@ export function onUserEdit(meta: ArtifactMeta, fingerprint: string): ArtifactMet
   return { ...next, ownership: 'authored', fingerprint };
 }
 
+/**
+ * Автор решил «оставить моё», когда входы уехали, а строка его.
+ *
+ * Отпечаток освежается по текущим входам — конфликт закрыт, и в следующей
+ * смете строка не всплывёт снова. Тейк при этом НЕ добавляется: работы не
+ * было, и врать о ней в истории дублей нельзя.
+ *
+ * Запертое трогает сознательно (в отличие от onGenerated): это явное решение
+ * автора по конкретной строке, а не тихая подмена машиной.
+ */
+export function onKeepOwn(meta: ArtifactMeta, fingerprint: string): ArtifactMeta {
+  return meta.fingerprint === null ? meta : { ...meta, fingerprint };
+}
+
 /** «Удачное — не трогать». Запирать можно что угодно, кроме несуществующего. */
 export function onLock(meta: ArtifactMeta): ArtifactMeta {
   return meta.fingerprint === null ? meta : { ...meta, ownership: 'locked' };

@@ -1,12 +1,13 @@
 import React, { useMemo, useState } from 'react';
 
+import { useArtifactStore } from '@/artifacts/artifactStore';
 import { useArtifacts } from '@/artifacts/useArtifacts';
 import { useBriefStore } from '@/narrative/briefStore';
 import { requestStopCalendarRun } from '@/narrative/calendarRunner';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
 import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
 import { useStoryQA } from '@/narrative/useStoryQA';
-import { buildCallSheet } from '@/processes/callSheet';
+import { buildCallSheet, runPlanOf } from '@/processes/callSheet';
 import { runCommand, useEventBus } from '@/processes/eventBus';
 import { eventText } from '@/processes/events';
 import { phaseLabel } from '@/processes/runMachine';
@@ -37,6 +38,7 @@ import { ZONES, nextZone, zoneById, zoneLabel } from './zoneModel';
 import styles from './shell.module.css';
 
 import type { StageCost } from '@/processes/callSheet';
+import type { ArtifactKey } from '@/artifacts/types';
 import type { ArtifactRow } from '../derive/pipelineModel';
 import type { BottomTab, SidebarTab } from '../studioStore';
 
@@ -325,22 +327,22 @@ const StudioNext = () => {
           <CallSheetPanel
             callSheet={sheet}
             signing={running}
+            stageCost={STAGE_COST}
             onCancel={() => runCommand({ type: 'cancel' })}
-            onSign={() => {
+            onSign={decided => {
+              const plan = runPlanOf(sheet, decided);
+              // «Дубль» на запертой строке — осознанный слом замка: без снятия
+              // учёт (onGenerated) откажется принять новый дубль, а данные к
+              // тому моменту уже перезаписаны.
+              for (const key of plan.force) {
+                if (index[key]?.ownership === 'locked') useArtifactStore.getState().unlock(key as ArtifactKey);
+              }
               // Подпись и есть запуск: смету подписывают, чтобы прогон пошёл, а
               // не чтобы переключить экран. Продолжение черновика, не force —
               // ведомость уже решила, что считать устаревшим.
               runCommand({ type: 'sign' });
               setZone(pipeline.nextIncomplete ?? zone);
-              // Обещание сметы «пропущу, заперто» едет вместе с запуском: без
-              // этого прогон спокойно переписал бы то, что автор запер.
-              void calendarGen.run(brief, {
-                plan: {
-                  skip: sheet.positions.filter(p => p.action === 'locked-skip').map(p => p.key),
-                  force: [],
-                  keepFresh: [],
-                },
-              });
+              void calendarGen.run(brief, { plan });
             }}
           />
         </div>

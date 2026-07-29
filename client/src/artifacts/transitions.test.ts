@@ -4,6 +4,7 @@ import {
   emptyMeta,
   onApprove,
   onGenerated,
+  onKeepOwn,
   onLock,
   onNote,
   onNotesConsumed,
@@ -123,5 +124,26 @@ describe('тейки и заметки', () => {
 
   it('учтённые заметки сбрасываются', () => {
     expect(onNotesConsumed(onNote(born(), 'ещё')).notes).toEqual([]);
+  });
+});
+
+describe('onKeepOwn', () => {
+  it('закрывает конфликт: отпечаток свежий, дубля нет — работы не было', () => {
+    const meta = onKeepOwn(born('authored'), 'fp-2');
+
+    expect(meta.fingerprint).toBe('fp-2');
+    expect(meta.takes).toHaveLength(1);
+    expect(meta.ownership).toBe('authored');
+  });
+
+  // В отличие от onGenerated: там замок неприкосновенен, потому что решает
+  // машина. Здесь решает автор — по конкретной строке и вслух.
+  it('запертое трогает — это решение автора, а не подмена машиной', () => {
+    expect(onKeepOwn(born('locked'), 'fp-2').fingerprint).toBe('fp-2');
+  });
+
+  it('несуществующее оставлять нечем', () => {
+    const meta = emptyMeta('spine/');
+    expect(onKeepOwn(meta, 'fp-1')).toBe(meta);
   });
 });

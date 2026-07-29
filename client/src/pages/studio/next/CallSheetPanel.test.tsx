@@ -122,6 +122,29 @@ describe('CallSheetPanel, решение конфликта', () => {
     expect(onSign).toHaveBeenCalledTimes(1);
   });
 
+  // Решения — это и есть предмет подписи: без них прогон не узнает, что
+  // обойти, а что переснять.
+  it('подпись отдаёт решения наружу', () => {
+    const onSign = vi.fn();
+    render(<CallSheetPanel callSheet={POPULATED} onSign={onSign} onCancel={() => {}} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'оставить моё' }));
+    fireEvent.click(confirmButton());
+
+    expect(onSign).toHaveBeenCalledWith({ 'beat_prose/b5': 'моё' });
+  });
+
+  it('дубль дороже: заказанная работа поднимает цену подписи на глазах', () => {
+    render(
+      <CallSheetPanel callSheet={POPULATED} stageCost={{ beat_prose: 0.5 }} onSign={() => {}} onCancel={() => {}} />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'дубль' }));
+
+    expect(screen.getAllByText('≈$0.70').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByText(/к запуску: 2/)).toBeTruthy();
+  });
+
   it('«Отмена» зовёт onCancel независимо от конфликтов', () => {
     const onCancel = vi.fn();
     render(<CallSheetPanel callSheet={POPULATED} onSign={() => {}} onCancel={onCancel} />);

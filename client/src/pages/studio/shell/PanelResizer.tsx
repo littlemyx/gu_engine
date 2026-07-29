@@ -1,4 +1,6 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useRef } from 'react';
+
+import ResizeHandle from '@/ui/kit/atoms/ResizeHandle';
 
 import styles from './PanelResizer.module.css';
 
@@ -18,79 +20,44 @@ export interface PanelResizerProps {
 }
 
 /**
- * Рамка между панелями. Тянется указателем с захватом (pointer capture):
- * курсор может уехать за пределы полоски и даже за окно — перетаскивание
- * не рвётся, пока кнопка нажата. Клавиатура двигает рамку стрелками, потому
- * что мышь — не единственный способ работать с интерфейсом.
+ * Механизм рамки между панелями: с какой стороны растёт панель, какой у неё
+ * размер в пикселях и где рамка стоит. Полоску, за которую волочат, рисует
+ * атом кита — рамок в шелле сколько угодно и в любом порядке, потому что
+ * каждая знает только про свою панель.
+ *
+ * Размер держит вызывающая сторона (стор шелла): рамка полностью
+ * контролируемая и между кадрами помнит лишь размер на момент нажатия.
  */
 const PanelResizer = ({ axis, size, invert = false, label, style, onResize, onReset }: PanelResizerProps) => {
-  const [active, setActive] = useState(false);
-  const origin = useRef({ pointer: 0, size: 0 });
+  // Дельта от атома отсчитывается от точки нажатия, а не от предыдущего
+  // кадра, поэтому складывать её надо с размером на начало перетаскивания.
+  const base = useRef(size);
 
-  const onPointerDown = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      event.preventDefault();
-      // Захват указателя — оптимизация, а не условие работы: если браузер его
-      // не даёт, перетаскивание всё равно должно начаться.
-      try {
-        event.currentTarget.setPointerCapture(event.pointerId);
-      } catch {
-        /* указатель уже отпущен или не поддерживается */
-      }
-      origin.current = { pointer: axis === 'x' ? event.clientX : event.clientY, size };
-      setActive(true);
+  const apply = useCallback((delta: number) => onResize(base.current + (invert ? -delta : delta)), [invert, onResize]);
+
+  const onNudge = useCallback(
+    (delta: number) => {
+      // Клавиатура двигает от текущего размера: перетаскивания нет, начальной
+      // точки тоже.
+      base.current = size;
+      apply(delta);
     },
-    [axis, size],
-  );
-
-  const onPointerMove = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
-      if (!active) return;
-      const current = axis === 'x' ? event.clientX : event.clientY;
-      const delta = current - origin.current.pointer;
-      onResize(origin.current.size + (invert ? -delta : delta));
-    },
-    [active, axis, invert, onResize],
-  );
-
-  const finish = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    try {
-      event.currentTarget.releasePointerCapture?.(event.pointerId);
-    } catch {
-      /* захвата не было */
-    }
-    setActive(false);
-  }, []);
-
-  const onKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
-      // 16px за нажатие — как в макете 7h; Shift ускоряет втрое.
-      const step = event.shiftKey ? 48 : 16;
-      const back = axis === 'x' ? 'ArrowLeft' : 'ArrowUp';
-      const forward = axis === 'x' ? 'ArrowRight' : 'ArrowDown';
-      if (event.key === back) onResize(size + (invert ? step : -step));
-      else if (event.key === forward) onResize(size + (invert ? -step : step));
-      else return;
-      event.preventDefault();
-    },
-    [axis, invert, onResize, size],
+    [apply, size],
   );
 
   return (
-    <div
-      role="separator"
-      aria-label={label}
-      aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
-      aria-valuenow={Math.round(size)}
-      tabIndex={0}
-      className={`${axis === 'x' ? styles.vertical : styles.horizontal} ${active ? styles.active : ''}`}
+    <ResizeHandle
+      orientation={axis === 'x' ? 'vertical' : 'horizontal'}
+      label={label}
+      valueNow={size}
+      className={axis === 'x' ? styles.vertical : styles.horizontal}
       style={style}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={finish}
-      onPointerCancel={finish}
-      onDoubleClick={onReset}
-      onKeyDown={onKeyDown}
+      onDragStart={() => {
+        base.current = size;
+      }}
+      onDrag={apply}
+      onNudge={onNudge}
+      onReset={onReset}
     />
   );
 };

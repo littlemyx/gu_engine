@@ -3,6 +3,7 @@ import { topoOrder } from '@/artifacts/stageGraph';
 import { needsDecision } from '@/artifacts/types';
 
 import type { ArtifactIndex, ArtifactKey, ArtifactStage, Freshness } from '@/artifacts/types';
+import type { RunPlan } from '@/narrative/calendarRunState';
 import { parseArtifactKey } from '@/artifacts/types';
 
 /**
@@ -91,6 +92,25 @@ function decide(freshness: Freshness, locked: boolean, decision: boolean, force:
   if (decision) return 'needs-decision';
   if (force) return 'generate';
   return freshness === 'fresh' ? 'cached' : 'generate';
+}
+
+/** Что автор решил по конфликту: оставить свою строку или заказать дубль. */
+export type DecisionPick = 'моё' | 'дубль';
+
+/**
+ * Подписанная смета → план прогона.
+ *
+ * Это и есть весь смысл подписи: до неё колл-щит был расчётом, после — набором
+ * обязательств. Запертое и оставленное автором уезжают одним списком `skip` —
+ * прогон обходит их одинаково; разница только в учёте, поэтому «моё» едет ещё
+ * и в `keepFresh` (отпечаток освежить, дубль не заводить).
+ */
+export function runPlanOf(sheet: CallSheet, decided: Partial<Record<ArtifactKey, DecisionPick>>): RunPlan {
+  const keep = sheet.decisions.filter(d => decided[d.key] === 'моё').map(d => d.key);
+  const redo = sheet.decisions.filter(d => decided[d.key] === 'дубль').map(d => d.key);
+  const locked = sheet.positions.filter(p => p.action === 'locked-skip').map(p => p.key);
+
+  return { skip: [...locked, ...keep], force: redo, keepFresh: keep };
 }
 
 /**

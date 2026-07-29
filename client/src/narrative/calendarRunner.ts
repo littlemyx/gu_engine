@@ -375,6 +375,8 @@ async function runPipeline(): Promise<void> {
   const runId = run0.runId;
   /** Воля автора из подписанной сметы: что запрещено трогать. */
   const skipSet = new Set(run0.plan?.skip ?? []);
+  /** И что пересчитать вопреки валидному кэшу — решение «дубль». */
+  const forcedSet = new Set(run0.plan?.force ?? []);
 
   /** Сколько вызовов транспорта ушло на элемент — «начато» звучит один раз. */
   const attemptsSeen = new Map<string, number>();
@@ -435,6 +437,12 @@ async function runPipeline(): Promise<void> {
   const isKept = (phase: BulkCalendarPhase, item: string | null): boolean => {
     const key = artifactKeyOf(phase, item);
     return key != null && skipSet.has(key);
+  };
+
+  /** Автор потребовал дубль: валидный кэш этой позиции не в счёт. */
+  const isForced = (phase: BulkCalendarPhase, item: string | null): boolean => {
+    const key = artifactKeyOf(phase, item);
+    return key != null && forcedSet.has(key);
   };
 
   /**
@@ -557,7 +565,7 @@ async function runPipeline(): Promise<void> {
     if (keptCast) {
       putDraft({ castPlan: keptCast });
       report('skip', 'cast', null, { reason: 'заперто автором' });
-    } else if (cachedUsable && cachedErrors.length === 0) {
+    } else if (cachedUsable && cachedErrors.length === 0 && !isForced('cast', null)) {
       putDraft({ castPlan: cached });
       report('skip', 'cast', null, { reason: 'кэш свеж' });
     } else {
@@ -664,10 +672,14 @@ async function runPipeline(): Promise<void> {
       });
     };
 
+    // Дубль любой половины пересчитывает стадию целиком — отдельного запроса
+    // «только мир» или «только календарь» у неё нет.
+    const pairForced = forcedSet.has('world/') || forcedSet.has('calendar/');
+
     if (keptWorld && keptCalendar && keptTagMap) {
       putDraft({ worldModel: keptWorld, calendar: keptCalendar, tagMap: keptTagMap });
       reportPair('skip');
-    } else if (cached && cachedErrors.length === 0) {
+    } else if (cached && cachedErrors.length === 0 && !pairForced) {
       putDraft(withKept(cached));
       reportPair('skip', 'кэш свеж');
     } else {
@@ -769,7 +781,7 @@ async function runPipeline(): Promise<void> {
     const spineSeeds = source === 'committed' ? seedIssues?.spine ?? [] : [];
     const cachedSpineFeedback = [...cachedSpineErrors, ...spineSeeds, ...scheduleFeedback];
 
-    if (cachedSpine && cachedSpineFeedback.length === 0) {
+    if (cachedSpine && cachedSpineFeedback.length === 0 && !isForced('spine', null)) {
       putDraft({ spine: cachedSpine });
       report('skip', 'spine', null, { reason: 'кэш свеж' });
       return cachedSpine;
@@ -846,7 +858,7 @@ async function runPipeline(): Promise<void> {
       break;
     }
     const { value: cachedSchedule } = scalarCache('schedule');
-    if (cachedSchedule && scheduleErrorsFor(cachedSchedule, spineLoop).length === 0) {
+    if (cachedSchedule && scheduleErrorsFor(cachedSchedule, spineLoop).length === 0 && !isForced('schedule', null)) {
       putDraft({ schedule: cachedSchedule });
       report('skip', 'schedule', null, { reason: 'кэш свеж' });
       scheduleLoop = cachedSchedule;
@@ -931,7 +943,7 @@ async function runPipeline(): Promise<void> {
       // anchor.id === beat.id по построению адаптера — кэш ищем по нему же.
       const cached = mapCache('spineBeatProse').value[anchor.id];
       const cachedErrors = cached ? beatErrors(cached) : [];
-      if (cached && cachedErrors.length === 0) {
+      if (cached && cachedErrors.length === 0 && !isForced('beat_prose', anchor.id)) {
         acceptedBeats[anchor.id] = cached;
         putDraft({ spineBeatProse: { [anchor.id]: cached } });
         report('skip', 'beat_prose', anchor.id, { reason: 'кэш свеж' });
@@ -1000,7 +1012,7 @@ async function runPipeline(): Promise<void> {
     if (keptAnchors) {
       putDraft({ anchorNarrations: keptAnchors });
       report('skip', 'anchor_transitions', null, { reason: 'заперто автором' });
-    } else if (cachedAnchors && Object.keys(cachedAnchors).length > 0) {
+    } else if (cachedAnchors && Object.keys(cachedAnchors).length > 0 && !isForced('anchor_transitions', null)) {
       putDraft({ anchorNarrations: cachedAnchors });
       report('skip', 'anchor_transitions', null, { reason: 'кэш свеж' });
     } else {
@@ -1074,6 +1086,17 @@ async function runPipeline(): Promise<void> {
         u => u.participants[0] === liId && skipSet.has(`event_pool/${u.id}`),
       );
 
+    /**
+     * «Дубль» на встрече — это пересчёт всего пула её владельца: пул
+     * генерируется целиком, запроса «только эту встречу» у стадии нет.
+     */
+    const forcedLis = new Set(
+      Object.values(committedStack().eventUnits)
+        .filter(u => forcedSet.has(`event_pool/${u.id}`))
+        .map(u => u.participants[0])
+        .filter(Boolean),
+    );
+
     const keepUnits = (units: EventUnit[]) => {
       if (units.length === 0) return;
       putDraft({ eventUnits: Object.fromEntries(units.map(u => [u.id, u])) });
@@ -1097,7 +1120,7 @@ async function runPipeline(): Promise<void> {
       const liSeeds = draftPool.length > 0 ? [] : seedIssues?.eventPool?.[li.id] ?? [];
       const cachedPoolErrors = cachedPool.length > 0 ? poolFeedback(cachedPool) : [];
       const cachedPoolFeedback = [...cachedPoolErrors, ...liSeeds];
-      if (cachedPool.length > 0 && cachedPoolFeedback.length === 0) {
+      if (cachedPool.length > 0 && cachedPoolFeedback.length === 0 && !forcedLis.has(li.id)) {
         finalUnits.push(...cachedPool);
         putDraft({ eventUnits: Object.fromEntries(cachedPool.map(u => [u.id, u])) });
         // Адреса «позиция = один LI» в учёте нет (там ключ — юнит), поэтому
@@ -1293,7 +1316,9 @@ async function runPipeline(): Promise<void> {
         ...proseLints(u),
       ];
 
+      const forcedUnit = isForced('dialogue_units', unit.id);
       const cachedComplete =
+        !forcedUnit &&
         unitSeeds.length === 0 &&
         cached.length === 3 &&
         BRACKETS.every(b => {
@@ -1322,7 +1347,7 @@ async function runPipeline(): Promise<void> {
         // арифметикой — чинится на месте, без повторной генерации.
         const cachedRaw = cached.find(u => u.bracket === bracket);
         const cachedForBracket = cachedRaw ? normalizeChoicePathDeltas(cachedRaw).unit : undefined;
-        if (unitSeeds.length === 0 && cachedForBracket && unitErrors(cachedForBracket).length === 0) {
+        if (!forcedUnit && unitSeeds.length === 0 && cachedForBracket && unitErrors(cachedForBracket).length === 0) {
           units.push(cachedForBracket);
           // Частичный массив в черновике: resume подхватит уже принятые брекеты.
           putDraft({ unitProse: { [unitKey]: [...units] } });
@@ -1501,7 +1526,7 @@ async function runPipeline(): Promise<void> {
         continue;
       }
       const cached = mapCache('endings').value[key];
-      if (cached && endingErrors(cached, task.kind).length === 0) {
+      if (cached && endingErrors(cached, task.kind).length === 0 && !isForced('ending_prose', key)) {
         putDraft({ endings: { [key]: cached } });
         report('skip', 'ending_prose', key, { reason: 'кэш свеж' });
         continue;
@@ -1563,13 +1588,14 @@ async function runPipeline(): Promise<void> {
   }
 
   const finishedRunId = runNow().runId;
+  const keepFresh = runNow().plan?.keepFresh ?? [];
   // Единственная запись в committed-стек за весь прогон.
   store().commitCalendarRun();
   // Учёт коммитится тем же шагом, что и стек: иначе история и знание о том,
   // из чего она собрана, разъедутся при первом же обрыве.
   const spent = useRunCost.getState().spent;
-  // runId читается до коммита: после него состояние прогона обнуляется.
-  recordRunCommit(finishedRunId, spent);
+  // runId и план читаются до коммита: после него состояние прогона обнуляется.
+  recordRunCommit(finishedRunId, spent, keepFresh);
   emitPipelineEvent({
     runId: finishedRunId,
     phase: 'commit',

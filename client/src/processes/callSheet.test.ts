@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { migrateExisting } from '@/artifacts/migrate';
 import { onLock, onUserEdit } from '@/artifacts/transitions';
 
-import { buildCallSheet, consequencesOf } from './callSheet';
+import { buildCallSheet, consequencesOf, runPlanOf } from './callSheet';
 
 import type { StageCost } from './callSheet';
 import type { PresentItems } from '@/artifacts/migrate';
@@ -80,6 +80,41 @@ describe('авторское', () => {
     const sheet = buildCallSheet({ index, owns: LETO, cost: COST });
 
     expect(sheet.positions.find(p => p.key === 'spine/')?.action).toBe('cached');
+  });
+});
+
+describe('подписанная смета → план прогона', () => {
+  /** Запертый хребет протух от правки брифа — прогон требует решения. */
+  const conflicted = () => {
+    const index = migrateExisting(STORY, LETO);
+    index['spine/'] = onLock(index['spine/']);
+    return buildCallSheet({ index, owns: ZIMA, cost: COST });
+  };
+
+  it('«оставить моё» прогон обходит и запоминает как решённое', () => {
+    const plan = runPlanOf(conflicted(), { 'spine/': 'моё' });
+
+    expect(plan.skip).toContain('spine/');
+    expect(plan.keepFresh).toEqual(['spine/']);
+    expect(plan.force).toEqual([]);
+  });
+
+  it('«дубль» уходит на пересчёт — и только он', () => {
+    const plan = runPlanOf(conflicted(), { 'spine/': 'дубль' });
+
+    expect(plan.force).toEqual(['spine/']);
+    expect(plan.skip).not.toContain('spine/');
+    expect(plan.keepFresh).toEqual([]);
+  });
+
+  // Свежий запертый решения не требует: он обходится молча, тем же списком.
+  it('запертое едет в план само, без решения автора', () => {
+    const index = migrateExisting(STORY, LETO);
+    index['cast/'] = onLock(index['cast/']);
+    const plan = runPlanOf(buildCallSheet({ index, owns: LETO, cost: COST }), {});
+
+    expect(plan.skip).toEqual(['cast/']);
+    expect(plan.keepFresh).toEqual([]);
   });
 });
 
