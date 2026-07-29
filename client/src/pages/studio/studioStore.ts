@@ -36,8 +36,12 @@ export type DockTab = 'prefabs' | 'assets' | 'qa';
  */
 export type SidebarTab = 'structure' | 'pipeline';
 
-/** Нижняя панель: ведомость конвейера, лента событий, журнал прогонов. */
-export type BottomTab = 'pipeline' | 'feed' | 'runs';
+/**
+ * Нижняя панель: ведомость конвейера, лента событий, журнал прогонов и
+ * библиотека префабов. Префабы переживают проект, поэтому и в конвейерном
+ * шелле у них своя вкладка, а не место внутри зоны.
+ */
+export type BottomTab = 'pipeline' | 'feed' | 'runs' | 'prefabs';
 
 export type ModalState =
   | { kind: 'resetDraft' }
