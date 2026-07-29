@@ -3,6 +3,7 @@ import React from 'react';
 import ReadinessRow from '@/ui/kit/molecules/ReadinessRow';
 
 import IdeaZone from './IdeaZone';
+import ZoneCanvas from './ZoneCanvas';
 
 import styles from './shell.module.css';
 
@@ -47,7 +48,10 @@ const ZoneView = ({ zone, pipeline, brief }: ZoneViewProps) => {
         </div>
       )}
 
-      <div className={styles.stub}>Экран зоны «{zone.ru}» ещё не подключён.</div>
+      <ZoneCanvas
+        zone={zone.id}
+        fallback={<div className={styles.stub}>Экран зоны «{zone.ru}» ещё не подключён.</div>}
+      />
     </div>
   );
 };

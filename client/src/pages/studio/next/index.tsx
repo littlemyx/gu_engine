@@ -17,6 +17,7 @@ import ZoneSwitcher from '@/ui/kit/molecules/ZoneSwitcher';
 import { derivePipeline } from '../derive/pipelineModel';
 import { deriveStructure } from '../derive/structureModel';
 import { useStudioStore } from '../studioStore';
+import ArtifactInspector from './ArtifactInspector';
 import SidebarPipeline from './SidebarPipeline';
 import SidebarStructure from './SidebarStructure';
 import ZoneView from './ZoneView';
@@ -25,6 +26,7 @@ import { ZONES, nextZone, zoneById, zoneLabel } from './zoneModel';
 import styles from './shell.module.css';
 
 import type { StageCost } from '@/processes/callSheet';
+import type { ArtifactRow } from '../derive/pipelineModel';
 import type { BottomTab, SidebarTab } from '../studioStore';
 
 /**
@@ -86,6 +88,9 @@ const StudioNext = () => {
   const dockHeight = useStudioStore(s => s.dockHeight);
 
   const [zoneListOpen, setZoneListOpen] = useState(false);
+  // Выделение артефакта живёт в сессии: после перезагрузки разумнее открыть
+  // чистый инспектор, чем ссылаться на позицию, которой уже нет.
+  const [picked, setPicked] = useState<ArtifactRow | null>(null);
 
   const { index, owns } = useArtifacts();
   const brief = useBriefStore(s => s.brief);
@@ -144,7 +149,7 @@ const StudioNext = () => {
           <SidebarTabsStrip tab={sidebarTab} onPick={setSidebarTab} />
           <div className={styles.sidebarBody}>
             {sidebarTab === 'pipeline' ? (
-              <SidebarPipeline model={pipeline} current={zone} onPickZone={setZone} />
+              <SidebarPipeline model={pipeline} current={zone} onPickZone={setZone} onPickArtifact={setPicked} />
             ) : (
               <SidebarStructure nodes={structure} />
             )}
@@ -156,8 +161,14 @@ const StudioNext = () => {
         </main>
 
         <aside className={styles.inspector}>
-          <div className={styles.kicker}>Инспектор</div>
-          <p className={styles.empty}>Выделите что-нибудь — детали появятся здесь.</p>
+          {picked ? (
+            <ArtifactInspector row={picked} />
+          ) : (
+            <>
+              <div className={styles.kicker}>Инспектор</div>
+              <p className={styles.empty}>Выделите позицию в ведомости — детали появятся здесь.</p>
+            </>
+          )}
         </aside>
       </div>
 
@@ -170,7 +181,9 @@ const StudioNext = () => {
         />
         {dockOpen && (
           <div className={styles.dockBody}>
-            {bottomTab === 'pipeline' && <SidebarPipeline model={pipeline} current={zone} onPickZone={setZone} />}
+            {bottomTab === 'pipeline' && (
+              <SidebarPipeline model={pipeline} current={zone} onPickZone={setZone} onPickArtifact={setPicked} />
+            )}
             {bottomTab === 'feed' && <Feed events={feed} />}
             {bottomTab === 'runs' && <p className={styles.empty}>Прогонов ещё не было.</p>}
           </div>

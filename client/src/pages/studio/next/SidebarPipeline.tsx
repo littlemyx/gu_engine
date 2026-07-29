@@ -4,7 +4,7 @@ import ArtifactRow from '@/ui/kit/molecules/ArtifactRow';
 
 import styles from './shell.module.css';
 
-import type { PipelineModel, ZoneRow } from '../derive/pipelineModel';
+import type { ArtifactRow as Row, PipelineModel, ZoneRow } from '../derive/pipelineModel';
 import type { ArtifactMark as RowMark } from '@/ui/kit/molecules/ArtifactRow';
 import type { ZoneId } from './zoneModel';
 
@@ -12,6 +12,7 @@ export interface SidebarPipelineProps {
   model: PipelineModel;
   current: ZoneId;
   onPickZone: (zone: ZoneId) => void;
+  onPickArtifact?: (row: Row) => void;
 }
 
 /**
@@ -19,16 +20,32 @@ export interface SidebarPipelineProps {
  * ещё нет. Наверху шелла видна только текущая зона, поэтому ответ на вопрос
  * «сколько мне ещё работы» живёт именно здесь.
  */
-const SidebarPipeline = ({ model, current, onPickZone }: SidebarPipelineProps) => (
+const SidebarPipeline = ({ model, current, onPickZone, onPickArtifact }: SidebarPipelineProps) => (
   <div>
     <div className={styles.kicker}>Конвейер</div>
     {model.zones.map(zone => (
-      <ZoneBlock key={zone.id} zone={zone} active={zone.id === current} onPick={() => onPickZone(zone.id)} />
+      <ZoneBlock
+        key={zone.id}
+        zone={zone}
+        active={zone.id === current}
+        onPick={() => onPickZone(zone.id)}
+        onPickArtifact={onPickArtifact}
+      />
     ))}
   </div>
 );
 
-const ZoneBlock = ({ zone, active, onPick }: { zone: ZoneRow; active: boolean; onPick: () => void }) => (
+const ZoneBlock = ({
+  zone,
+  active,
+  onPick,
+  onPickArtifact,
+}: {
+  zone: ZoneRow;
+  active: boolean;
+  onPick: () => void;
+  onPickArtifact?: (row: Row) => void;
+}) => (
   <div className={styles.section}>
     <button
       type="button"
@@ -40,7 +57,9 @@ const ZoneBlock = ({ zone, active, onPick }: { zone: ZoneRow; active: boolean; o
     </button>
 
     {zone.rows.map(row => (
-      <ArtifactRow key={row.key} artifactName={rowName(row.stage, row.item)} mark={markOf(row)} />
+      <button key={row.key} type="button" className={styles.artifactPick} onClick={() => onPickArtifact?.(row)}>
+        <ArtifactRow artifactName={rowName(row.stage, row.item)} mark={markOf(row)} />
+      </button>
     ))}
   </div>
 );
