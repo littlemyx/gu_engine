@@ -1,0 +1,94 @@
+.root {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+.info {
+  width: 150px;
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-right: 1px solid var(--gu-line-faint);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+
+.infoClickable {
+  cursor: pointer;
+}
+
+.infoClickable:hover {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.infoClickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.take {
+  margin-top: 2px;
+}
+
+.waveArea {
+  flex: 1;
+  min-width: 120px;
+  box-sizing: border-box;
+  position: relative;
+  padding: var(--space-2) var(--space-3);
+  display: flex;
+  align-items: center;
+}
+
+.waveInner {
+  position: relative;
+  width: 100%;
+  height: 44px;
+}
+
+.note {
+  position: absolute;
+  top: 2px;
+  font-size: 9px;
+  font-family: var(--font-body);
+  padding: 1px 5px;
+  background: color-mix(in srgb, var(--gu-paper) 90%, transparent);
+}
+
+.noteLeft {
+  left: 6px;
+  color: var(--gu-muted);
+}
+
+.noteRight {
+  right: 6px;
+  color: var(--color-accent-700);
+}
+
+.controls {
+  width: 170px;
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border-left: 1px solid var(--gu-line-faint);
+}
+
+.fxRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}

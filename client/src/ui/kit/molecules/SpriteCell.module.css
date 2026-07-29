@@ -1,0 +1,36 @@
+.body {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+}
+
+/*
+ * Тёмная заливка «принят» — плейсхолдер уже сгенерированного кадра. Ни
+ * `Thumbnail` (жёсткое соотношение сторон внутри `kind`, нет независимых
+ * width/height), ни `HatchFill` (штриховка по смыслу означает «кадра нет»,
+ * обратный смысл состоянию) сюда не подходят — заливка на тех же
+ * blueprint-токенах, что использует `HatchFill.onDark`, сделана локально.
+ */
+.acceptedFill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, var(--gu-blueprint-700), var(--gu-blueprint-900));
+}
+
+.hatchLayer {
+  position: absolute;
+  inset: 0;
+}
+
+.labelSlot {
+  position: relative;
+  padding: 3px;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

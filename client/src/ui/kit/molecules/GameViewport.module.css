@@ -1,0 +1,141 @@
+.root {
+  position: relative;
+  box-sizing: border-box;
+  flex: none;
+  overflow: hidden;
+  background: var(--gu-chrome-deep);
+  border: 1px solid var(--gu-blueprint-700);
+  border-radius: 0;
+  font-family: var(--font-body);
+}
+
+.background {
+  position: absolute;
+  inset: 0;
+}
+
+.character {
+  position: absolute;
+  right: 80px;
+  bottom: 96px;
+  width: 160px;
+  height: 260px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  background: linear-gradient(180deg, var(--gu-blueprint-700), var(--gu-blueprint-900));
+  border: 1px solid var(--gu-blueprint-400);
+}
+
+.characterText {
+  padding: 6px;
+  font-size: 9.5px;
+  line-height: 1.4;
+  color: var(--gu-ink-75);
+  text-align: center;
+}
+
+.banner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 7px 14px;
+  background: color-mix(in srgb, var(--gu-chrome-deep) 85%, transparent);
+  font-size: 11px;
+  color: var(--gu-signal-run);
+}
+
+.dialogue {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--gu-chrome-deep) 92%, transparent);
+  border: 1px solid var(--gu-blueprint-700);
+}
+
+.choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: var(--space-1);
+}
+
+.choice {
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
+  margin: 0;
+  border: 1px solid var(--gu-hairline-strong);
+  border-radius: 0;
+  background: transparent;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--gu-ink-75);
+  text-align: left;
+  cursor: default;
+}
+
+button.choice {
+  cursor: pointer;
+}
+
+button.choice:hover {
+  background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+}
+
+button.choice:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.choiceSelected {
+  border-color: color-mix(in srgb, var(--gu-ink) 40%, transparent);
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+  color: var(--gu-ink);
+}
+
+button.choiceSelected:hover {
+  background: color-mix(in srgb, var(--color-accent) 28%, transparent);
+}
+
+.strictOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: color-mix(in srgb, var(--gu-chrome-deep) 95%, transparent);
+}
+
+.strictTitle {
+  font-family: var(--font-heading);
+  font-size: 18px;
+  font-weight: var(--font-heading-weight);
+  color: var(--gu-ink);
+}
+
+.strictNote {
+  font-size: 12px;
+  color: var(--gu-signal-fail);
+}
+
+.strictAction {
+  border: 1px solid color-mix(in srgb, var(--gu-ink) 35%, transparent);
+  padding: 6px 16px;
+  font-size: 11.5px;
+  color: var(--gu-ink);
+}

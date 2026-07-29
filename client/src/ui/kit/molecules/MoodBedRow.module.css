@@ -1,0 +1,31 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: 11px;
+  font-family: var(--font-body);
+}
+
+.code {
+  flex: 1;
+  min-width: 0;
+}
+
+.choiceGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.letters {
+  display: inline-flex;
+  gap: var(--space-1);
+}
+
+.note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}

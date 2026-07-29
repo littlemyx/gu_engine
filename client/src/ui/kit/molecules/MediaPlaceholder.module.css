@@ -1,0 +1,27 @@
+.root {
+  box-sizing: border-box;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  padding: var(--space-4);
+}
+
+/*
+ * ToneSurface не покрывает эту подложку: у неё нет тона под нейтральный
+ * фон-хром (глубокий тёмный / светлый нейтральный), только акцентные и
+ * сигнальные заливки. Ближайшие токены уже есть в industry.css, поэтому
+ * заводим фон здесь, а не хардкодом.
+ */
+.onLight {
+  background: var(--color-neutral-200);
+}
+
+.onDark {
+  background: var(--gu-chrome-deep);
+}
+
+.labelWrap {
+  display: block;
+  padding: var(--space-2) var(--space-3);
+  text-align: center;
+}

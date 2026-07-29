@@ -1,0 +1,97 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  box-sizing: border-box;
+  padding: var(--space-2) var(--space-4);
+  border-top: 1px solid var(--gu-line-soft);
+  background: var(--color-neutral-200);
+  font-family: var(--font-body);
+}
+
+.barOnDark {
+  border-top-color: var(--gu-hairline-mark);
+  background: var(--gu-chrome-raised);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  font-size: 10px;
+  line-height: 1.5;
+  padding: 2px 9px;
+  border: 1px solid transparent;
+  border-radius: 0;
+  white-space: nowrap;
+  cursor: default;
+  background: transparent;
+}
+
+button.chip {
+  cursor: pointer;
+  font: inherit;
+}
+
+button.chip:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.normal {
+  border-color: var(--gu-line-soft);
+  background: var(--gu-paper);
+  color: var(--gu-ink-dark);
+  font-weight: 400;
+}
+
+button.normal:hover {
+  background: var(--color-neutral-100);
+}
+
+.current {
+  border-color: var(--color-accent);
+  background: var(--gu-signal-run-bg);
+  color: var(--color-accent-700);
+  font-weight: 700;
+}
+
+button.current:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+
+.warning {
+  border-style: dashed;
+  border-color: var(--gu-line);
+  background: transparent;
+  color: var(--gu-muted);
+  font-weight: 400;
+}
+
+/* На тёмном хроме тона строятся из чернил и сигналов, а не из светлых рамп. */
+.onDark.normal {
+  border-color: var(--gu-hairline-mark);
+  background: transparent;
+  color: var(--gu-ink-85);
+}
+
+button.onDark.normal:hover {
+  background: var(--gu-hover-bg);
+}
+
+.onDark.current {
+  border-color: var(--gu-signal-run);
+  background: color-mix(in srgb, var(--gu-signal-run) 14%, transparent);
+  color: var(--gu-signal-run);
+}
+
+button.onDark.current:hover {
+  background: color-mix(in srgb, var(--gu-signal-run) 22%, transparent);
+}
+
+.onDark.warning {
+  border-color: var(--gu-hairline-strong);
+  background: transparent;
+  color: var(--gu-ink-60);
+}

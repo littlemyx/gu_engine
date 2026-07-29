@@ -1,0 +1,54 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+.name {
+  flex: 0 0 40px;
+  width: 40px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.track {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+}
+
+.value {
+  flex: none;
+  font-family: var(--gu-mono);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+
+.accent {
+  color: var(--color-accent-700);
+}
+
+.error {
+  color: var(--gu-signal-fail-text);
+}
+
+.muted {
+  color: var(--gu-muted);
+}
+
+.onDark.accent {
+  color: var(--gu-signal-run);
+}
+
+.onDark.error {
+  color: var(--gu-signal-fail);
+}
+
+.onDark.muted {
+  color: var(--gu-ink-60);
+}

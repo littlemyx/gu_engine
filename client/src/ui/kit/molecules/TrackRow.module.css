@@ -1,0 +1,81 @@
+.row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 9px;
+  border: none;
+  background: transparent;
+}
+
+.clickable {
+  cursor: pointer;
+}
+
+.clickable:hover {
+  background: color-mix(in srgb, var(--color-accent) 6%, transparent);
+}
+
+.rowSelected.clickable:hover {
+  background: transparent;
+}
+
+.clickable:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+.dial {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--color-neutral-500);
+  border-radius: 50%;
+}
+
+.dialChecked {
+  border-color: var(--color-accent-700);
+}
+
+.dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-accent-700);
+}
+
+.label {
+  flex: none;
+  white-space: nowrap;
+}
+
+.time {
+  flex: none;
+}
+
+.waveSlot {
+  flex: 1;
+  min-width: 0;
+  height: 16px;
+}
+
+.playSlot {
+  flex: none;
+  display: inline-flex;
+}
+
+/* ToneSurface — inline-block по умолчанию; строке трека нужна полная ширина ряда. */
+.toneStretch {
+  display: block;
+}
+
+.toneStretch > * {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+}

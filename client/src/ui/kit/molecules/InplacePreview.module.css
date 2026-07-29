@@ -1,0 +1,30 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-4);
+  box-sizing: border-box;
+}
+
+/* Плашка «уже сгенерированного» снимка: заливка вместо штриховки `Thumbnail`,
+   подпись поверх, а не отдельным тегом снизу. Точного атома под этот оттенок
+   нет — см. `missingAtoms` в отчёте порта. */
+.frame {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  border: 1px solid var(--gu-blueprint-400);
+  border-radius: 0;
+  background: linear-gradient(
+    180deg,
+    var(--gu-blueprint-400) 0%,
+    var(--gu-blueprint-200) 45%,
+    var(--gu-blueprint-700) 46%,
+    var(--gu-blueprint-900) 100%
+  );
+}
+
+.captionSlot {
+  position: absolute;
+  left: var(--space-2);
+  bottom: var(--space-1);
+}

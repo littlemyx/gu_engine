@@ -1,0 +1,52 @@
+.root {
+  display: inline-block;
+  padding: 0;
+  background: transparent;
+}
+
+.onDark {
+  padding: var(--space-2) var(--space-3);
+  background: var(--gu-chrome-raised);
+}
+
+.body {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--gu-mono);
+  line-height: 1.7;
+}
+
+.line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.flagItem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: var(--space-1);
+}
+
+.sep {
+  color: var(--color-neutral-500);
+}
+
+.onDark .sep {
+  color: var(--gu-ink-40);
+}
+
+/*
+ * StatusGlyph не несёт статуса с глифом «—» для невыставленного флага
+ * (у него есть только ○ 'none'), поэтому тире рисуем локально теми же
+ * токенами, что и StatusGlyph.none/.onDark.none — см. отчёт задачи.
+ */
+.dash {
+  font-family: var(--gu-mono);
+  color: var(--color-neutral-500);
+}
+
+.dashOnDark {
+  color: var(--gu-ink-40);
+}

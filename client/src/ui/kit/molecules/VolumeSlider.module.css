@@ -1,0 +1,41 @@
+.root {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: var(--font-body);
+}
+
+.labelSlot {
+  flex: none;
+  width: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trackSlot {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: block;
+}
+
+.valueSlot {
+  flex: none;
+  width: 20px;
+  text-align: right;
+  font-family: var(--gu-mono);
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--color-accent-700);
+}
+
+.valueSlot.onDark {
+  color: var(--gu-signal-run);
+}
+
+.dim {
+  opacity: 0.45;
+}

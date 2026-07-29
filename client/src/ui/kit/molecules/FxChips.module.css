@@ -1,0 +1,48 @@
+.root {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  font-family: var(--font-body);
+}
+
+.addLabel {
+  font-size: 9px;
+  line-height: 1.5;
+  color: var(--gu-muted);
+  white-space: nowrap;
+}
+
+.addLabel.onDark {
+  color: var(--gu-ink-60);
+}
+
+.trigger {
+  all: unset;
+  box-sizing: border-box;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.trigger:hover > div {
+  border-color: var(--color-accent);
+  background: color-mix(in srgb, var(--color-accent) 8%, transparent);
+}
+
+.trigger:hover .addLabel {
+  color: var(--color-accent-700);
+}
+
+.trigger:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.trigger.onDark:hover > div {
+  border-color: var(--gu-signal-run);
+  background: color-mix(in srgb, var(--gu-signal-run) 8%, transparent);
+}
+
+.trigger.onDark:hover .addLabel {
+  color: var(--gu-ink-85);
+}

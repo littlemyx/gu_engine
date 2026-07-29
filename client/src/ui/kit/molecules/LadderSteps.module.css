@@ -1,0 +1,45 @@
+.root {
+  display: block;
+  font-family: var(--font-body);
+}
+
+.row {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.cell {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+
+.cellButton {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.cellButton:hover {
+  opacity: 0.85;
+}
+
+.cellButton:active {
+  opacity: 0.7;
+}
+
+.cellButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.note {
+  margin-top: var(--space-1);
+}

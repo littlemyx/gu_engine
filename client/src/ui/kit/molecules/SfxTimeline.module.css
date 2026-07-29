@@ -1,0 +1,51 @@
+.root {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 44px;
+}
+
+/*
+ * Сквозная линия времени во всю ширину дорожки. `Connector` не подходит:
+ * его SVG принимает только числовую длину в px, а не 100%/fluid ширину.
+ */
+.spine {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 21px;
+  height: 2px;
+  background: var(--color-neutral-400);
+}
+
+.clipSlot {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  box-sizing: border-box;
+}
+
+/*
+ * `Frame` и `ToneSurface` не растягиваются на 100% ширины/высоты сами —
+ * оборачиваем каждый в grid-слой: у CSS Grid `align-items`/`justify-items`
+ * по умолчанию `stretch`, поэтому блочный дочерний элемент без явного
+ * размера заполняет ячейку без правок самих атомов.
+ */
+.fillLayer,
+.frameLayer {
+  position: absolute;
+  inset: 0;
+  display: grid;
+}
+
+.clipLabel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  padding: 0 4px;
+  box-sizing: border-box;
+  overflow: hidden;
+  white-space: nowrap;
+}

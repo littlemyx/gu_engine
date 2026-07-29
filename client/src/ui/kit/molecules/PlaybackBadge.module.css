@@ -1,0 +1,45 @@
+.root {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  box-sizing: border-box;
+  padding: 2px 7px;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  border-radius: 0;
+}
+
+/* Мокап красит рамку тем же цветом, что и текст: акцент на ходу, тускло на стопе. */
+.playing {
+  border-color: var(--gu-signal-run);
+}
+
+.paused {
+  border-color: var(--gu-hairline-soft);
+}
+
+.text {
+  display: inline-flex;
+  align-items: baseline;
+}
+
+.pauseGlyph {
+  font-family: var(--gu-mono);
+  line-height: 1.2;
+  color: var(--gu-ink-50);
+}
+
+.pausedLabel {
+  font-weight: 600;
+  color: var(--gu-ink-50);
+}
+
+.separator {
+  color: var(--gu-ink-50);
+}
+
+.playing .separator {
+  color: var(--gu-signal-run);
+}

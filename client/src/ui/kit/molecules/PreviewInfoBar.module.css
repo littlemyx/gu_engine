@@ -1,0 +1,33 @@
+.root {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/*
+ * `ToneSurface` — `display: inline-block` (у атома нет режима «на всю
+ * ширину»). Растягиваем его собственный корневой div до 100% через дочерний
+ * селектор, не трогая файл атома. Сообщено в отчёте задачи как missingAtom.
+ */
+.root > div {
+  display: block;
+  width: 100%;
+}
+
+.row {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-1) var(--space-4);
+  font-family: var(--font-body);
+}
+
+.item {
+  white-space: nowrap;
+}
+
+.right {
+  margin-left: auto;
+  white-space: nowrap;
+  font-family: var(--gu-mono);
+}
