@@ -130,6 +130,35 @@ function cutOneShot(pcm, maxDur, tailS) {
   return { L, R };
 }
 
+/**
+ * Downward expander for mechanical takes: Suno bakes room reverb into rattle
+ * and clank recordings even with a "completely dry" prompt, and that wash
+ * between the hits reads as echo in-game. Everything under ~5% of the peak
+ * envelope (-26 dB) is squeezed to 12%, with fast attack / slow release so
+ * the hits themselves keep their transients.
+ */
+function gateTail(seg) {
+  const n = seg.L.length;
+  const aAtt = Math.exp(-1 / (0.004 * SR)), aRel = Math.exp(-1 / (0.030 * SR));
+  const env = new Float32Array(n);
+  let e = 0, peak = 0;
+  for (let i = 0; i < n; i++) {
+    const x = Math.max(Math.abs(seg.L[i]), Math.abs(seg.R[i]));
+    e = x > e ? aAtt * e + (1 - aAtt) * x : aRel * e + (1 - aRel) * x;
+    env[i] = e;
+    if (e > peak) peak = e;
+  }
+  const thr = peak * 0.05;
+  const gAtt = Math.exp(-1 / (0.002 * SR)), gRel = Math.exp(-1 / (0.050 * SR));
+  let g = 1;
+  for (let i = 0; i < n; i++) {
+    const target = env[i] >= thr ? 1 : 0.12;
+    g = target > g ? gAtt * g + (1 - gAtt) * target : gRel * g + (1 - gRel) * target;
+    seg.L[i] *= g; seg.R[i] *= g;
+  }
+  return seg;
+}
+
 /** Equal-power loop crossfade (same maths as the music pipeline). */
 function loopBake(pcm, t0, durS, cfS) {
   const N = Math.round(durS * SR), CF = Math.round(cfS * SR);
@@ -167,8 +196,9 @@ const ONE_SHOTS = [
   { kind: 'impact_soft', srcs: ['impact_soft'], maxDur: 1.0, tail: 0.2, peakDb: -3.0, kbps: 64 },
   { kind: 'slide', srcs: ['slide'], maxDur: 3.0, tail: 0.6, peakDb: -3.0, kbps: 64 },
   // Mechanical accents: quiet by design — they sit on top of the main foley.
-  { kind: 'chain_slap', srcs: ['chain_slap'], maxDur: 0.45, tail: 0.15, peakDb: -6.0, kbps: 48 },
-  { kind: 'clank', srcs: ['clank'], maxDur: 0.6, tail: 0.2, peakDb: -4.5, kbps: 48 },
+  // gate: squeeze the baked-in room wash between the hits (reads as echo).
+  { kind: 'chain_slap', srcs: ['chain_slap'], maxDur: 0.45, tail: 0.15, peakDb: -6.0, kbps: 48, gate: true },
+  { kind: 'clank', srcs: ['clank'], maxDur: 0.6, tail: 0.2, peakDb: -4.5, kbps: 48, gate: true },
   // UI cues.
   { kind: 'ui_trick', srcs: ['ui_trick'], maxDur: 0.8, tail: 0.3, peakDb: -6.0, kbps: 48 },
   { kind: 'ui_fall', srcs: ['ui_fall'], maxDur: 1.4, tail: 0.5, peakDb: -6.0, kbps: 48 },
@@ -179,8 +209,9 @@ for (const spec of ONE_SHOTS) {
   for (const srcId of spec.srcs) {
     for (const cand of candidates(srcId)) {
       const pcm = decode(cand);
-      const seg = cutOneShot(pcm, spec.maxDur, spec.tail);
+      let seg = cutOneShot(pcm, spec.maxDur, spec.tail);
       if (!seg || seg.L.length < 0.15 * SR) { console.log(`  ${srcId}: skipped ${cand} (too short/empty)`); continue; }
+      if (spec.gate) seg = gateTail(seg);
       idx++;
       const id = `${spec.kind}_${String(idx).padStart(2, '0')}`;
       encodePeak(writeWav(id + '.wav', seg.L, seg.R), seg, id, spec.peakDb, spec.kbps);
@@ -234,7 +265,8 @@ for (const spec of ONE_SHOTS) {
       if (pk < 0.03) continue;
       idx++;
       const id = `rattle_${String(idx).padStart(2, '0')}`;
-      encodePeak(writeWav(id + '.wav', L, R), { L, R }, id, -9.0, 48);
+      const seg = gateTail({ L, R });
+      encodePeak(writeWav(id + '.wav', seg.L, seg.R), seg, id, -9.0, 48);
       manifest.assets.push({ id, kind: 'rattle', role: 'oneshot', priority: 1,
         files: { opus: id + '.ogg', aac: id + '.m4a' }, gain: 0 });
     }
