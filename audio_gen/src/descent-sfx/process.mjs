@@ -192,8 +192,11 @@ const missing = [];
 // One-shots: every decent candidate becomes a variant of its kind.
 const ONE_SHOTS = [
   { kind: 'crash', srcs: ['crash_a', 'crash_b'], maxDur: 3.2, tail: 0.45, peakDb: -1.5, kbps: 64 },
-  { kind: 'impact_hard', srcs: ['impact_hard'], maxDur: 1.5, tail: 0.25, peakDb: -1.5, kbps: 64 },
-  { kind: 'impact_soft', srcs: ['impact_soft'], maxDur: 1.0, tail: 0.2, peakDb: -3.0, kbps: 64 },
+  { kind: 'impact_hard', srcs: ['impact_hard'], maxDur: 1.5, tail: 0.25, peakDb: -1.5, kbps: 64, gate: true },
+  // impact_soft is a light touch — hard-capped short so no take can drag a
+  // tail; keep:1 drops the second candidate, a wall-to-wall washy take that
+  // stays above the gate threshold for its whole length.
+  { kind: 'impact_soft', srcs: ['impact_soft'], maxDur: 0.45, tail: 0.15, peakDb: -3.0, kbps: 64, gate: true, keep: 1 },
   { kind: 'slide', srcs: ['slide'], maxDur: 3.0, tail: 0.6, peakDb: -3.0, kbps: 64 },
   // Mechanical accents: quiet by design — they sit on top of the main foley.
   // gate: squeeze the baked-in room wash between the hits (reads as echo).
@@ -208,6 +211,7 @@ for (const spec of ONE_SHOTS) {
   let idx = 0;
   for (const srcId of spec.srcs) {
     for (const cand of candidates(srcId)) {
+      if (spec.keep && idx >= spec.keep) break;
       const pcm = decode(cand);
       let seg = cutOneShot(pcm, spec.maxDur, spec.tail);
       if (!seg || seg.L.length < 0.15 * SR) { console.log(`  ${srcId}: skipped ${cand} (too short/empty)`); continue; }
