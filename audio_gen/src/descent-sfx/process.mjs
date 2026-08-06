@@ -166,6 +166,12 @@ const ONE_SHOTS = [
   { kind: 'impact_hard', srcs: ['impact_hard'], maxDur: 1.5, tail: 0.25, peakDb: -1.5, kbps: 64 },
   { kind: 'impact_soft', srcs: ['impact_soft'], maxDur: 1.0, tail: 0.2, peakDb: -3.0, kbps: 64 },
   { kind: 'slide', srcs: ['slide'], maxDur: 3.0, tail: 0.6, peakDb: -3.0, kbps: 64 },
+  // Mechanical accents: quiet by design — they sit on top of the main foley.
+  { kind: 'chain_slap', srcs: ['chain_slap'], maxDur: 0.45, tail: 0.15, peakDb: -6.0, kbps: 48 },
+  { kind: 'clank', srcs: ['clank'], maxDur: 0.6, tail: 0.2, peakDb: -4.5, kbps: 48 },
+  // UI cues.
+  { kind: 'ui_trick', srcs: ['ui_trick'], maxDur: 0.8, tail: 0.3, peakDb: -6.0, kbps: 48 },
+  { kind: 'ui_fall', srcs: ['ui_fall'], maxDur: 1.4, tail: 0.5, peakDb: -6.0, kbps: 48 },
 ];
 
 for (const spec of ONE_SHOTS) {
@@ -183,6 +189,57 @@ for (const spec of ONE_SHOTS) {
     }
   }
   if (!idx) missing.push(spec.kind);
+}
+
+// Chain rattle: each candidate is a continuous rattle texture — slice three
+// short snippets per candidate at spread offsets, so the in-flight rattle can
+// fire varied one-shots without ever sounding looped.
+{
+  let idx = 0;
+  for (const cand of candidates('chain_rattle')) {
+    const pcm = decode(cand);
+    const N = Math.round(0.38 * SR);
+    // Slice at the three loudest non-overlapping windows — fixed fractional
+    // offsets kept landing in silence (candidates carry rattle in bursts).
+    const env = energyEnv(pcm);
+    const win = Math.max(1, Math.round(N / HOP));
+    const scored = [];
+    for (let f = 0; f + win < env.length; f++) {
+      let e = 0;
+      for (let i = f; i < f + win; i++) e += env[i];
+      scored.push([e, f]);
+    }
+    scored.sort((a, b) => b[0] - a[0]);
+    const startsF = [];
+    for (const [, f] of scored) {
+      if (startsF.length >= 3) break;
+      if (startsF.every((o) => Math.abs(o - f) >= win)) startsF.push(f);
+    }
+    for (const fStart of startsF) {
+      const s0 = Math.min(fStart * HOP, pcm.n - N - 1);
+      if (s0 < 0) continue;
+      const L = new Float32Array(N), R = new Float32Array(N);
+      const fi = Math.round(0.01 * SR), fo = Math.round(0.09 * SR);
+      let pk = 0;
+      for (let i = 0; i < N; i++) {
+        let g = 1;
+        if (i < fi) g = i / fi;
+        if (N - i < fo) g = Math.min(g, (N - i) / fo);
+        L[i] = pcm.L[s0 + i] * g; R[i] = pcm.R[s0 + i] * g;
+        const a = Math.max(Math.abs(L[i]), Math.abs(R[i]));
+        if (a > pk) pk = a;
+      }
+      // A "loudest window" of a near-silent candidate is still silence; boosting
+      // it 24 dB just amplifies the mp3 noise floor.
+      if (pk < 0.03) continue;
+      idx++;
+      const id = `rattle_${String(idx).padStart(2, '0')}`;
+      encodePeak(writeWav(id + '.wav', L, R), { L, R }, id, -9.0, 48);
+      manifest.assets.push({ id, kind: 'rattle', role: 'oneshot', priority: 1,
+        files: { opus: id + '.ogg', aac: id + '.m4a' }, gain: 0 });
+    }
+  }
+  if (!idx) missing.push('rattle');
 }
 
 // Wind: pick the longest candidate, bake an 8 s seamless loop from the middle.

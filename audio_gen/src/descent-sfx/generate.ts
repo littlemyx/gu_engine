@@ -49,6 +49,33 @@ const SPECS: Array<{ id: string; prompt: string; loop: boolean }> = [
     prompt: `strong rushing wind of fast downhill movement, air whooshing past the ears at high speed, smooth steady broadband turbulence, seamless loop, constant level, no music, no melody, no voice, single sound effect`,
     loop: true,
   },
+  // --- mechanical accents (foley replacements for the removed synth pings) ---
+  {
+    id: 'chain_slap',
+    prompt: `single sharp slap of a bicycle chain hitting an aluminium frame: one short metallic snap with a tiny rattle tail, very short, ${PIN}`,
+    loop: false,
+  },
+  {
+    id: 'chain_rattle',
+    prompt: `loose bicycle chain rattling and jingling continuously against a metal bike frame while being shaken, irregular light metallic rattle, steady texture, ${PIN}`,
+    loop: false,
+  },
+  {
+    id: 'clank',
+    prompt: `dull damped metallic clunk of mountain bike suspension bottoming out hard: single heavy mechanical impact of thick metal, dead stop, no ringing tail, very short, ${PIN}`,
+    loop: false,
+  },
+  // --- UI cues (kept deliberately un-bell-like) ------------------------------
+  {
+    id: 'ui_trick',
+    prompt: `short bright positive videogame notification blip: one clean warm synth pluck note, instant attack, quick natural decay, pleasant and subtle, no bells, no chimes, completely dry, no reverb, no voice, single sound effect`,
+    loop: false,
+  },
+  {
+    id: 'ui_fall',
+    prompt: `short videogame fail cue: two soft low muted synth notes descending in pitch, gentle and brief, warm dark tone, understated, no bells, no chimes, completely dry, no reverb, no voice, single sound effect`,
+    loop: false,
+  },
 ];
 
 // Optional CLI filter: `npx tsx src/descent-sfx/generate.ts crash_a,slide`
