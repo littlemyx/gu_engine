@@ -52,6 +52,12 @@ export function migrateExisting(present: PresentItems, owns: Record<string, unkn
  * Дозавести артефакты, появившиеся в сторах мимо учёта (импорт чужого
  * `.guproj`, старый прогон, доехавший до коммита). Уже учтённые не трогает —
  * иначе миграция затирала бы владение и историю дублей.
+ *
+ * Отпечатки новичков считаются в контексте ПОЛНОГО индекса: вход новой стадии
+ * — её предки, и они уже лежат в учёте. Изолированный расчёт (только missing,
+ * как делает migrateExisting) сворачивал входы в «ø», и свежесгенерированное
+ * рождалось протухшим навсегда — E2E показал это на медиа: 11 позиций stale
+ * при свежих предках сразу после генерации.
  */
 export function reconcile(
   index: ArtifactIndex,
@@ -66,7 +72,28 @@ export function reconcile(
   }
 
   if (Object.keys(missing).length === 0) return index;
-  return { ...index, ...migrateExisting(missing, owns) };
+
+  const merged: ArtifactIndex = { ...index };
+  const newKeys: ArtifactKey[] = [];
+  for (const [stage, items] of Object.entries(missing) as [ArtifactStage, string[]][]) {
+    for (const item of items) {
+      const key = artifactKey(stage, item);
+      merged[key] = { ...emptyMeta(key), ownership: 'approved' };
+      newKeys.push(key);
+    }
+  }
+
+  const current = recomputeAll(merged, topoOrder(), owns);
+  for (const key of newKeys) {
+    merged[key] = {
+      ...merged[key],
+      fingerprint: current[key],
+      takes: [{ n: 1, ts: Date.now(), origin: 'restored' }],
+      selectedTake: 1,
+    };
+  }
+
+  return merged;
 }
 
 /**
@@ -95,6 +122,31 @@ export function refreshFingerprints(
     if (meta.fingerprint === null || meta.fingerprint !== wasCurrent[key]) continue;
     if (wasCurrent[key] === nowCurrent[key]) continue;
     next[key] = { ...meta, fingerprint: nowCurrent[key] };
+    changed = true;
+  }
+
+  return changed ? next : index;
+}
+
+/**
+ * Одноразовое лечение отпечатков, рождённых изолированным reconcile (до
+ * фикса): у таких записей stored совпадает с отпечатком «без предков» —
+ * это доказуемый признак бага, а не настоящей правки. Такие переписываются на
+ * честный полноконтекстный отпечаток; настоящее протухание (stored не равен
+ * ни изолированному, ни текущему) не амнистируется.
+ */
+export function healIsolatedFingerprints(index: ArtifactIndex, owns: Record<string, unknown> = {}): ArtifactIndex {
+  const order = topoOrder();
+  const current = recomputeAll(index, order, owns);
+
+  let changed = false;
+  const next: ArtifactIndex = { ...index };
+
+  for (const [key, meta] of Object.entries(index)) {
+    if (meta.fingerprint === null || meta.fingerprint === current[key]) continue;
+    const isolated = recomputeAll({ [key]: meta }, order, owns)[key];
+    if (meta.fingerprint !== isolated) continue;
+    next[key] = { ...meta, fingerprint: current[key] };
     changed = true;
   }
 

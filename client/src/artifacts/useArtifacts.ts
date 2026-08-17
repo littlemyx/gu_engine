@@ -4,7 +4,7 @@ import { useBriefStore } from '@/narrative/briefStore';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
 
 import { useArtifactStore } from './artifactStore';
-import { reconcile, refreshFingerprints } from './migrate';
+import { healIsolatedFingerprints, reconcile, refreshFingerprints } from './migrate';
 import { collectPresence, OWNS_REV, ownsRev1, storyOwns } from './presence';
 
 import type { ArtifactIndex } from './types';
@@ -46,12 +46,15 @@ export function useArtifacts(): { index: ArtifactIndex; owns: Record<string, unk
   const owns = useMemo(() => storyOwns(brief, narrative.worldModel), [brief, narrative.worldModel]);
 
   useEffect(() => {
-    // Смена формулы owns: отпечатки в сторе записаны старой — освежаем один
-    // раз, ДО сверки, иначе вся история от мира вниз «протухла» бы апдейтом.
+    // Смена формулы индекса: отпечатки в сторе записаны старым кодом —
+    // освежаем один раз, ДО сверки, иначе история «протухла» бы апдейтом.
+    // Ревизия 2: worldModel вошёл в owns. Ревизия 3: лечение отпечатков,
+    // рождённых изолированным reconcile (медиа протухали с рождения).
     const store = useArtifactStore.getState();
     let base = index;
     if (store.ownsRev < OWNS_REV) {
-      base = refreshFingerprints(index, ownsRev1(brief), owns);
+      if (store.ownsRev < 2) base = refreshFingerprints(index, ownsRev1(brief), owns);
+      base = healIsolatedFingerprints(base, owns);
       store.markOwnsRev(OWNS_REV);
     }
 

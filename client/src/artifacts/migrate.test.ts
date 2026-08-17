@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { deriveAllFreshness } from './freshness';
-import { migrateExisting, orphans, reconcile, refreshFingerprints } from './migrate';
+import { healIsolatedFingerprints, migrateExisting, orphans, reconcile, refreshFingerprints } from './migrate';
 import { topoOrder } from './stageGraph';
 import { onLock, onUserEdit } from './transitions';
 
@@ -86,6 +86,46 @@ describe('дозаведение', () => {
   it('ничего нового — тот же объект, без лишней перерисовки', () => {
     const index = migrateExisting(STORY, OWNS);
     expect(reconcile(index, STORY, OWNS)).toBe(index);
+  });
+
+  // Регрессия E2E 2026-08-17: изолированный расчёт отпечатков новичков
+  // сворачивал входы в «ø», и сгенерированные после прогона медиа рождались
+  // протухшими навсегда — 11 stale-позиций при свежих предках.
+  it('дозаведённое рождается свежим: входы берутся из полного индекса', () => {
+    const index = migrateExisting(STORY, OWNS);
+    const next = reconcile(index, { ...STORY, image: ['loc:library'] }, OWNS);
+
+    const fresh = deriveAllFreshness(next, topoOrder(), OWNS);
+    expect(fresh['image/loc:library']).toBe('fresh');
+    // И протухает от настоящей правки предка, как все.
+    const after = deriveAllFreshness(next, topoOrder(), { ...OWNS, 'brief/': { logline: 'зима' } });
+    expect(after['image/loc:library']).toBe('stale');
+  });
+});
+
+describe('лечение изолированных отпечатков', () => {
+  it('рождённое старым reconcile лечится на честный отпечаток', () => {
+    const index = migrateExisting(STORY, OWNS);
+    // Эмулируем старый баг: картинка записана с отпечатком «без предков».
+    const broken = { ...index, ...migrateExisting({ image: ['loc:library'] }, OWNS) };
+    expect(deriveAllFreshness(broken, topoOrder(), OWNS)['image/loc:library']).toBe('stale');
+
+    const healed = healIsolatedFingerprints(broken, OWNS);
+    expect(deriveAllFreshness(healed, topoOrder(), OWNS)['image/loc:library']).toBe('fresh');
+  });
+
+  it('настоящее протухание не амнистируется', () => {
+    const index = migrateExisting(STORY, { 'brief/': { logline: 'зима' } });
+    const healed = healIsolatedFingerprints(index, OWNS);
+    const after = deriveAllFreshness(healed, topoOrder(), OWNS);
+
+    expect(after['brief/']).toBe('stale');
+    expect(after['spine/']).toBe('stale');
+  });
+
+  it('здоровый индекс — тот же объект', () => {
+    const index = migrateExisting(STORY, OWNS);
+    expect(healIsolatedFingerprints(index, OWNS)).toBe(index);
   });
 });
 

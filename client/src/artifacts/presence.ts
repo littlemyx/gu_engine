@@ -59,7 +59,8 @@ export function collectPresence(stores: StoryStores): PresentItems {
  * их надо один раз освежить (см. refreshFingerprints), иначе вся история
  * массово «протухнет» от одного апдейта кода.
  */
-export const OWNS_REV = 2;
+// 2 — worldModel вошёл в owns; 3 — лечение изолированных отпечатков reconcile.
+export const OWNS_REV = 3;
 
 /**
  * Собственная суть стадий для отпечатков.
