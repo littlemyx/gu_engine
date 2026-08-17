@@ -214,6 +214,58 @@ describe('смета видит черновик', () => {
   });
 });
 
+describe('смета с фидбеком: expectRedo пересобирает и свежее', () => {
+  it('свежая позиция из redo-набора становится generate с ценой', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting(STORY, LETO),
+      owns: LETO,
+      cost: COST,
+      expectRedo: ['spine/'],
+    });
+
+    const spine = sheet.positions.find(p => p.key === 'spine/');
+    expect(spine?.action).toBe('generate');
+    expect(spine?.estCost).toBeCloseTo(1.2);
+    expect(sheet.total).toBeCloseTo(1.2);
+  });
+
+  it('redo побеждает черновик: затравка инвалидирует кэш, платить придётся', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting(STORY, ZIMA),
+      owns: ZIMA,
+      cost: COST,
+      draft: ['spine/'],
+      expectRedo: ['spine/'],
+    });
+
+    const spine = sheet.positions.find(p => p.key === 'spine/');
+    expect(spine?.inDraft).toBeUndefined();
+    expect(spine?.estCost).toBeCloseTo(1.2);
+  });
+
+  it('стадийный ключ redo покрывает все элементы стадии', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting({ ...STORY, dialogue_units: ['u1', 'u2'] }, LETO),
+      owns: LETO,
+      cost: { ...COST, dialogue_units: 1.5 },
+      expectRedo: ['dialogue_units/'],
+    });
+
+    const units = sheet.positions.filter(p => p.stage === 'dialogue_units');
+    expect(units).toHaveLength(2);
+    expect(units.every(p => p.action === 'generate' && p.estCost === 1.5)).toBe(true);
+    expect(sheet.total).toBeCloseTo(3.0);
+  });
+
+  it('замок сильнее фидбека: запертое redo не трогает', () => {
+    const index = migrateExisting(STORY, LETO);
+    index['spine/'] = onLock(index['spine/']);
+
+    const sheet = buildCallSheet({ index, owns: LETO, cost: COST, expectRedo: ['spine/'] });
+    expect(sheet.positions.find(p => p.key === 'spine/')?.action).toBe('locked-skip');
+  });
+});
+
 describe('превью последствий', () => {
   it('показывает, во что обойдётся правка входа', () => {
     const index = migrateExisting(STORY, LETO);

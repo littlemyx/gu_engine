@@ -75,6 +75,12 @@ export interface CallSheetInput {
    * возьмёт их из кэша.
    */
   draft?: ArtifactKey[];
+  /**
+   * Ключи, которые прогон пересоберёт даже свежими (см. `redoKeysOf`):
+   * затравки фидбека инвалидируют кэш владеющей стадии. Замки это не ломает —
+   * запертое остаётся запертым.
+   */
+  expectRedo?: ArtifactKey[];
 }
 
 export function buildCallSheet({
@@ -84,15 +90,28 @@ export function buildCallSheet({
   force = false,
   expectMissing = [],
   draft = [],
+  expectRedo = [],
 }: CallSheetInput): CallSheet {
   const freshness = deriveAllFreshness(index, topoOrder(), owns);
   const drafted = new Set<string>(draft);
+  const redone = new Set<string>(expectRedo);
+
+  // Затравки фидбека пересобирают и свежее; черновика это тоже касается —
+  // прогон сидирует им перегенерацию, а не берёт как есть. Стадийный ключ
+  // (`beat_prose/`) покрывает все элементы стадии: пересборка хребта честно
+  // тянет всю прозу, и смета обязана это показать.
+  const coveredByRedo = (position: CallSheetPosition): boolean =>
+    redone.has(position.key) || redone.has(`${position.stage}/`);
+  const withRedo = (position: CallSheetPosition): CallSheetPosition =>
+    position.action === 'cached' && coveredByRedo(position)
+      ? { ...position, action: 'generate', estCost: cost[position.stage] ?? 0 }
+      : position;
 
   // Черновик обнуляет цену, но не действие: позицию всё равно исполняет
   // прогон — просто из кэша. Невалидный кэш прогон вправе пересобрать, так
   // что это оценка, как и вся смета.
   const withDraft = (position: CallSheetPosition): CallSheetPosition =>
-    position.action === 'generate' && coveredByDraft(position.key, drafted)
+    position.action === 'generate' && !coveredByRedo(position) && coveredByDraft(position.key, drafted)
       ? { ...position, inDraft: true, estCost: 0 }
       : position;
 
@@ -102,13 +121,15 @@ export function buildCallSheet({
     const state = freshness[key];
     const action = decide(state, meta.ownership === 'locked', needsDecision(meta, state), force);
 
-    return withDraft({
-      key: key as ArtifactKey,
-      stage,
-      action,
-      freshness: state,
-      estCost: action === 'generate' ? cost[stage] ?? 0 : 0,
-    });
+    return withDraft(
+      withRedo({
+        key: key as ArtifactKey,
+        stage,
+        action,
+        freshness: state,
+        estCost: action === 'generate' ? cost[stage] ?? 0 : 0,
+      }),
+    );
   });
 
   const started = new Set(listed.map(p => p.stage));

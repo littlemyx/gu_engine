@@ -7,6 +7,7 @@ import { useBriefStore } from '@/narrative/briefStore';
 import { requestStopCalendarRun } from '@/narrative/calendarRunner';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
 import { seedIssuesFromNotes } from '@/narrative/noteSeeds';
+import { buildSeedIssues, mergeSeedIssues, redoKeysOf } from '@/narrative/qaSeeds';
 import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
 import { useStoryQA } from '@/narrative/useStoryQA';
 import { buildCallSheet, runPlanOf } from '@/processes/callSheet';
@@ -165,16 +166,53 @@ const StudioNext = () => {
   // возьмёт её из кэша — смета и ведомость обязаны это видеть.
   const draft = useMemo(() => draftKeys(narrative.calendarRun?.draft), [narrative.calendarRun?.draft]);
 
+  // Петля «перегенерировать с фидбеком QA»: затравки строятся из отчёта, но в
+  // прогон уезжают только взведённые кнопкой в зоне «Проверка» — иначе обычная
+  // досборка внезапно пересобирала бы свежий хребет за деньги.
+  const [qaFeedbackArmed, setQaFeedbackArmed] = useState(false);
+  const qaSeeds = useMemo(() => {
+    const report = narrative.storyQA;
+    if (!report || report.state !== 'done' || report.issues.length === 0) return undefined;
+    return buildSeedIssues(
+      report.issues,
+      Object.values(narrative.eventUnits),
+      brief.loveInterests.map(li => li.id),
+    );
+  }, [narrative.storyQA, narrative.eventUnits, brief.loveInterests]);
+  const qaRedo = useMemo(() => (qaSeeds ? redoKeysOf(qaSeeds) : []), [qaSeeds]);
+
   const pipeline = useMemo(() => derivePipeline({ index, owns, draft }), [index, owns, draft]);
   // Смета на кнопке — тот же расчёт, что покажет колл-щит перед запуском:
   // цифра в тулбаре и цифра в подписи обязаны совпадать до копейки.
   const sheet = useMemo(
-    () => buildCallSheet({ index, owns, cost: STAGE_COST, expectMissing: RUN_STAGES, draft }),
-    [index, owns, draft],
+    () =>
+      buildCallSheet({
+        index,
+        owns,
+        cost: STAGE_COST,
+        expectMissing: RUN_STAGES,
+        draft,
+        expectRedo: qaFeedbackArmed ? qaRedo : [],
+      }),
+    [index, owns, draft, qaFeedbackArmed, qaRedo],
   );
   // План машины — позиции сметы, а не девять стадий пайплайна: прогресс-полоса
   // считает то же, что автор подписал.
   const openCallSheet = () => runCommand({ type: 'plan', total: sheet.generate.length });
+  const openQaRegenerate = () => {
+    setQaFeedbackArmed(true);
+    // Смета с redo считается здесь же: state ещё не доехал, а total обязан
+    // совпасть с тем, что автор увидит в колл-щите.
+    const armed = buildCallSheet({
+      index,
+      owns,
+      cost: STAGE_COST,
+      expectMissing: RUN_STAGES,
+      draft,
+      expectRedo: qaRedo,
+    });
+    runCommand({ type: 'plan', total: armed.generate.length });
+  };
   const structure = useMemo(
     () =>
       deriveStructure({
@@ -312,7 +350,12 @@ const StudioNext = () => {
         />
 
         <main className={styles.viewport}>
-          <ZoneView zone={current} pipeline={pipeline} brief={brief} />
+          <ZoneView
+            zone={current}
+            pipeline={pipeline}
+            brief={brief}
+            onQaRegenerate={qaSeeds ? openQaRegenerate : undefined}
+          />
         </main>
 
         <PanelResizer
@@ -377,9 +420,13 @@ const StudioNext = () => {
         <div className={styles.modalLayer}>
           <CallSheetPanel
             callSheet={sheet}
+            runLabel={qaFeedbackArmed ? 'ПРОГОН · С ФИДБЕКОМ QA' : undefined}
             signing={running}
             stageCost={STAGE_COST}
-            onCancel={() => runCommand({ type: 'cancel' })}
+            onCancel={() => {
+              setQaFeedbackArmed(false);
+              runCommand({ type: 'cancel' });
+            }}
             onSign={decided => {
               const plan = runPlanOf(sheet, decided);
               // «Дубль» на запертой строке — осознанный слом замка: без снятия
@@ -393,12 +440,15 @@ const StudioNext = () => {
               // а копить при артефакте дальше — значит скормить их дважды.
               const { seeds, consumed } = seedIssuesFromNotes(index, Object.values(narrative.eventUnits));
               if (consumed.length > 0) useArtifactStore.getState().consumeNotes(consumed);
+              // Взведённый фидбек QA подмешивается к заметкам одним пакетом.
+              const signedSeeds = qaFeedbackArmed ? mergeSeedIssues(seeds, qaSeeds) : seeds;
+              setQaFeedbackArmed(false);
               // Подпись и есть запуск: смету подписывают, чтобы прогон пошёл, а
               // не чтобы переключить экран. Продолжение черновика, не force —
               // ведомость уже решила, что считать устаревшим.
               runCommand({ type: 'sign' });
               setZone(pipeline.nextIncomplete ?? zone);
-              void calendarGen.run(brief, { plan, seedIssues: seeds });
+              void calendarGen.run(brief, { plan, seedIssues: signedSeeds });
             }}
           />
         </div>

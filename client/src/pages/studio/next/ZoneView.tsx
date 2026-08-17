@@ -19,6 +19,8 @@ export interface ZoneViewProps {
   zone: Zone;
   pipeline: PipelineModel;
   brief: Brief;
+  /** Петля фидбека QA: взводит затравки отчёта и открывает колл-щит. */
+  onQaRegenerate?: () => void;
 }
 
 /**
@@ -29,13 +31,13 @@ export interface ZoneViewProps {
  * называет, чего ещё нет, — это лучше пустого места, по которому непонятно,
  * сломалось что-то или так задумано.
  */
-const ZoneView = ({ zone, pipeline, brief }: ZoneViewProps) => {
+const ZoneView = ({ zone, pipeline, brief, onQaRegenerate }: ZoneViewProps) => {
   // Каждая зона со своим экраном отдаёт его целиком: шапка готовности у них
   // своя, а общая нужна только зонам, которые ещё сидят на общем полотне.
   if (zone.id === 'idea') return <IdeaZone brief={brief} />;
   if (zone.id === 'media') return <MediaZone />;
   if (zone.id === 'preview') return <PreviewZone />;
-  if (zone.id === 'qa') return <QaZone />;
+  if (zone.id === 'qa') return <QaZone onRegenerate={onQaRegenerate} />;
   if (zone.id === 'release') return <ReleaseZone pipeline={pipeline} />;
 
   const row = pipeline.zones.find(z => z.id === zone.id);

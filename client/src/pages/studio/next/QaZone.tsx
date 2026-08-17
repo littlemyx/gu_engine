@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 
 import { useBriefStore } from '@/narrative/briefStore';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
+import OutlineButton from '@/ui/kit/atoms/OutlineButton';
 import ChecklistRow from '@/ui/kit/molecules/ChecklistRow';
 import HintNote from '@/ui/kit/molecules/HintNote';
 import IssueQuote from '@/ui/kit/molecules/IssueQuote';
@@ -25,7 +26,15 @@ import qa from './QaZone.module.css';
  * Данных своих нет: всё выводит `deriveQa` из `storyQA`/`spine` narrativeStore
  * и брифа.
  */
-const QaZone = () => {
+export interface QaZoneProps {
+  /**
+   * Запуск петли «перегенерировать с фидбеком QA»: взводит затравки из отчёта
+   * и открывает колл-щит. Без колбэка кнопки нет — зона остаётся витриной.
+   */
+  onRegenerate?: () => void;
+}
+
+const QaZone = ({ onRegenerate }: QaZoneProps = {}) => {
   const brief = useBriefStore(s => s.brief);
   const spine = useNarrativeStore(s => s.spine);
   const storyQA = useNarrativeStore(s => s.storyQA);
@@ -74,6 +83,15 @@ const QaZone = () => {
           <div className={qa.detail}>
             <IssueQuote quote={selected.quote} note={selected.quoteNote} />
             <IssueRoute lines={[{ text: selected.routeLine }]} onDark />
+          </div>
+        )}
+
+        {onRegenerate && model.hasRun && model.issues.length > 0 && (
+          <div className={qa.regenerate}>
+            <OutlineButton label="Перегенерировать с фидбеком QA" tone="accent" size="compact" onClick={onRegenerate} />
+            <p className={styles.empty}>
+              Проблемы отчёта уедут затравками в колл-щит: пересоберутся владеющие стадии и всё, что на них стоит.
+            </p>
           </div>
         )}
       </div>

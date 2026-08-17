@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSeedIssues } from './qaSeeds';
+import { buildSeedIssues, mergeSeedIssues, redoKeysOf } from './qaSeeds';
 import type { SegmentIssue } from './types';
 import type { EventUnit } from './calendarTypes';
 
@@ -72,5 +72,50 @@ describe('buildSeedIssues', () => {
       buildSeedIssues([issue('calendar/slots'), issue('units/window'), issue('qa/prose/evt_x')], [], LI_IDS),
     ).toBeUndefined();
     expect(buildSeedIssues([], [], LI_IDS)).toBeUndefined();
+  });
+});
+
+describe('redoKeysOf: что смета обещает пересобрать', () => {
+  it('хребтовые затравки тянут каскад стадий прогона, но не медиа и не qa', () => {
+    const keys = redoKeysOf({ spine: ['[error] sim/spine-only: тупик'] });
+
+    expect(keys).toContain('spine/');
+    expect(keys).toContain('schedule/');
+    expect(keys).toContain('dialogue_units/');
+    expect(keys).toContain('ending_prose/');
+    expect(keys).not.toContain('image/');
+    expect(keys).not.toContain('qa/');
+    expect(keys).not.toContain('cast/');
+  });
+
+  it('диалоговые затравки адресные: только свои юниты', () => {
+    const keys = redoKeysOf({ dialogue: { evt_kira_pier: ['[error] маскированный выход'] } });
+    expect(keys).toEqual(['dialogue_units/evt_kira_pier']);
+  });
+
+  it('пул тянет диалоги: новый пул — новая проза', () => {
+    const keys = redoKeysOf({ eventPool: { kira: ['[warning] мёртвые слоты'] } });
+    expect(keys).toContain('event_pool/');
+    expect(keys).toContain('dialogue_units/');
+    expect(keys).not.toContain('spine/');
+  });
+});
+
+describe('mergeSeedIssues', () => {
+  it('склеивает каналы, не теряя ни строки', () => {
+    const merged = mergeSeedIssues(
+      { spine: ['a'], dialogue: { u1: ['x'] } },
+      { spine: ['b'], dialogue: { u1: ['y'], u2: ['z'] }, eventPool: { kira: ['p'] } },
+    );
+
+    expect(merged?.spine).toEqual(['a', 'b']);
+    expect(merged?.dialogue).toEqual({ u1: ['x', 'y'], u2: ['z'] });
+    expect(merged?.eventPool).toEqual({ kira: ['p'] });
+  });
+
+  it('пустая сторона не меняет другую', () => {
+    const seeds = { spine: ['a'] };
+    expect(mergeSeedIssues(seeds, undefined)).toBe(seeds);
+    expect(mergeSeedIssues(undefined, seeds)).toBe(seeds);
   });
 });

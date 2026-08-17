@@ -3,7 +3,7 @@
  */
 import React from 'react';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useBriefStore } from '@/narrative/briefStore';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
@@ -115,6 +115,23 @@ describe('QaZone — заполненный отчёт', () => {
     // «e_bad» ни разу не выполнен ни одной политикой — достижима только одна из двух.
     expect(screen.getByText('1/2')).toBeTruthy();
     expect(screen.getByText('Проблемы · 2')).toBeTruthy();
+  });
+
+  // Петля фидбека: кнопка живёт под списком проблем и требует и отчёта, и колбэка.
+  it('кнопка «Перегенерировать с фидбеком QA» зовёт колбэк', () => {
+    setUp();
+    const onRegenerate = vi.fn();
+    render(<QaZone onRegenerate={onRegenerate} />);
+
+    (screen.getByRole('button', { name: 'Перегенерировать с фидбеком QA' }) as HTMLButtonElement).click();
+    expect(onRegenerate).toHaveBeenCalledTimes(1);
+  });
+
+  it('без колбэка кнопки нет — зона остаётся витриной', () => {
+    setUp();
+    render(<QaZone />);
+
+    expect(screen.queryByRole('button', { name: 'Перегенерировать с фидбеком QA' })).toBeNull();
   });
 
   it('список проблем: блокер и предупреждение видны с маршрутом действия', () => {

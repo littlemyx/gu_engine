@@ -1,3 +1,6 @@
+import { downstreamOf } from '@/artifacts/stageGraph';
+
+import type { ArtifactKey, ArtifactStage } from '@/artifacts/types';
 import type { SegmentIssue } from './types';
 import type { EventUnit } from './calendarTypes';
 import type { BulkCalendarRunOptions } from './calendarRunState';
@@ -90,4 +93,64 @@ export function buildSeedIssues(
   if (Object.keys(dialogue).length > 0) seeds.dialogue = dialogue;
   if (Object.keys(eventPool).length > 0) seeds.eventPool = eventPool;
   return Object.keys(seeds).length > 0 ? seeds : undefined;
+}
+
+type SeedIssues = NonNullable<BulkCalendarRunOptions['seedIssues']>;
+
+/** Стадии прогона, которые затравки могут отправить на пересборку. */
+const SEEDABLE_REDO: ArtifactStage[] = [
+  'spine',
+  'schedule',
+  'beat_prose',
+  'anchor_transitions',
+  'event_pool',
+  'dialogue_units',
+  'ending_prose',
+];
+
+/**
+ * Ключи сметы, которые прогон с этими затравками пересоберёт даже свежими:
+ * затравка инвалидирует кэш владеющей стадии, а её регенерация каскадом тянет
+ * потомков. Медиа/qa/bundle прогон не производит — их смете не обещаем.
+ */
+export function redoKeysOf(seeds: SeedIssues): ArtifactKey[] {
+  const stages = new Set<ArtifactStage>();
+  if ((seeds.spine?.length ?? 0) > 0) stages.add('spine');
+  if (Object.keys(seeds.eventPool ?? {}).length > 0) {
+    stages.add('event_pool');
+    // Граф стадий эту связь не кодирует (диалоги висят на schedule), но по
+    // смыслу пул рождает юниты — новый пул означает новую прозу.
+    stages.add('dialogue_units');
+  }
+  for (const stage of [...stages]) {
+    for (const below of downstreamOf(stage)) stages.add(below);
+  }
+
+  const keys = new Set<string>();
+  for (const stage of stages) {
+    if (SEEDABLE_REDO.includes(stage)) keys.add(`${stage}/`);
+  }
+  // Диалоговые затравки адресные: пересоберутся конкретные юниты.
+  for (const unitId of Object.keys(seeds.dialogue ?? {})) keys.add(`dialogue_units/${unitId}`);
+
+  return [...keys] as ArtifactKey[];
+}
+
+/** Затравки из двух источников (заметки режиссёра + отчёт QA) — одним пакетом. */
+export function mergeSeedIssues(a: SeedIssues | undefined, b: SeedIssues | undefined): SeedIssues | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  const mergeRec = (x: Record<string, string[]> = {}, y: Record<string, string[]> = {}) => {
+    const out: Record<string, string[]> = { ...x };
+    for (const [key, lines] of Object.entries(y)) out[key] = [...(out[key] ?? []), ...lines];
+    return out;
+  };
+  const merged: SeedIssues = {};
+  const spine = [...(a.spine ?? []), ...(b.spine ?? [])];
+  const dialogue = mergeRec(a.dialogue, b.dialogue);
+  const eventPool = mergeRec(a.eventPool, b.eventPool);
+  if (spine.length > 0) merged.spine = spine;
+  if (Object.keys(dialogue).length > 0) merged.dialogue = dialogue;
+  if (Object.keys(eventPool).length > 0) merged.eventPool = eventPool;
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
