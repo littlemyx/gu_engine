@@ -5,6 +5,7 @@ import { useArtifacts } from '@/artifacts/useArtifacts';
 import { useBriefStore } from '@/narrative/briefStore';
 import { requestStopCalendarRun } from '@/narrative/calendarRunner';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
+import { seedIssuesFromNotes } from '@/narrative/noteSeeds';
 import { useBulkCalendarGeneration } from '@/narrative/useBulkCalendarGeneration';
 import { useStoryQA } from '@/narrative/useStoryQA';
 import { buildCallSheet, runPlanOf } from '@/processes/callSheet';
@@ -381,12 +382,17 @@ const StudioNext = () => {
               for (const key of plan.force) {
                 if (index[key]?.ownership === 'locked') useArtifactStore.getState().unlock(key as ArtifactKey);
               }
+              // Заметки режиссёра уезжают затравками этого прогона и считаются
+              // учтёнными с подписи: прогон персистит их сам (resume уважает),
+              // а копить при артефакте дальше — значит скормить их дважды.
+              const { seeds, consumed } = seedIssuesFromNotes(index, Object.values(narrative.eventUnits));
+              if (consumed.length > 0) useArtifactStore.getState().consumeNotes(consumed);
               // Подпись и есть запуск: смету подписывают, чтобы прогон пошёл, а
               // не чтобы переключить экран. Продолжение черновика, не force —
               // ведомость уже решила, что считать устаревшим.
               runCommand({ type: 'sign' });
               setZone(pipeline.nextIncomplete ?? zone);
-              void calendarGen.run(brief, { plan });
+              void calendarGen.run(brief, { plan, seedIssues: seeds });
             }}
           />
         </div>
