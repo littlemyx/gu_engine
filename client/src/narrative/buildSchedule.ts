@@ -236,6 +236,7 @@ export function validateSchedule(
 ): SegmentIssue[] {
   const issues: SegmentIssue[] = [];
   const liIds = brief.loveInterests.map(li => li.id).filter(id => id in schedule);
+  const liIdSet = new Set(liIds);
   const beatSlots = assignBeatSlots(spine, calendar);
   const beatById = new Map(spine.beats.map(b => [b.id, b]));
   const bySlotBeat = beatBySlot(spine, calendar);
@@ -276,13 +277,21 @@ export function validateSchedule(
     const beatLocs = new Set(beatsAtSlot.map(b => b.locationId));
     for (const loc of beatLocs) occupied.add(loc);
 
-    // Конвергентные биты (finale/actGate) — скриптовая сходка: история сводит
-    // персонажей в одну локацию, игрок туда ведётся, «куда пойти» не выбирает.
-    // Требовать ≥2 локации на таком слоте неверно (иначе финал, где все LI
-    // встречаются, всегда «пережат»).
-    const isConvergence = beatsAtSlot.some(b => b.kind === 'finale' || b.kind === 'actGate');
+    // Конвергентные биты (finale/actGate/branchPoint) — скриптовая сходка:
+    // история сводит персонажей в одну локацию, игрок туда ведётся, «куда
+    // пойти» не выбирает (на развилке он выбирает исход, а не географию).
+    // Требовать ≥2 локации на таком слоте неверно — иначе финал или фестиваль
+    // с развилкой, где встречается весь каст, всегда «пережат», и петля
+    // spine⇄schedule упирается в тупик: пины трогать нельзя.
+    const isConvergence = beatsAtSlot.some(
+      b => b.kind === 'finale' || b.kind === 'actGate' || b.kind === 'branchPoint',
+    );
 
-    const maxOccupants = liIds.length + beatLocs.size;
+    // Достижимый максимум занятых локаций считает пины: пришпиленный к биту LI
+    // не может стоять во второй локации, свободны только не-участники.
+    const pinnedLis = new Set<string>();
+    for (const b of beatsAtSlot) for (const p of b.participants) if (liIdSet.has(p)) pinnedLis.add(p);
+    const maxOccupants = beatLocs.size + (liIds.length - pinnedLis.size);
     const required = Math.min(2, available.size, maxOccupants);
     if (!isConvergence && occupied.size < required) {
       issues.push({

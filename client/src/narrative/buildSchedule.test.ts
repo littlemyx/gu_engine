@@ -199,6 +199,60 @@ describe('validateSchedule', () => {
     expect(slotErrors).toEqual([]);
   });
 
+  // Регрессия E2E 2026-08-17: «фестиваль с развилкой» собирал весь каст в одну
+  // локацию, валидатор требовал две, и петля spine⇄schedule упиралась в тупик —
+  // три платных прогона подряд падали одной и той же ошибкой slots/3.
+  it('развилка-сходка: branchPoint со всем кастом в одной локации НЕ пережат', () => {
+    const branchSpine: SpinePlan = {
+      ...spine,
+      beats: [
+        spine.beats[0],
+        beat({
+          id: 'festival',
+          kind: 'branchPoint',
+          act: 2,
+          window: { fromSlot: 3, toSlot: 5 },
+          participants: ['kira', 'yuki', 'asel'],
+          locationId: 'loc_beat',
+        }),
+        spine.beats[2],
+      ],
+    };
+    const schedule = buildSchedule(brief, branchSpine, cal, castPlan, tagMap, 0);
+    const festSlot = assignBeatSlots(branchSpine, cal).festival;
+
+    const slotErrors = validateSchedule(schedule, branchSpine, cal, brief).filter(
+      i => i.severity === 'error' && i.scope === `slots/${festSlot}`,
+    );
+    expect(slotErrors).toEqual([]);
+  });
+
+  it('полный пин обычного бита: требование к слоту учитывает, что двигать некого', () => {
+    const pinnedSpine: SpinePlan = {
+      ...spine,
+      beats: [
+        spine.beats[0],
+        // Обычный бит (не сходка), но участвует весь каст: свободных LI нет,
+        // вторая локация в слоте недостижима — требовать её нельзя.
+        beat({
+          id: 'all_cast',
+          act: 2,
+          window: { fromSlot: 3, toSlot: 5 },
+          participants: ['kira', 'yuki', 'asel'],
+          locationId: 'loc_beat',
+        }),
+        spine.beats[2],
+      ],
+    };
+    const schedule = buildSchedule(brief, pinnedSpine, cal, castPlan, tagMap, 0);
+    const allSlot = assignBeatSlots(pinnedSpine, cal).all_cast;
+
+    const slotErrors = validateSchedule(schedule, pinnedSpine, cal, brief).filter(
+      i => i.severity === 'error' && i.scope === `slots/${allSlot}`,
+    );
+    expect(slotErrors).toEqual([]);
+  });
+
   it('ловит LI ниже пола присутствия в акте (warning)', () => {
     const schedule = build();
     // Акт 2 = слоты 3..5: убираем aselь со сцены полностью.
