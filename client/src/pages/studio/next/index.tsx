@@ -29,6 +29,7 @@ import { useStudioStore } from '../studioStore';
 import { useStudioActions } from '../useStudioActions';
 import ArtifactInspector from './ArtifactInspector';
 import CallSheetPanel from './CallSheetPanel';
+import RunsPanel from './RunsPanel';
 import { buildMenu, runMenuItem } from './menuModel';
 import SidebarPipeline from './SidebarPipeline';
 import SidebarStructure from './SidebarStructure';
@@ -338,7 +339,7 @@ const StudioNext = () => {
               <SidebarPipeline model={pipeline} current={zone} onPickZone={setZone} onPickArtifact={setPicked} />
             )}
             {bottomTab === 'feed' && <Feed events={feed} />}
-            {bottomTab === 'runs' && <p className={styles.empty}>Прогонов ещё не было.</p>}
+            {bottomTab === 'runs' && <RunsPanel />}
             {bottomTab === 'prefabs' && <PrefabsPanel hasStory={narrative.spine != null} onApplied={setNotice} />}
           </div>
         )}

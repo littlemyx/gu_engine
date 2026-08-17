@@ -82,6 +82,15 @@ export function emitPipelineEvent(event: NewEvent): PipelineEvent {
   return useEventBus.getState().emit(event);
 }
 
+/**
+ * Хвост журнала напрямую, мимо зеркала. «Прогонам» нужна история глубже, чем
+ * 500 строк ленты: один прогон — это тысячи событий, и сводка по прошлым
+ * прогонам из зеркала насчитала бы неправду.
+ */
+export function tailEvents(n: number): Promise<PipelineEvent[]> {
+  return sink.tail(n);
+}
+
 export function runCommand(command: RunCommand): void {
   useEventBus.getState().command(command);
 }
