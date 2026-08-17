@@ -1,3 +1,4 @@
+import { coveredByDraft } from '@/artifacts/draftPresence';
 import { deriveAllFreshness, summarize } from '@/artifacts/freshness';
 import { topoOrder } from '@/artifacts/stageGraph';
 
@@ -39,6 +40,11 @@ export interface ArtifactRow {
    * готовой — в индексе ведь нет ничего, что могло бы протухнуть.
    */
   placeholder: boolean;
+  /**
+   * Посчитано в черновике незакоммиченного прогона: в истории этого ещё нет,
+   * но работа сделана и продолжение возьмёт её из кэша бесплатно.
+   */
+  inDraft: boolean;
 }
 
 export type ZoneState = 'empty' | 'ready' | 'stale' | 'partial';
@@ -66,12 +72,15 @@ export interface PipelineModel {
 export interface PipelineInput {
   index: ArtifactIndex;
   owns?: Record<string, unknown>;
+  /** Ключи, посчитанные в черновике незакоммиченного прогона (см. draftKeys). */
+  draft?: ArtifactKey[];
 }
 
-export function derivePipeline({ index, owns = {} }: PipelineInput): PipelineModel {
+export function derivePipeline({ index, owns = {}, draft = [] }: PipelineInput): PipelineModel {
   const freshness = deriveAllFreshness(index, topoOrder(), owns);
+  const drafted = new Set<string>(draft);
 
-  const zones = ZONES.map(zone => buildZone(zone, index, freshness));
+  const zones = ZONES.map(zone => buildZone(zone, index, freshness, drafted));
 
   return {
     zones,
@@ -82,8 +91,17 @@ export function derivePipeline({ index, owns = {} }: PipelineInput): PipelineMod
   };
 }
 
-function buildZone(zone: Zone, index: ArtifactIndex, freshness: Record<string, Freshness>): ZoneRow {
+function buildZone(
+  zone: Zone,
+  index: ArtifactIndex,
+  freshness: Record<string, Freshness>,
+  drafted: ReadonlySet<string>,
+): ZoneRow {
   const keys = Object.keys(index).filter(key => zone.stages.includes(parseArtifactKey(key as ArtifactKey).stage));
+
+  // Черновик показывается только там, где истории нет или она устарела:
+  // свежая закоммиченная строка «свежее» любого черновика.
+  const inDraft = (key: ArtifactKey, state: Freshness) => state !== 'fresh' && coveredByDraft(key, drafted);
 
   const rows = keys.map((key): ArtifactRow => {
     const meta = index[key];
@@ -101,11 +119,14 @@ function buildZone(zone: Zone, index: ArtifactIndex, freshness: Record<string, F
       locked,
       needsDecision: state === 'stale' && (locked || meta.ownership === 'authored'),
       placeholder: false,
+      inDraft: inDraft(key as ArtifactKey, state),
     };
   });
 
   const started = new Set(rows.map(r => r.stage));
-  const untouched = zone.stages.filter(stage => !started.has(stage)).map(placeholderRow);
+  const untouched = zone.stages
+    .filter(stage => !started.has(stage))
+    .map(stage => placeholderRow(stage, inDraft(`${stage}/` as ArtifactKey, 'missing')));
 
   const all = [...rows, ...untouched].sort((a, b) => a.key.localeCompare(b.key));
   const counts = { ...summarize(freshness, keys), missing: 0, total: 0 };
@@ -125,7 +146,7 @@ function buildZone(zone: Zone, index: ArtifactIndex, freshness: Record<string, F
   };
 }
 
-function placeholderRow(stage: ArtifactStage): ArtifactRow {
+function placeholderRow(stage: ArtifactStage, inDraft: boolean): ArtifactRow {
   return {
     key: `${stage}/` as ArtifactKey,
     stage,
@@ -136,6 +157,7 @@ function placeholderRow(stage: ArtifactStage): ArtifactRow {
     locked: false,
     needsDecision: false,
     placeholder: true,
+    inDraft,
   };
 }
 

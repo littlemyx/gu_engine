@@ -76,9 +76,11 @@ function rowName(stage: string, item: string): string {
 
 /**
  * Ведомость различает «протухло» и «протухло, но авторское»; молекула из кита
- * знает только четыре отметки, и авторское в ней — отдельная, самая сильная.
+ * знает только пять отметок, и авторское в ней — отдельная, самая сильная.
  */
-function markOf(row: { freshness: string; ownership: string }): RowMark {
+function markOf(row: { freshness: string; ownership: string; inDraft?: boolean }): RowMark {
+  // Черновик перекрывает «нет» и «протухло»: работа есть, ждёт коммита.
+  if (row.inDraft) return 'draft';
   if (row.freshness === 'missing') return 'none';
   if (row.freshness === 'stale') return 'stale';
   return row.ownership === 'authored' || row.ownership === 'locked' ? 'authored' : 'fresh';

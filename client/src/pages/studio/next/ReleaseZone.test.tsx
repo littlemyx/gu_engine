@@ -65,6 +65,7 @@ function releaseRow(item: string, freshness: ArtifactRow['freshness'] = 'fresh')
     locked: true,
     needsDecision: false,
     placeholder: false,
+    inDraft: false,
   };
 }
 
@@ -79,6 +80,7 @@ function bundlePlaceholder(): ArtifactRow {
     locked: false,
     needsDecision: false,
     placeholder: true,
+    inDraft: false,
   };
 }
 

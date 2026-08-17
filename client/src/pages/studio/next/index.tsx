@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 
 import { useArtifactStore } from '@/artifacts/artifactStore';
+import { draftKeys } from '@/artifacts/draftPresence';
 import { useArtifacts } from '@/artifacts/useArtifacts';
 import { useBriefStore } from '@/narrative/briefStore';
 import { requestStopCalendarRun } from '@/narrative/calendarRunner';
@@ -160,12 +161,16 @@ const StudioNext = () => {
   // двумя способами.
   const callSheetOpen = run.phase === 'callsheet';
 
-  const pipeline = useMemo(() => derivePipeline({ index, owns }), [index, owns]);
+  // Черновик незакоммиченного прогона: работа сделана и оплачена, продолжение
+  // возьмёт её из кэша — смета и ведомость обязаны это видеть.
+  const draft = useMemo(() => draftKeys(narrative.calendarRun?.draft), [narrative.calendarRun?.draft]);
+
+  const pipeline = useMemo(() => derivePipeline({ index, owns, draft }), [index, owns, draft]);
   // Смета на кнопке — тот же расчёт, что покажет колл-щит перед запуском:
   // цифра в тулбаре и цифра в подписи обязаны совпадать до копейки.
   const sheet = useMemo(
-    () => buildCallSheet({ index, owns, cost: STAGE_COST, expectMissing: RUN_STAGES }),
-    [index, owns],
+    () => buildCallSheet({ index, owns, cost: STAGE_COST, expectMissing: RUN_STAGES, draft }),
+    [index, owns, draft],
   );
   // План машины — позиции сметы, а не девять стадий пайплайна: прогресс-полоса
   // считает то же, что автор подписал.

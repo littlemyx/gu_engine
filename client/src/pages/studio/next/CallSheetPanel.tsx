@@ -79,7 +79,7 @@ const CallSheetPanel = ({
             <EstimateRow
               key={position.key}
               text={positionLabel(position)}
-              price={priceText(position.estCost)}
+              price={position.inDraft ? 'черновик' : priceText(position.estCost)}
               kind={position.action === 'locked-skip' ? 'locked' : 'position'}
               status={FRESHNESS_STATUS[position.freshness]}
               frame="bottom"

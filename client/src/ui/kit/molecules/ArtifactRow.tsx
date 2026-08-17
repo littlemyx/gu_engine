@@ -5,7 +5,7 @@ import TextLabel from '../atoms/TextLabel';
 
 import styles from './ArtifactRow.module.css';
 
-export type ArtifactMark = 'authored' | 'fresh' | 'stale' | 'none';
+export type ArtifactMark = 'authored' | 'draft' | 'fresh' | 'stale' | 'none';
 
 export interface ArtifactRowProps {
   /** Имя артефакта: «каст-план», «спайн», «мировой календарь», … */
@@ -17,6 +17,8 @@ export interface ArtifactRowProps {
 /** Слова-состояния фиксированы вместе с глифом — как и сам глиф у StatusGlyph. */
 const MARK_WORD: Record<ArtifactMark, string> = {
   authored: 'authored',
+  // Посчитано незакоммиченным прогоном: работа есть, в историю ещё не легла.
+  draft: 'черновик',
   fresh: 'fresh',
   stale: 'stale',
   none: 'нет',
@@ -46,6 +48,10 @@ const ArtifactRow = ({ artifactName, mark = 'fresh' }: ArtifactRowProps) => {
         {mark === 'authored' ? (
           <span className={styles.pencil} aria-hidden="true">
             ✎
+          </span>
+        ) : mark === 'draft' ? (
+          <span className={styles.pencil} aria-hidden="true">
+            ◔
           </span>
         ) : (
           <StatusGlyph status={GLYPH_STATUS[mark]} onDark size={10.5} />

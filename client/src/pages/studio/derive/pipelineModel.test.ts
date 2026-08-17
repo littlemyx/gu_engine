@@ -63,6 +63,36 @@ describe('ведомость конвейера', () => {
   });
 });
 
+// Регрессия E2E 2026-08-17: после сбойного прогона «Пайплайн» показывал ноль
+// готового при «готово 4» во вкладке «Прогоны» — черновик был невидим.
+describe('черновик в ведомости', () => {
+  it('протухшее и несозданное, посчитанное в черновике, помечено', () => {
+    const model = derivePipeline({
+      index: migrateExisting(STORY, LETO),
+      owns: ZIMA,
+      draft: ['cast/', 'spine/'],
+    });
+
+    expect(zone(model, 'idea').rows.find(r => r.stage === 'cast')?.inDraft).toBe(true);
+    expect(zone(model, 'structure').rows.find(r => r.stage === 'spine')?.inDraft).toBe(true);
+    expect(zone(model, 'idea').rows.find(r => r.stage === 'world')?.inDraft).toBe(false);
+  });
+
+  it('свежее черновиком не перекрывается', () => {
+    const model = derivePipeline({ index: migrateExisting(STORY, LETO), owns: LETO, draft: ['cast/'] });
+
+    expect(zone(model, 'idea').rows.find(r => r.stage === 'cast')?.inDraft).toBe(false);
+  });
+
+  it('плейсхолдер нетронутой стадии покрывается элементами черновика', () => {
+    const model = derivePipeline({ index: {}, draft: ['dialogue_units/u1'] });
+
+    const row = zone(model, 'prose').rows.find(r => r.stage === 'dialogue_units');
+    expect(row?.placeholder).toBe(true);
+    expect(row?.inDraft).toBe(true);
+  });
+});
+
 describe('строки артефактов', () => {
   it('несут знак состояния', () => {
     const model = derivePipeline({ index: migrateExisting(STORY, LETO), owns: LETO });

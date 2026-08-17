@@ -1,3 +1,4 @@
+import { coveredByDraft } from '@/artifacts/draftPresence';
 import { deriveAllFreshness } from '@/artifacts/freshness';
 import { topoOrder } from '@/artifacts/stageGraph';
 import { needsDecision } from '@/artifacts/types';
@@ -31,8 +32,14 @@ export interface CallSheetPosition {
   stage: ArtifactStage;
   action: Action;
   freshness: Freshness;
-  /** Оценка в долларах. У `cached` и `locked-skip` — ноль. */
+  /** Оценка в долларах. У `cached`, `locked-skip` и черновика — ноль. */
   estCost: number;
+  /**
+   * Уже посчитано в черновике прошлого прогона: продолжение возьмёт из кэша,
+   * платить не придётся. Позиция остаётся в плане (исполняет её прогон), но в
+   * итог сметы не входит.
+   */
+  inDraft?: boolean;
 }
 
 export interface CallSheet {
@@ -62,6 +69,12 @@ export interface CallSheetInput {
    * будет элементов, до генерации не знает никто, поэтому цена стадийная.
    */
   expectMissing?: ArtifactStage[];
+  /**
+   * Ключи, уже посчитанные в черновике незакоммиченного прогона (см.
+   * `draftKeys`). Такие позиции планируются, но не стоят денег: продолжение
+   * возьмёт их из кэша.
+   */
+  draft?: ArtifactKey[];
 }
 
 export function buildCallSheet({
@@ -70,8 +83,18 @@ export function buildCallSheet({
   cost,
   force = false,
   expectMissing = [],
+  draft = [],
 }: CallSheetInput): CallSheet {
   const freshness = deriveAllFreshness(index, topoOrder(), owns);
+  const drafted = new Set<string>(draft);
+
+  // Черновик обнуляет цену, но не действие: позицию всё равно исполняет
+  // прогон — просто из кэша. Невалидный кэш прогон вправе пересобрать, так
+  // что это оценка, как и вся смета.
+  const withDraft = (position: CallSheetPosition): CallSheetPosition =>
+    position.action === 'generate' && coveredByDraft(position.key, drafted)
+      ? { ...position, inDraft: true, estCost: 0 }
+      : position;
 
   const listed = Object.keys(index).map((key): CallSheetPosition => {
     const meta = index[key];
@@ -79,26 +102,27 @@ export function buildCallSheet({
     const state = freshness[key];
     const action = decide(state, meta.ownership === 'locked', needsDecision(meta, state), force);
 
-    return {
+    return withDraft({
       key: key as ArtifactKey,
       stage,
       action,
       freshness: state,
       estCost: action === 'generate' ? cost[stage] ?? 0 : 0,
-    };
+    });
   });
 
   const started = new Set(listed.map(p => p.stage));
   const ahead = expectMissing
     .filter(stage => !started.has(stage))
     .map(
-      (stage): CallSheetPosition => ({
-        key: `${stage}/` as ArtifactKey,
-        stage,
-        action: 'generate',
-        freshness: 'missing',
-        estCost: cost[stage] ?? 0,
-      }),
+      (stage): CallSheetPosition =>
+        withDraft({
+          key: `${stage}/` as ArtifactKey,
+          stage,
+          action: 'generate',
+          freshness: 'missing',
+          estCost: cost[stage] ?? 0,
+        }),
     );
 
   // Смета читается как план работ: сверху вниз в порядке исполнения, а не в

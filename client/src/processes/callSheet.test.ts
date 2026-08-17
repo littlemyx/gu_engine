@@ -167,6 +167,53 @@ describe('смета видит то, чего ещё нет', () => {
   });
 });
 
+// Регрессия E2E 2026-08-17: после сбоя прогона смета обещала полные ≈$6.32 при
+// живом кэше половины позиций — фактические «пропущено 4» выяснялись только
+// после подписи и оплаты.
+describe('смета видит черновик', () => {
+  it('позиция из черновика планируется, но денег не стоит', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting(STORY, LETO),
+      owns: ZIMA,
+      cost: COST,
+      draft: ['cast/', 'world/'],
+    });
+
+    const cast = sheet.positions.find(p => p.key === 'cast/');
+    expect(cast?.action).toBe('generate');
+    expect(cast?.inDraft).toBe(true);
+    expect(cast?.estCost).toBe(0);
+    // Итог — только за то, чего в черновике нет: calendar + spine (brief $0).
+    expect(sheet.total).toBeCloseTo(1.7);
+  });
+
+  it('плейсхолдер нетронутой стадии покрывается элементами черновика', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting({ brief: [''] }, LETO),
+      owns: LETO,
+      cost: { ...COST, dialogue_units: 1.5 },
+      expectMissing: ['cast', 'dialogue_units'],
+      draft: ['dialogue_units/u1'],
+    });
+
+    expect(sheet.positions.find(p => p.key === 'dialogue_units/')?.inDraft).toBe(true);
+    expect(sheet.positions.find(p => p.key === 'cast/')?.inDraft).toBeUndefined();
+    expect(sheet.total).toBeCloseTo(0.2);
+  });
+
+  it('свежее черновиком не трогается: cached остаётся cached', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting(STORY, LETO),
+      owns: LETO,
+      cost: COST,
+      draft: ['cast/'],
+    });
+
+    expect(sheet.positions.find(p => p.key === 'cast/')?.action).toBe('cached');
+    expect(sheet.positions.find(p => p.key === 'cast/')?.inDraft).toBeUndefined();
+  });
+});
+
 describe('превью последствий', () => {
   it('показывает, во что обойдётся правка входа', () => {
     const index = migrateExisting(STORY, LETO);
