@@ -151,6 +151,11 @@ export type CalendarRunState = {
   /** Текущая (или упавшая) стадия. */
   phase: BulkCalendarPhase;
   progress: BulkCalendarProgress;
+  /**
+   * Внутристадийный счётчик для долгих поэлементных стадий (диалоги — час+
+   * на одной цифре 7/9 без него). Сбрасывается сменой стадии.
+   */
+  subProgress?: { label: string; completed: number; total: number } | null;
   error: string | null;
   /** Плоский список для UI — заполняется на done/fail. */
   issues: string[];

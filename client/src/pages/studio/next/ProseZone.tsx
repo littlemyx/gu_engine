@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 
 import { requestStopCalendarRun } from '@/narrative/calendarRunner';
+import { useNarrativeStore } from '@/narrative/narrativeStore';
 import { useEventBus } from '@/processes/eventBus';
 import { eventText, eventTone } from '@/processes/events';
 import OutlineButton from '@/ui/kit/atoms/OutlineButton';
@@ -47,6 +48,9 @@ const ProseZone = () => {
   const recent = useEventBus(s => s.recent);
   const run = useEventBus(s => s.run);
   const command = useEventBus(s => s.command);
+  // Внутристадийный счётчик долгих стадий: диалоги без него час стоят на
+  // одной цифре, и прогон не отличить от зависшего.
+  const sub = useNarrativeStore(s => (s.calendarRun?.status === 'running' ? s.calendarRun.subProgress : null));
 
   const model = useMemo(() => deriveProseZone(recent, run), [recent, run]);
   const feed = useMemo(() => {
@@ -55,8 +59,9 @@ const ProseZone = () => {
   }, [recent, model.ledger]);
 
   const percent = run.total > 0 ? (run.completed / run.total) * 100 : 0;
+  const subLabel = sub ? ` · ${sub.label}: ${sub.completed} из ${sub.total}` : '';
   const progressLabel =
-    run.total > 0 ? `${run.completed} из ${run.total} · ≈$${run.spent.toFixed(2)}` : 'прогон не запущен';
+    run.total > 0 ? `${run.completed} из ${run.total}${subLabel} · ≈$${run.spent.toFixed(2)}` : 'прогон не запущен';
 
   const nothingYet = feed.length === 0 && !model.checkpoint;
 

@@ -174,6 +174,7 @@ type NarrativeState = {
     patch: Partial<{
       phase: BulkCalendarPhase;
       progress: { completed: number; total: number };
+      subProgress: { label: string; completed: number; total: number } | null;
       pendingBatch: CalendarPendingBatch | null;
       dirtyStages: CalendarCascadeStage[];
       softIssues: Record<string, string[]>;

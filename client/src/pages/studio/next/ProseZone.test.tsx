@@ -5,6 +5,7 @@ import React from 'react';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { useNarrativeStore } from '@/narrative/narrativeStore';
 import { useEventBus } from '@/processes/eventBus';
 import { IDLE } from '@/processes/runMachine';
 
@@ -13,7 +14,10 @@ import ProseZone from './ProseZone';
 import type { PipelineEvent } from '@/processes/events';
 import type { RunState } from '@/processes/runMachine';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  useNarrativeStore.setState({ calendarRun: null });
+});
 
 beforeEach(() => {
   useEventBus.setState({ recent: [], run: IDLE });
@@ -103,6 +107,32 @@ describe('ProseZone, лента заполнена', () => {
     render(<ProseZone />);
 
     expect(screen.getByText('«Ты всё-таки пришёл. Шторм тебя не напугал?»')).toBeTruthy();
+  });
+
+  // Регрессия E2E 2026-08-17: диалоги час стояли на «7 из 9» — внутренний
+  // прогресс стадии наружу не выводился, прогон не отличить от зависшего.
+  it('внутристадийный счётчик долгой стадии виден в строке прогресса', () => {
+    useNarrativeStore.setState({
+      calendarRun: {
+        status: 'running',
+        subProgress: { label: 'юниты диалогов', completed: 3, total: 12 },
+      } as never,
+    });
+    render(<ProseZone />);
+
+    expect(screen.getByText(/юниты диалогов: 3 из 12/)).toBeTruthy();
+  });
+
+  it('счётчик упавшего прогона не показывается — он уже не «идёт»', () => {
+    useNarrativeStore.setState({
+      calendarRun: {
+        status: 'error',
+        subProgress: { label: 'юниты диалогов', completed: 3, total: 12 },
+      } as never,
+    });
+    render(<ProseZone />);
+
+    expect(screen.queryByText(/юниты диалогов/)).toBeNull();
   });
 
   it('ведомость держит три состояния строки: очередь, пишется, готово', () => {

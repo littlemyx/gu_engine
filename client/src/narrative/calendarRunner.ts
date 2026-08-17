@@ -428,7 +428,12 @@ async function runPipeline(): Promise<void> {
   const publish = (phase: BulkCalendarPhase, completed: number) => {
     throwIfStopped();
     if (runNow().phase !== phase) appendRunLog('run', `${phase} · ${completed}/${TOTAL_STEPS}`);
-    store().patchCalendarRun({ phase, progress: { completed, total: TOTAL_STEPS } });
+    store().patchCalendarRun({ phase, progress: { completed, total: TOTAL_STEPS }, subProgress: null });
+  };
+
+  /** Внутристадийный счётчик: диалоги без него час стоят на одной цифре. */
+  const publishSub = (label: string, completed: number, total: number) => {
+    store().patchCalendarRun({ subProgress: { label, completed, total } });
   };
 
   const putSoftIssues = (stage: string, issues: string[]) =>
@@ -924,7 +929,12 @@ async function runPipeline(): Promise<void> {
     // Проза, принятая В ЭТОМ прогоне (кэш + свежая), — контекст предков.
     const acceptedBeats: Record<string, AnchorBeat> = {};
 
+    const plannedBeats = topoOrderAnchors(derived.outline).length;
+    let beatsSeen = 0;
+
     for (const anchor of topoOrderAnchors(derived.outline)) {
+      publishSub('биты хребта', beatsSeen, plannedBeats);
+      beatsSeen += 1;
       const outgoingIds = outgoingOf(derived.outline, anchor.id);
       const beatErrors = (b: AnchorBeat): string[] =>
         validateAnchorBeat(b, anchor.id, outgoingIds, liNames)
@@ -1260,10 +1270,19 @@ async function runPipeline(): Promise<void> {
     const scaleWarned = new Set<string>();
     const rekindWarned = new Set<string>();
 
+    const plannedUnits = eventUnits.filter(
+      u => reachable.has(u.id) && u.kind === 'dialogue' && liById.has(u.participants[0] ?? ''),
+    ).length;
+    let unitsSeen = 0;
+
     for (const unit of eventUnits) {
       if (!reachable.has(unit.id) || unit.kind !== 'dialogue') continue;
       const li = liById.get(unit.participants[0] ?? '');
       if (!li) continue;
+
+      // Счётчик — до работы над юнитом: «сколько закрыто» из скольких.
+      publishSub('юниты диалогов', unitsSeen, plannedUnits);
+      unitsSeen += 1;
 
       const unitKey = unit.id;
       // Запертая проза встречи не переписывается — мимо кэша и каскада.

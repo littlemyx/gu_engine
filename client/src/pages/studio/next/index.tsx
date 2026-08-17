@@ -432,6 +432,14 @@ const StudioNext = () => {
       <StatusBar
         items={[
           { text: phaseLabel(run.phase), emphasis: run.phase !== 'idle' },
+          // Внутристадийный счётчик долгой стадии — виден из любой зоны.
+          ...(narrative.calendarRun?.status === 'running' && narrative.calendarRun.subProgress
+            ? [
+                {
+                  text: `${narrative.calendarRun.subProgress.label}: ${narrative.calendarRun.subProgress.completed}/${narrative.calendarRun.subProgress.total}`,
+                },
+              ]
+            : []),
           ...(notice ? [{ text: notice, tone: 'info' as const }] : []),
           { text: `зона: ${current.ru}` },
           { text: pipeline.totalStale > 0 ? `устарело: ${pipeline.totalStale}` : 'всё свежее' },
