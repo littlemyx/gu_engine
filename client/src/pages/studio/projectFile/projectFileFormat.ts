@@ -4,7 +4,7 @@ import type { PersistedNarrativeState } from '@/narrative/narrativeMigrations';
 import type { Brief } from '@/narrative/types';
 import type { PrefabKind } from '@/prefabs/prefabTypes';
 import type { SelectorConfig } from 'gu-engine-story-core';
-import type { CastRef } from '../studioProjectStore';
+import type { CastIntent, CastRef } from '../studioProjectStore';
 
 /**
  * Формат файла проекта (.guproj) — ZIP с project.json и бинарными ассетами.
@@ -97,7 +97,11 @@ export type GuProjectJson = {
     narrative: { version: number; state: ProjectNarrativeSlice };
     studio: {
       version: number;
-      state: { branchAssignment: Record<string, string>; castSlots: Record<string, CastRef> };
+      state: {
+        branchAssignment: Record<string, string>;
+        castSlots: Record<string, CastRef>;
+        castIntent: Record<string, CastIntent>;
+      };
     };
   };
   prefabRefs: PrefabProvenanceRef[];
@@ -207,6 +211,10 @@ export function validateProjectJson(value: unknown): ValidationOk | ValidationFa
           castSlots:
             isRecord(studioEntry) && isRecord(studioEntry.state) && isRecord(studioEntry.state.castSlots)
               ? (studioEntry.state.castSlots as Record<string, CastRef>)
+              : {},
+          castIntent:
+            isRecord(studioEntry) && isRecord(studioEntry.state) && isRecord(studioEntry.state.castIntent)
+              ? (studioEntry.state.castIntent as Record<string, CastIntent>)
               : {},
         },
       },

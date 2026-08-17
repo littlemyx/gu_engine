@@ -1,5 +1,5 @@
 import type { Brief } from '@/narrative/types';
-import type { CastRef } from '../studioProjectStore';
+import type { CastIntent, CastRef } from '../studioProjectStore';
 import type { RoleCardCast } from '@/ui/kit/molecules/RoleCard';
 
 /**
@@ -36,21 +36,37 @@ export interface CastingModel {
 export interface CastingInput {
   brief: Brief;
   castSlots: Record<string, CastRef>;
+  castIntent?: Record<string, CastIntent>;
 }
 
-export function deriveCasting({ brief, castSlots }: CastingInput): CastingModel {
+export function deriveCasting({ brief, castSlots, castIntent = {} }: CastingInput): CastingModel {
+  const slots = { castSlots, castIntent };
   const roles: CastingRole[] = [
     // У протагониста нет имени — есть плейсхолдер, куда игрок впишет своё.
-    role('protagonist', 'Протагонист', 'protagonist', brief.protagonist?.namePlaceholder ?? '', castSlots),
+    role('protagonist', 'Протагонист', 'protagonist', brief.protagonist?.namePlaceholder ?? '', slots),
     ...(brief.loveInterests ?? []).map((li, i) =>
-      role(`li:${li.id}`, `LI-${i + 1}`, 'loveInterest', li.name ?? '', castSlots),
+      role(`li:${li.id}`, `LI-${i + 1}`, 'loveInterest', li.name ?? '', slots),
     ),
-    role('world', 'Мир', 'world', worldName(brief), castSlots),
-    role('audio', 'Аудио · пакет оформления', 'audio', '', castSlots),
+    role('world', 'Мир', 'world', worldName(brief), slots),
+    role('audio', 'Аудио · пакет оформления', 'audio', '', slots),
   ];
 
-  const unassigned = roles.filter(r => r.cast === 'unassigned');
+  // Роль закрыта, когда её есть чем играть: префабом или именем. Пометка
+  // «отдать генератору» — обещание, а не закрытие, и в счётчик не идёт.
+  const unassigned = roles.filter(r => !r.ref && !r.name);
   return { roles, assigned: roles.length - unassigned.length, unassigned };
+}
+
+/**
+ * Префикс путей брифа, которые описывают эту роль: по нему точечная генерация
+ * отбирает свои пробелы из общего списка. `null` — роль в брифе не описана,
+ * генерировать под неё нечего (аудио живёт в библиотеке, а не в брифе).
+ */
+export function roleGapPrefix(role: CastingRole): string | null {
+  if (role.kind === 'loveInterest') return `loveInterests[${role.id.slice('li:'.length)}].`;
+  if (role.kind === 'protagonist') return 'protagonist.';
+  if (role.kind === 'world') return 'world.';
+  return null;
 }
 
 /** Мир назван местом действия: сеттинг — объект, а не строка. */
@@ -64,7 +80,7 @@ function role(
   slot: string,
   kind: RoleKind,
   briefName: string,
-  castSlots: Record<string, CastRef>,
+  { castSlots, castIntent }: { castSlots: Record<string, CastRef>; castIntent: Record<string, CastIntent> },
 ): CastingRole {
   const ref = castSlots[id];
 
@@ -84,8 +100,23 @@ function role(
     };
   }
 
-  // Имя из брифа без префаба — роль написана автором вручную.
-  if (briefName) return { id, slot, kind, name: briefName, cast: 'manual', castLabel: 'задано в брифе' };
+  // Роль, отданную генератору, видно и до генерации, и после: пометка держится
+  // за роль, а не за факт заполнения, — иначе сгенерированное имя было бы не
+  // отличить от написанного автором.
+  const planned = castIntent[id] === 'generate';
+
+  if (briefName) {
+    return {
+      id,
+      slot,
+      kind,
+      name: briefName,
+      cast: planned ? 'generated' : 'manual',
+      castLabel: planned ? 'сгенерировано' : 'задано в брифе',
+    };
+  }
+
+  if (planned) return { id, slot, kind, name: '', cast: 'generated', castLabel: 'ждёт генерации' };
 
   return { id, slot, kind, name: '', cast: 'unassigned' };
 }

@@ -148,6 +148,20 @@
   color: var(--gu-muted);
 }
 
+/*
+ * Тёмная плашка внутри светлой зоны — как .detail в QaZone/ReleaseZone, но
+ * общим классом: место, куда ставят молекулы, нарисованные только под тёмный
+ * хром (библиотека префабов, поле поиска). Раз фон под ними снова тёмный,
+ * шапка внутри плашки возвращается к рампе --gu-ink-*, отменяя правило выше.
+ */
+.zoneBody .plate {
+  background: var(--gu-chrome);
+}
+
+.zoneBody .plate .kicker {
+  color: var(--gu-ink-45);
+}
+
 .stub {
   border: 1px dashed var(--gu-line);
   padding: var(--space-6);

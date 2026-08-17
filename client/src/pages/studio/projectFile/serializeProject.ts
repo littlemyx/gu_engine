@@ -113,7 +113,11 @@ export function buildProjectJson(input: {
       narrative: { version: NARRATIVE_STORE_VERSION, state: input.narrative },
       studio: {
         version: STUDIO_STORE_VERSION,
-        state: { branchAssignment: studioState.branchAssignment, castSlots: studioState.castSlots },
+        state: {
+          branchAssignment: studioState.branchAssignment,
+          castSlots: studioState.castSlots,
+          castIntent: studioState.castIntent,
+        },
       },
     },
     prefabRefs: studioState.prefabProvenance,

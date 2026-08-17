@@ -21,7 +21,11 @@ export interface RoleCardProps {
   roleName: string;
   /** Как роль назначена: из префаба (linked) · руками · сгенерирована · не назначена. */
   cast?: RoleCardCast;
-  /** Подпись префаба для `cast="linked"`, например «префаб «Кира» v2». */
+  /**
+   * Подпись бейджа происхождения. Для `linked` — имя префаба («префаб «Кира»
+   * v2»), для остальных состояний — уточнение вместо родового слова
+   * («задано в брифе» внятнее, чем «руками»). Пусто — родовое слово.
+   */
   castLabel?: string;
   /** Пояснение под карточкой: оверрайды, причина и т.п. Пусто — строка не рисуется. */
   note?: string;
@@ -53,7 +57,9 @@ const RoleCard = ({
   slot,
   roleName,
   cast = 'linked',
-  castLabel = 'префаб «Кира» v2',
+  // Умолчание разное по состояниям, поэтому подставляется в бейдже, а не здесь:
+  // «руками» без подписи — это «руками», а не «префаб «Кира» v2».
+  castLabel,
   // Демо-значения макета умолчаниями быть не могут: карточка без обновления
   // не должна обещать «есть v3», а карточка без оверрайдов — их перечислять.
   note,
@@ -64,11 +70,11 @@ const RoleCard = ({
 }: RoleCardProps) => {
   const castBadge: CastBadgeConfig | null =
     cast === 'linked'
-      ? { glyph: '⇄', tone: 'accent', label: `${castLabel} · linked` }
+      ? { glyph: '⇄', tone: 'accent', label: `${castLabel ?? 'префаб «Кира» v2'} · linked` }
       : cast === 'manual'
-      ? { glyph: '✎', tone: 'neutral', label: 'руками' }
+      ? { glyph: '✎', tone: 'neutral', label: castLabel ?? 'руками' }
       : cast === 'generated'
-      ? { glyph: '⚙', tone: 'neutral', label: 'сгенерировать' }
+      ? { glyph: '⚙', tone: 'neutral', label: castLabel ?? 'сгенерировать' }
       : null;
 
   const updateArea =

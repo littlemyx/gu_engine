@@ -37,6 +37,13 @@ export type CastRef = {
   snapshot: unknown;
 };
 
+/**
+ * Роль отдана генератору: имя и карточку придумает генерация, а не автор.
+ * Пометка переживает саму генерацию — она отвечает на вопрос «откуда взялся
+ * этот персонаж», а не «сделано ли уже».
+ */
+export type CastIntent = 'generate';
+
 /** Персистная часть: ровно она едет в .guproj и в снимок проекта. */
 export type StudioProjectData = {
   /** branchPointId → outcomeId. Настройка показа, не параметр генерации. */
@@ -51,6 +58,8 @@ export type StudioProjectData = {
   scriptBracket: DialogueVariantBracket;
   /** Кастинг-стол: id роли → чем она закрыта. Пусто — роль не назначена. */
   castSlots: Record<string, CastRef>;
+  /** Роли, отданные генератору. Пусто — все роли закрывает автор. */
+  castIntent: Record<string, CastIntent>;
 };
 
 type StudioProjectState = StudioProjectData & {
@@ -59,6 +68,8 @@ type StudioProjectState = StudioProjectData & {
   recordPrefabApplied: (ref: PrefabProvenanceRef) => void;
   setScriptBracket: (bracket: DialogueVariantBracket) => void;
   castRole: (roleId: string, ref: CastRef | null) => void;
+  /** Отдать роль генератору или забрать обратно. */
+  planRoleGeneration: (roleId: string, on: boolean) => void;
 };
 
 /** Пустой проект: чем «Новый проект» отличается от открытой истории. */
@@ -67,6 +78,7 @@ export const EMPTY_STUDIO_PROJECT: StudioProjectData = {
   prefabProvenance: [],
   scriptBracket: 'neutral',
   castSlots: {},
+  castIntent: {},
 };
 
 export const useStudioProjectStore = create<StudioProjectState>()(
@@ -94,7 +106,17 @@ export const useStudioProjectStore = create<StudioProjectState>()(
           const next = { ...s.castSlots };
           if (ref == null) delete next[roleId];
           else next[roleId] = ref;
-          return { castSlots: next };
+          // Префаб закрыл роль — генератору её отдавать больше нечего.
+          const intent = { ...s.castIntent };
+          if (ref != null) delete intent[roleId];
+          return { castSlots: next, castIntent: intent };
+        }),
+      planRoleGeneration: (roleId, on) =>
+        set(s => {
+          const next = { ...s.castIntent };
+          if (on) next[roleId] = 'generate';
+          else delete next[roleId];
+          return { castIntent: next };
         }),
     }),
     {
@@ -109,6 +131,7 @@ export const useStudioProjectStore = create<StudioProjectState>()(
         prefabProvenance: s.prefabProvenance,
         scriptBracket: s.scriptBracket,
         castSlots: s.castSlots,
+        castIntent: s.castIntent,
       }),
     },
   ),

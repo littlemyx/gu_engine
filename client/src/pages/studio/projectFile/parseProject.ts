@@ -251,6 +251,7 @@ export async function applyProject(
     prefabProvenance: project.prefabRefs,
     scriptBracket: 'neutral',
     castSlots: project.stores.studio.state.castSlots ?? {},
+    castIntent: project.stores.studio.state.castIntent ?? {},
   };
   const briefState = project.stores.brief.state;
   const target = options.target ?? decideApplyTarget(project.projectId, projectId, newProjectId());

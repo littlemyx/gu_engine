@@ -33,18 +33,45 @@
   color: var(--color-accent-800);
 }
 
+.link:disabled {
+  color: var(--gu-muted);
+  cursor: default;
+  text-decoration: none;
+}
+
+/* Итог генерации живёт под ссылками роли, а не всплывает поверх карточки:
+   инвариант шелла — попапов во вьюпорте нет. */
+.status {
+  min-height: 14px;
+}
+
 .link:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
+/*
+ * Библиотека префабов и в макете живёт на тёмном хроме: у PrefabCard и
+ * SearchField светлого варианта нет — карточка стоит на полупрозрачной белой
+ * подложке --gu-surface-raised и пишет рампой --gu-ink-* (почти белым). На
+ * светлом канвасе зоны это выходило белым по белому, поэтому блок сам несёт
+ * свой тёмный фон (класс .plate из shell.module.css).
+ */
 .library {
-  border-top: 1px solid var(--gu-line-soft);
-  padding-top: var(--space-4);
+  padding: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
   align-items: flex-start;
+}
+
+/* Ссылка на тёмном: accent-700 (её цвет на светлом канвасе) там не читается. */
+.library .link {
+  color: var(--color-accent-300);
+}
+
+.library .link:hover {
+  color: var(--color-accent-200);
 }
 
 .shelf {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { acceptsKind, deriveCasting } from './castingModel';
+import { acceptsKind, deriveCasting, roleGapPrefix } from './castingModel';
 
 import type { Brief } from '@/narrative/types';
 import type { CastRef } from '../studioProjectStore';
@@ -73,6 +73,53 @@ describe('кастинг-стол', () => {
 
     expect(assigned).toBe(0);
     expect(roles.every(r => r.cast === 'unassigned')).toBe(true);
+  });
+});
+
+describe('роль, отданная генератору', () => {
+  it('пустая роль с пометкой ждёт генерации, но закрытой не считается', () => {
+    const { roles, assigned, unassigned } = deriveCasting({
+      brief,
+      castSlots: {},
+      castIntent: { 'li:yuki': 'generate' },
+    });
+    const li = roles.find(r => r.slot === 'LI-2');
+
+    expect(li?.cast).toBe('generated');
+    expect(li?.castLabel).toBe('ждёт генерации');
+    expect(assigned).toBe(3);
+    expect(unassigned.map(r => r.slot)).toContain('LI-2');
+  });
+
+  it('имя, пришедшее по пометке, подписано «сгенерировано», а не «руками»', () => {
+    const { roles } = deriveCasting({ brief, castSlots: {}, castIntent: { 'li:kira': 'generate' } });
+    const li = roles.find(r => r.slot === 'LI-1');
+
+    expect(li?.cast).toBe('generated');
+    expect(li?.castLabel).toBe('сгенерировано');
+  });
+
+  it('префаб перебивает пометку: закрытой роли генератор не нужен', () => {
+    const { roles } = deriveCasting({
+      brief,
+      castSlots: { 'li:yuki': ref('Юки') },
+      castIntent: { 'li:yuki': 'generate' },
+    });
+
+    expect(roles.find(r => r.slot === 'LI-2')?.cast).toBe('linked');
+  });
+});
+
+describe('какие поля брифа генерировать под роль', () => {
+  it('у каждой роли свой префикс, у аудио — ничего', () => {
+    const { roles } = deriveCasting({ brief, castSlots: {} });
+    const by = (slot: string) => roleGapPrefix(roles.find(r => r.slot === slot)!);
+
+    expect(by('LI-1')).toBe('loveInterests[kira].');
+    expect(by('Протагонист')).toBe('protagonist.');
+    expect(by('Мир')).toBe('world.');
+    // Аудио-набор в брифе не описан — генерировать под него нечего.
+    expect(by('Аудио · пакет оформления')).toBeNull();
   });
 });
 
