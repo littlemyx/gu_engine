@@ -283,6 +283,32 @@ function extremePathDelta(unit: DialogueUnit, key: string, dir: 1 | -1): number 
  *
  * Требует DAG — вызывать ПОСЛЕ breakDialogueCycles. Идемпотентна.
  */
+/**
+ * Замаскированные выходы → честные прощания. LLM устойчиво ведёт «спросить»/
+ * «сказать» в closing-узел; граф при этом верный — диалог действительно
+ * кончается, — неверна только этикетка выбора. Это чинится переименованием,
+ * а не перегенерацией: kind становится farewell, текст и цель не трогаются.
+ * (Обратный случай — farewell в НЕ-closing — не чинится: там модель хотела
+ * продолжить разговор после прощания, и что она имела в виду, знает только она.)
+ */
+export function normalizeMaskedExits(unit: DialogueUnit): { unit: DialogueUnit; rekinded: string[] } {
+  const closingIds = new Set(unit.nodes.filter(n => n.closing === true).map(n => n.id));
+  const rekinded: string[] = [];
+
+  const nodes = unit.nodes.map(node => {
+    let touched = false;
+    const choices = node.choices.map(choice => {
+      if (choice.kind === 'farewell' || !closingIds.has(choice.next)) return choice;
+      touched = true;
+      rekinded.push(`${node.id}/choice/${choice.id}: ${choice.kind} → farewell`);
+      return { ...choice, kind: 'farewell' as DialogueChoiceKind };
+    });
+    return touched ? { ...node, choices } : node;
+  });
+
+  return rekinded.length > 0 ? { unit: { ...unit, nodes }, rekinded } : { unit, rekinded };
+}
+
 export function normalizeChoicePathDeltas(unit: DialogueUnit): { unit: DialogueUnit; scaled: string[] } {
   const relKeys = new Set<string>();
   for (const n of unit.nodes)

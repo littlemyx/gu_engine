@@ -3,6 +3,7 @@ import type { DialogueUnit, DialogueUnitChoice, DialogueUnitNode } from './dialo
 import {
   breakDialogueCycles,
   normalizeChoicePathDeltas,
+  normalizeMaskedExits,
   lintTimeOfDay,
   lintFarewellInBody,
   parseDialogueUnit,
@@ -325,6 +326,53 @@ describe('validateDialogueUnit: анти-гринд по пути', () => {
       expect(errs(unit)).toEqual([]);
       expect(deltasOf(unit).every(d => d < 0)).toBe(true);
     });
+  });
+});
+
+// Регрессия E2E 2026-08-17: LLM вела «спросить»/«сказать» прямо в closing-узел,
+// валидатор браковал юнит, а ретраи с фидбеком не помогали — битый кэш
+// оставался «лучшей» попыткой, и прогон падал на одних и тех же юнитах.
+describe('normalizeMaskedExits', () => {
+  const masked = (): DialogueUnit => {
+    const unit = validUnit();
+    // n1 --say--> n3 (closing) — замаскированный выход.
+    unit.nodes[0].choices = [
+      choice({ id: 'c_mask', kind: 'say', text: 'Ну, мне пора', next: 'n3' }),
+      choice({ id: 'c_ask', kind: 'ask', text: 'Спросить, как дела', next: 'n2' }),
+    ];
+    return unit;
+  };
+
+  it('переименовывает выход в farewell — и юнит проходит валидацию', () => {
+    const { unit, rekinded } = normalizeMaskedExits(masked());
+
+    expect(rekinded).toEqual(['n1/choice/c_mask: say → farewell']);
+    expect(unit.nodes[0].choices[0].kind).toBe('farewell');
+    expect(errorsOf(unit)).toEqual([]);
+  });
+
+  it('текст и цель выбора не трогает — правится только этикетка', () => {
+    const { unit } = normalizeMaskedExits(masked());
+
+    expect(unit.nodes[0].choices[0].text).toBe('Ну, мне пора');
+    expect(unit.nodes[0].choices[0].next).toBe('n3');
+  });
+
+  it('честные farewell и выборы в обычные узлы не трогает — тот же объект', () => {
+    const unit = validUnit();
+    const result = normalizeMaskedExits(unit);
+
+    expect(result.rekinded).toEqual([]);
+    expect(result.unit).toBe(unit);
+  });
+
+  it('обратный случай (farewell в НЕ-closing) не чинит: это не этикетка, а граф', () => {
+    const unit = validUnit();
+    unit.nodes[0].choices = [choice({ id: 'c_bad', kind: 'farewell', text: 'Пока', next: 'n2' })];
+
+    const result = normalizeMaskedExits(unit);
+    expect(result.rekinded).toEqual([]);
+    expect(errorsOf(result.unit).length).toBeGreaterThan(0);
   });
 });
 

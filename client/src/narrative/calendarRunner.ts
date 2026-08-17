@@ -47,6 +47,7 @@ import {
   lintFarewellInBody,
   lintTimeOfDay,
   normalizeChoicePathDeltas,
+  normalizeMaskedExits,
   parseDialogueUnit,
   validateDialogueUnit,
 } from './dialogueUnit';
@@ -1257,6 +1258,7 @@ async function runPipeline(): Promise<void> {
     // Разорванные циклы диалогов — warning один раз на юнит/брекет.
     const cycleWarned = new Set<string>();
     const scaleWarned = new Set<string>();
+    const rekindWarned = new Set<string>();
 
     for (const unit of eventUnits) {
       if (!reachable.has(unit.id) || unit.kind !== 'dialogue') continue;
@@ -1342,11 +1344,14 @@ async function runPipeline(): Promise<void> {
         if (bracket === 'negative' && skipsNegativeBracket(unit, brief, calendar, eventUnits)) continue;
 
         // Валидный кэшированный брекет не трогаем (если нет затравок QA).
-        // Нормировку дельт применяем и к кэшу: юниты, записанные до появления
-        // капа (или до его правки), несут хорошую прозу и ломаются только
-        // арифметикой — чинится на месте, без повторной генерации.
+        // Нормализации применяем и к кэшу: юниты, записанные до появления
+        // правил (или до их правки), несут хорошую прозу и ломаются только
+        // механикой — этикетки выходов и арифметика дельт чинятся на месте,
+        // без повторной генерации.
         const cachedRaw = cached.find(u => u.bracket === bracket);
-        const cachedForBracket = cachedRaw ? normalizeChoicePathDeltas(cachedRaw).unit : undefined;
+        const cachedForBracket = cachedRaw
+          ? normalizeChoicePathDeltas(normalizeMaskedExits(cachedRaw).unit).unit
+          : undefined;
         if (!forcedUnit && unitSeeds.length === 0 && cachedForBracket && unitErrors(cachedForBracket).length === 0) {
           units.push(cachedForBracket);
           // Частичный массив в черновике: resume подхватит уже принятые брекеты.
@@ -1400,10 +1405,21 @@ async function runPipeline(): Promise<void> {
               );
               putSoftIssues('dialogue_units', dialogueSoft);
             }
+            // Выбор, ведущий в closing-узел не-farewell этикеткой, — верный
+            // граф с неверной подписью: чинится переименованием на месте
+            // (см. normalizeMaskedExits), а не перегенерацией.
+            const { unit: unmasked, rekinded } = normalizeMaskedExits(acyclic);
+            if (rekinded.length > 0 && !rekindWarned.has(`${unitKey}/${bracket}`)) {
+              rekindWarned.add(`${unitKey}/${bracket}`);
+              dialogueSoft.push(
+                `[warning] dialogue: ${unitKey}/${bracket}: выходы переименованы в farewell (${rekinded.join(', ')})`,
+              );
+              putSoftIssues('dialogue_units', dialogueSoft);
+            }
             // Та же логика, что с циклами: сумма дельт по пути — свойство арки,
             // а не текста, и правится арифметикой. Ужимаем пропорционально
             // (см. normalizeChoicePathDeltas), а не заворачиваем юнит.
-            const { unit: normalized, scaled } = normalizeChoicePathDeltas(acyclic);
+            const { unit: normalized, scaled } = normalizeChoicePathDeltas(unmasked);
             if (scaled.length > 0 && !scaleWarned.has(`${unitKey}/${bracket}`)) {
               scaleWarned.add(`${unitKey}/${bracket}`);
               dialogueSoft.push(
