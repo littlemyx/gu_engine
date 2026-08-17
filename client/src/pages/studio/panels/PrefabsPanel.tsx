@@ -23,10 +23,15 @@ export interface PrefabsPanelProps {
   /** Режим чтения: библиотеку видно, но вставлять и удалять нельзя. */
   readonly?: boolean;
   onApplied: (message: string) => void;
+  /**
+   * Перехват вставки: показать последствия и применить через `proceed` — или
+   * не применять вовсе. Без перехвата вставка немедленная (старый шелл).
+   */
+  confirmApply?: (prefab: Prefab, proceed: () => void) => void;
 }
 
 /** Док «Префабы»: библиотека, переживающая проект. Карточки перетаскиваются в иерархию. */
-const PrefabsPanel = ({ hasStory, readonly = false, onApplied }: PrefabsPanelProps) => {
+const PrefabsPanel = ({ hasStory, readonly = false, onApplied, confirmApply }: PrefabsPanelProps) => {
   const prefabs = usePrefabStore(s => s.prefabs);
   const removePrefab = usePrefabStore(s => s.removePrefab);
   const forkPrefab = usePrefabStore(s => s.forkPrefab);
@@ -35,8 +40,12 @@ const PrefabsPanel = ({ hasStory, readonly = false, onApplied }: PrefabsPanelPro
   const [dragging, setDragging] = useState<string | null>(null);
 
   const apply = (prefab: Prefab) => {
-    const result = applyPrefab(prefab);
-    onApplied(result.invalidatesStory ? `${result.message} · историю нужно перегенерировать` : result.message);
+    const proceed = () => {
+      const result = applyPrefab(prefab);
+      onApplied(result.invalidatesStory ? `${result.message} · историю нужно перегенерировать` : result.message);
+    };
+    if (confirmApply) confirmApply(prefab, proceed);
+    else proceed();
   };
 
   const selected = prefabs.find(p => selection?.kind === 'prefab' && p.id === selection.id) ?? null;

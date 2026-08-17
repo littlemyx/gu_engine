@@ -29,8 +29,10 @@ import { useStudioStore } from '../studioStore';
 import { useStudioActions } from '../useStudioActions';
 import ArtifactInspector from './ArtifactInspector';
 import CallSheetPanel from './CallSheetPanel';
+import ConsequencesModal from './ConsequencesModal';
 import RunsPanel from './RunsPanel';
 import { buildMenu, runMenuItem } from './menuModel';
+import { prefabConsequences } from './prefabConsequences';
 import SidebarPipeline from './SidebarPipeline';
 import SidebarStructure from './SidebarStructure';
 import ZoneView from './ZoneView';
@@ -40,6 +42,7 @@ import styles from './shell.module.css';
 
 import type { StageCost } from '@/processes/callSheet';
 import type { ArtifactKey, ArtifactStage } from '@/artifacts/types';
+import type { Prefab } from '@/prefabs/prefabTypes';
 import type { ArtifactRow } from '../derive/pipelineModel';
 import type { BottomTab, SidebarTab } from '../studioStore';
 
@@ -132,6 +135,8 @@ const StudioNext = () => {
   // Файловые операции сыплют сюда прогресс — без этого «Сохранить» выглядит
   // как ничего не сделавший пункт меню.
   const [notice, setNotice] = useState<string | null>(null);
+  // Вставка префаба на паузе: показываем последствия, применение — в proceed.
+  const [pendingApply, setPendingApply] = useState<{ prefab: Prefab; proceed: () => void } | null>(null);
 
   const { index, owns } = useArtifacts();
   const brief = useBriefStore(s => s.brief);
@@ -175,6 +180,16 @@ const StudioNext = () => {
         spineBeatProse: narrative.spineBeatProse,
       }),
     [brief, narrative],
+  );
+
+  // Последствия вставки считаются той же сметой, что и всё остальное:
+  // плейсхолдеры несозданного одинаковы в «до» и «после» и в дельту не попадают.
+  const applyPreview = useMemo(
+    () =>
+      pendingApply
+        ? prefabConsequences(pendingApply.prefab, brief, { index, owns, cost: STAGE_COST, expectMissing: RUN_STAGES })
+        : null,
+    [pendingApply, brief, index, owns],
   );
 
   // Имя проекта живёт в хребте: у брифа названия нет — оно сочиняется вместе
@@ -340,7 +355,13 @@ const StudioNext = () => {
             )}
             {bottomTab === 'feed' && <Feed events={feed} />}
             {bottomTab === 'runs' && <RunsPanel />}
-            {bottomTab === 'prefabs' && <PrefabsPanel hasStory={narrative.spine != null} onApplied={setNotice} />}
+            {bottomTab === 'prefabs' && (
+              <PrefabsPanel
+                hasStory={narrative.spine != null}
+                onApplied={setNotice}
+                confirmApply={(prefab, proceed) => setPendingApply({ prefab, proceed })}
+              />
+            )}
           </div>
         )}
       </div>
@@ -367,6 +388,20 @@ const StudioNext = () => {
               setZone(pipeline.nextIncomplete ?? zone);
               void calendarGen.run(brief, { plan });
             }}
+          />
+        </div>
+      )}
+
+      {pendingApply && applyPreview && (
+        <div className={styles.modalLayer}>
+          <ConsequencesModal
+            title={`${pendingApply.prefab.name} v${pendingApply.prefab.version} → в проект`}
+            consequences={applyPreview}
+            onConfirm={() => {
+              pendingApply.proceed();
+              setPendingApply(null);
+            }}
+            onCancel={() => setPendingApply(null)}
           />
         </div>
       )}
