@@ -211,10 +211,35 @@ export async function pollUntilComplete(taskId: string): Promise<SunoTrack[]> {
   throw new Error(`Suno task ${taskId} timed out after ${POLL_TIMEOUT_MS}ms`);
 }
 
+const DOWNLOAD_ATTEMPTS = 3;
+const DOWNLOAD_BACKOFF_MS = 4_000;
+
+/**
+ * Скачивание с ретраем: CDN tempfile-хостинга флапает (транзиентный
+ * «fetch failed» ронял разом все варианты батча), а трек к этому моменту
+ * уже оплачен — терять его из-за одного неудачного fetch нельзя.
+ */
 export async function downloadAudio(url: string, destPath: string): Promise<void> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Failed to download audio: ${url} (${res.status})`);
-  const buffer = Buffer.from(await res.arrayBuffer());
-  const { writeFile } = await import('node:fs/promises');
-  await writeFile(destPath, buffer);
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= DOWNLOAD_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to download audio: ${url} (${res.status})`);
+      const buffer = Buffer.from(await res.arrayBuffer());
+      const { writeFile } = await import('node:fs/promises');
+      await writeFile(destPath, buffer);
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < DOWNLOAD_ATTEMPTS) {
+        logger.warn(
+          `[download] attempt ${attempt}/${DOWNLOAD_ATTEMPTS} failed for ${url}: ${
+            err instanceof Error ? err.message : String(err)
+          } — retry in ${(DOWNLOAD_BACKOFF_MS * attempt) / 1000}s`,
+        );
+        await new Promise(r => setTimeout(r, DOWNLOAD_BACKOFF_MS * attempt));
+      }
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
