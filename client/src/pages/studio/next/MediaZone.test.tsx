@@ -22,6 +22,8 @@ afterEach(() => {
     audioBase: null,
     audioMoodBeds: {},
     audioByLi: {},
+    spine: null,
+    calendarRun: null,
   });
 });
 
@@ -103,6 +105,50 @@ describe('MediaZone — дорожка спрайтов', () => {
     render(<MediaZone />);
 
     expect(screen.getByText('спрайт «Кира» — заглушка')).toBeTruthy();
+  });
+});
+
+describe('MediaZone — запуск дорожек', () => {
+  const launchButton = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+  const spine = { title: 'Маяк', logline: 'возвращение в городок' } as never;
+
+  it('без истории все запуски заперты с причиной', () => {
+    useBriefStore.setState({ brief });
+    render(<MediaZone />);
+
+    expect(launchButton('Сгенерировать фоны').disabled).toBe(true);
+    expect(launchButton('Сгенерировать спрайты').disabled).toBe(true);
+    expect(launchButton('Сгенерировать звук').disabled).toBe(true);
+    expect(screen.getAllByText('истории ещё нет').length).toBeGreaterThan(0);
+  });
+
+  it('с хребтом и миром дорожки можно запускать', () => {
+    useBriefStore.setState({ brief });
+    useNarrativeStore.setState({ spine, worldModel: world() });
+    render(<MediaZone />);
+
+    expect(launchButton('Сгенерировать фоны').disabled).toBe(false);
+    expect(launchButton('Сгенерировать спрайты').disabled).toBe(false);
+    expect(launchButton('Сгенерировать звук').disabled).toBe(false);
+  });
+
+  it('хребет есть, мира нет — заперты только фоны', () => {
+    useBriefStore.setState({ brief });
+    useNarrativeStore.setState({ spine });
+    render(<MediaZone />);
+
+    expect(launchButton('Сгенерировать фоны').disabled).toBe(true);
+    expect(screen.getByText('мир ещё не собран')).toBeTruthy();
+    expect(launchButton('Сгенерировать спрайты').disabled).toBe(false);
+  });
+
+  it('во время прогона истории запуски заперты', () => {
+    useBriefStore.setState({ brief });
+    useNarrativeStore.setState({ spine, worldModel: world(), calendarRun: { status: 'running' } as never });
+    render(<MediaZone />);
+
+    expect(launchButton('Сгенерировать фоны').disabled).toBe(true);
+    expect(screen.getAllByText('идёт прогон истории').length).toBeGreaterThan(0);
   });
 });
 

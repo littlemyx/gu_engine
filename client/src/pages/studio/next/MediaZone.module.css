@@ -5,6 +5,12 @@
   margin-bottom: var(--space-2);
 }
 
+.laneActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .lane {
   display: flex;
   flex-direction: column;

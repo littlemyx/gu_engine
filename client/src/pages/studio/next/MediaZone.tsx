@@ -2,6 +2,11 @@ import React, { useMemo, useState } from 'react';
 
 import { useBriefStore } from '@/narrative/briefStore';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
+import { useBulkAudioGeneration, buildBaseStyle } from '@/narrative/useBulkAudioGeneration';
+import { useBulkCharacterGeneration } from '@/narrative/useBulkCharacterGeneration';
+import { useBulkImageGeneration } from '@/narrative/useBulkImageGeneration';
+import MutedText from '@/ui/kit/atoms/MutedText';
+import OutlineButton from '@/ui/kit/atoms/OutlineButton';
 import InplacePreview from '@/ui/kit/molecules/InplacePreview';
 import MediaPlaceholder from '@/ui/kit/molecules/MediaPlaceholder';
 import MoodBedRow from '@/ui/kit/molecules/MoodBedRow';
@@ -49,6 +54,8 @@ function placeholderLabel(kind: string, name: string, status: MediaStatus, error
  */
 const MediaZone = () => {
   const brief = useBriefStore(s => s.brief);
+  const spine = useNarrativeStore(s => s.spine);
+  const storyRunning = useNarrativeStore(s => s.calendarRun?.status === 'running');
   const worldModel = useNarrativeStore(s => s.worldModel);
   const images = useNarrativeStore(s => s.images);
   const characters = useNarrativeStore(s => s.characters);
@@ -63,6 +70,10 @@ const MediaZone = () => {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
   const [playingTake, setPlayingTake] = useState<string | null>(null);
 
+  const imageGen = useBulkImageGeneration();
+  const characterGen = useBulkCharacterGeneration();
+  const audioGen = useBulkAudioGeneration();
+
   const model = useMemo(
     () => deriveMedia({ brief, worldModel, images, characters, audioBase, audioMoodBeds, audioByLi }),
     [brief, worldModel, images, characters, audioBase, audioMoodBeds, audioByLi],
@@ -74,6 +85,25 @@ const MediaZone = () => {
     else selectAudioVariation(position.liId, position.tone, index);
   };
 
+  // Прямые входы вместо deriveLegacyOutline: хукам от outline нужны только
+  // title/logline как контекст промпта, а фоны при живой модели мира и вовсе
+  // идут по локациям (см. useBulkImageGeneration).
+  const outlineCtx = spine ? { title: spine.title, logline: spine.logline, anchors: [] } : null;
+
+  // Причина, почему дорожку нельзя запустить; null — можно.
+  const launchBlock = storyRunning ? 'идёт прогон истории' : spine == null ? 'истории ещё нет' : null;
+  const backgroundsBlock = launchBlock ?? (worldModel == null ? 'мир ещё не собран' : null);
+  const spritesBlock = launchBlock ?? ((brief.loveInterests?.length ?? 0) === 0 ? 'некого рисовать' : null);
+
+  const generateBackgrounds = () => {
+    if (outlineCtx) void imageGen.start(brief, outlineCtx);
+  };
+  const generateSprites = () => {
+    if (outlineCtx) void characterGen.start(brief, outlineCtx);
+  };
+  // Стиль подложки — дефолт из брифа; тонкая правка стиля приедет позже.
+  const generateAudio = () => void audioGen.start(brief, buildBaseStyle(brief));
+
   return (
     <div className={styles.zoneBody}>
       <h1 className={styles.zoneHeading}>Медиа</h1>
@@ -84,6 +114,14 @@ const MediaZone = () => {
           <div
             className={styles.kicker}
           >{`Фоны · ${model.counts.backgrounds.done} из ${model.counts.backgrounds.total}`}</div>
+          <TrackLaunch
+            label="Сгенерировать фоны"
+            busy={imageGen.status.state === 'running'}
+            progress={progressOf(imageGen.status)}
+            block={backgroundsBlock}
+            onStart={generateBackgrounds}
+            onCancel={imageGen.cancel}
+          />
         </div>
         {model.backgrounds.length === 0 ? (
           <p className={styles.empty}>Мир ещё не собран — фонам пока не из чего взяться.</p>
@@ -107,6 +145,14 @@ const MediaZone = () => {
           <div
             className={styles.kicker}
           >{`Спрайты · ${model.counts.sprites.done} из ${model.counts.sprites.total}`}</div>
+          <TrackLaunch
+            label="Сгенерировать спрайты"
+            busy={characterGen.status.state === 'running'}
+            progress={progressOf(characterGen.status)}
+            block={spritesBlock}
+            onStart={generateSprites}
+            onCancel={characterGen.cancel}
+          />
         </div>
         {model.sprites.length === 0 ? (
           <p className={styles.empty}>В брифе нет ни одного love interest — спрайтам некого рисовать.</p>
@@ -139,6 +185,14 @@ const MediaZone = () => {
       <section className={styles.section}>
         <div className={media.laneHeader}>
           <div className={styles.kicker}>{`Звук · ${model.counts.audio.done} из ${model.counts.audio.total}`}</div>
+          <TrackLaunch
+            label="Сгенерировать звук"
+            busy={audioGen.status.state === 'running'}
+            progress={progressOf(audioGen.status)}
+            block={launchBlock}
+            onStart={generateAudio}
+            onCancel={audioGen.cancel}
+          />
         </div>
         <div className={media.lane}>
           {model.audio.map(row => (
@@ -157,6 +211,36 @@ const MediaZone = () => {
     </div>
   );
 };
+
+/** «3 из 8», пока дорожка занята; статусы всех трёх хуков несут total/completed. */
+function progressOf(status: { state: string }): string | null {
+  if (status.state !== 'running') return null;
+  const s = status as { total?: number; completed?: number };
+  return typeof s.total === 'number' ? `${s.completed ?? 0} из ${s.total}` : 'идёт…';
+}
+
+interface TrackLaunchProps {
+  label: string;
+  busy: boolean;
+  progress: string | null;
+  /** Причина, почему запуск заперт; null — можно. */
+  block: string | null;
+  onStart: () => void;
+  onCancel: () => void;
+}
+
+/** Запуск дорожки в шапке: кнопка со сменой на «Отмена» и причина запрета. */
+const TrackLaunch = ({ label, busy, progress, block, onStart, onCancel }: TrackLaunchProps) => (
+  <div className={media.laneActions}>
+    {busy && progress && <MutedText text={progress} size={10} />}
+    {!busy && block && <MutedText text={block} size={10} />}
+    {busy ? (
+      <OutlineButton label="Отмена" size="compact" onClick={onCancel} />
+    ) : (
+      <OutlineButton label={label} tone="accent" size="compact" disabled={block != null} onClick={onStart} />
+    )}
+  </div>
+);
 
 interface AudioRowProps {
   row: AudioPositionRow;
