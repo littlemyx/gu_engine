@@ -129,8 +129,11 @@ function priceText(cost: number): string {
 
 /** «Замысел · cast/heroine» — зона отвечает за стадию, дальше её собственный адрес. */
 function positionLabel(position: CallSheetPosition): string {
+  // Нетронутая стадия адресуется целиком: «spine/» без элемента — это «вся
+  // стадия впереди», хвостовой слэш тут не адрес, а шум.
+  const address = position.key.endsWith('/') ? position.stage : position.key;
   const zone = zoneOfStage(position.stage);
-  return zone ? `${zone.ru} · ${position.key}` : position.key;
+  return zone ? `${zone.ru} · ${address}` : address;
 }
 
 function subtitle(sheet: CallSheet): string {

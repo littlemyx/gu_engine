@@ -54,12 +54,26 @@ export interface CallSheetInput {
   cost: StageCost;
   /** Пересобрать всё, игнорируя свежесть. Замки при этом всё равно держат. */
   force?: boolean;
+  /**
+   * Стадии, которые прогон произведёт, даже если в учёте их ещё нет. Индекс
+   * знает только то, что уже случилось, — без этого списка смета пустого
+   * проекта обещала бы «пересчитать бриф» и молчала про всю историю впереди.
+   * Нетронутая стадия попадает в смету одной позицией `stage/` — сколько в ней
+   * будет элементов, до генерации не знает никто, поэтому цена стадийная.
+   */
+  expectMissing?: ArtifactStage[];
 }
 
-export function buildCallSheet({ index, owns = {}, cost, force = false }: CallSheetInput): CallSheet {
+export function buildCallSheet({
+  index,
+  owns = {},
+  cost,
+  force = false,
+  expectMissing = [],
+}: CallSheetInput): CallSheet {
   const freshness = deriveAllFreshness(index, topoOrder(), owns);
 
-  const positions = Object.keys(index).map((key): CallSheetPosition => {
+  const listed = Object.keys(index).map((key): CallSheetPosition => {
     const meta = index[key];
     const { stage } = parseArtifactKey(key as ArtifactKey);
     const state = freshness[key];
@@ -73,6 +87,26 @@ export function buildCallSheet({ index, owns = {}, cost, force = false }: CallSh
       estCost: action === 'generate' ? cost[stage] ?? 0 : 0,
     };
   });
+
+  const started = new Set(listed.map(p => p.stage));
+  const ahead = expectMissing
+    .filter(stage => !started.has(stage))
+    .map(
+      (stage): CallSheetPosition => ({
+        key: `${stage}/` as ArtifactKey,
+        stage,
+        action: 'generate',
+        freshness: 'missing',
+        estCost: cost[stage] ?? 0,
+      }),
+    );
+
+  // Смета читается как план работ: сверху вниз в порядке исполнения, а не в
+  // порядке появления ключей в индексе.
+  const rank = new Map(topoOrder().map((stage, i) => [stage, i]));
+  const positions = [...listed, ...ahead].sort(
+    (a, b) => (rank.get(a.stage) ?? 0) - (rank.get(b.stage) ?? 0) || a.key.localeCompare(b.key),
+  );
 
   const generate = positions.filter(p => p.action === 'generate');
   const decisions = positions.filter(p => p.action === 'needs-decision');

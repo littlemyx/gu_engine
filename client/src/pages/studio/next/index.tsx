@@ -38,7 +38,7 @@ import { ZONES, nextZone, zoneById, zoneLabel } from './zoneModel';
 import styles from './shell.module.css';
 
 import type { StageCost } from '@/processes/callSheet';
-import type { ArtifactKey } from '@/artifacts/types';
+import type { ArtifactKey, ArtifactStage } from '@/artifacts/types';
 import type { ArtifactRow } from '../derive/pipelineModel';
 import type { BottomTab, SidebarTab } from '../studioStore';
 
@@ -65,6 +65,25 @@ const STAGE_COST: StageCost = {
   bundle: 0,
   release: 0,
 };
+
+/**
+ * Стадии, которые календарный прогон произведёт с нуля. Бриф — вход прогона,
+ * а не продукт; медиа, проверка и релиз запускаются из своих зон. Смета
+ * считает по этому списку то, чего ещё нет, — иначе на пустом проекте кнопка
+ * обещала бы пересчёт брифа за копейки и молчала про всю историю.
+ */
+const RUN_STAGES: ArtifactStage[] = [
+  'cast',
+  'world',
+  'calendar',
+  'spine',
+  'schedule',
+  'beat_prose',
+  'anchor_transitions',
+  'event_pool',
+  'dialogue_units',
+  'ending_prose',
+];
 
 const BOTTOM_TABS: { id: BottomTab; label: string }[] = [
   { id: 'pipeline', label: 'Пайплайн' },
@@ -137,7 +156,10 @@ const StudioNext = () => {
   const pipeline = useMemo(() => derivePipeline({ index, owns }), [index, owns]);
   // Смета на кнопке — тот же расчёт, что покажет колл-щит перед запуском:
   // цифра в тулбаре и цифра в подписи обязаны совпадать до копейки.
-  const sheet = useMemo(() => buildCallSheet({ index, owns, cost: STAGE_COST }), [index, owns]);
+  const sheet = useMemo(
+    () => buildCallSheet({ index, owns, cost: STAGE_COST, expectMissing: RUN_STAGES }),
+    [index, owns],
+  );
   // План машины — позиции сметы, а не девять стадий пайплайна: прогресс-полоса
   // считает то же, что автор подписал.
   const openCallSheet = () => runCommand({ type: 'plan', total: sheet.generate.length });

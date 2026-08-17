@@ -118,6 +118,55 @@ describe('подписанная смета → план прогона', () => 
   });
 });
 
+describe('смета видит то, чего ещё нет', () => {
+  const AHEAD: StageCost = { ...COST, schedule: 0.4 };
+
+  it('нетронутая стадия попадает в смету позицией «вся стадия впереди»', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting(STORY, LETO),
+      owns: LETO,
+      cost: AHEAD,
+      expectMissing: ['schedule'],
+    });
+
+    const schedule = sheet.generate.find(p => p.key === 'schedule/');
+    expect(schedule).toMatchObject({ stage: 'schedule', freshness: 'missing', estCost: 0.4 });
+    expect(sheet.total).toBeCloseTo(0.4);
+  });
+
+  it('начатая стадия заглушки не получает — её позиции уже в учёте', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting(STORY, LETO),
+      owns: LETO,
+      cost: AHEAD,
+      expectMissing: ['spine', 'schedule'],
+    });
+
+    expect(sheet.positions.filter(p => p.stage === 'spine')).toHaveLength(1);
+    expect(sheet.positions.find(p => p.key === 'spine/')?.action).toBe('cached');
+  });
+
+  it('пустой проект: смета обещает весь каскад, а не молчит', () => {
+    const sheet = buildCallSheet({
+      index: migrateExisting({ brief: [''] }, LETO),
+      owns: LETO,
+      cost: AHEAD,
+      expectMissing: ['cast', 'world', 'calendar', 'spine', 'schedule'],
+    });
+
+    expect(sheet.generate.map(p => p.stage)).toEqual(['cast', 'world', 'calendar', 'spine', 'schedule']);
+    expect(sheet.total).toBeCloseTo(0.2 + 0.3 + 0.5 + 1.2 + 0.4);
+  });
+
+  it('позиции отсортированы порядком исполнения, а не порядком индекса', () => {
+    const sheet = buildCallSheet({ index: migrateExisting(STORY, ZIMA), owns: ZIMA, cost: COST });
+
+    const stages = sheet.positions.map(p => p.stage);
+    expect(stages.indexOf('brief')).toBeLessThan(stages.indexOf('cast'));
+    expect(stages.indexOf('cast')).toBeLessThan(stages.indexOf('spine'));
+  });
+});
+
 describe('превью последствий', () => {
   it('показывает, во что обойдётся правка входа', () => {
     const index = migrateExisting(STORY, LETO);

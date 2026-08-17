@@ -81,9 +81,10 @@ describe('CallSheetPanel, заполненная ведомость', () => {
     render(<CallSheetPanel callSheet={POPULATED} onSign={() => {}} onCancel={() => {}} />);
 
     expect(screen.getByText('Позиции · 3')).toBeTruthy();
-    expect(screen.getByText(/brief\//)).toBeTruthy();
+    // Скалярная стадия адресуется целиком — без хвостового слэша.
+    expect(screen.getByText(/Замысел · brief/)).toBeTruthy();
     expect(screen.getByText(/cast\/heroine/)).toBeTruthy();
-    expect(screen.getByText(/world\//)).toBeTruthy();
+    expect(screen.getByText(/Замысел · world/)).toBeTruthy();
     // Позиция, требующая решения, не входит в основной список.
     expect(screen.queryByText(/^Замысел · beat_prose\/b5$/)).toBeNull();
   });
