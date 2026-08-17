@@ -60,11 +60,11 @@ const ProseZone = () => {
 
   const nothingYet = feed.length === 0 && !model.checkpoint;
 
+  // Без .zoneBody и шапки зоны: экран живёт вкладкой «Прогон» внутри
+  // ZoneView, который уже нарисовал и заголовок «Генерация», и отступы, —
+  // своя шапка давала двойной h1 и двойной паддинг.
   return (
-    <div className={styles.zoneBody}>
-      <h1 className={styles.zoneHeading}>Генерация</h1>
-      <p className={styles.zoneHint}>самая дорогая зона: порции, чекпоинты, раши</p>
-
+    <div>
       <div className={styles.section}>
         <RunProgress percent={percent} label={progressLabel} tone={run.phase === 'failed' ? 'error' : 'loading'} />
       </div>

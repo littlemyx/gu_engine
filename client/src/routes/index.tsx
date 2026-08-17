@@ -15,19 +15,38 @@ export default [
     element: <Layout />,
     children: [
       { index: true, element: <Main /> },
-      // Шелл «Планирование и генерация» занял основной адрес; старый
-      // плейграунд остался под -legacy, пока из него не вычерпают остатки.
+      // Конвейерный шелл занял основной адрес (M7-врезка); /playground —
+      // исторический алиас того же экрана, /studio-next — адрес стройки,
+      // оставлен ради закладок и открытых вкладок.
       // ProjectGate: без ?project=<id> вкладка показывает выбор проекта.
       {
-        path: 'playground',
+        path: 'studio',
         element: (
           <ProjectGate>
-            <Studio />
+            <StudioNext />
           </ProjectGate>
         ),
       },
       {
-        path: 'studio',
+        path: 'playground',
+        element: (
+          <ProjectGate>
+            <StudioNext />
+          </ProjectGate>
+        ),
+      },
+      {
+        path: 'studio-next',
+        element: (
+          <ProjectGate>
+            <StudioNext />
+          </ProjectGate>
+        ),
+      },
+      // Старый IDE-шелл — донор ещё не перенесённых кусков (запуск
+      // медиа-дорожек живёт пока только здесь).
+      {
+        path: 'studio-legacy',
         element: (
           <ProjectGate>
             <Studio />
@@ -37,16 +56,6 @@ export default [
       { path: 'playground-legacy', element: <Playground /> },
       // Витрина кита: проект не нужен, ProjectGate не оборачиваем.
       { path: 'studio/kit', element: <KitGallery /> },
-      // Конвейерный шелл строится на отдельном адресе: рабочая студия не
-      // должна падать из-за наполовину собранного экрана.
-      {
-        path: 'studio-next',
-        element: (
-          <ProjectGate>
-            <StudioNext />
-          </ProjectGate>
-        ),
-      },
     ],
   },
   {

@@ -214,7 +214,7 @@ const StudioNext = () => {
     onNewProject: () => openModal({ kind: 'newProject' }),
     onOpenProject: () => void projectFile.pickAndStageOpen(),
     // Вкладка без ?project= показывает пикер: там и живёт список проектов.
-    onSwitchProject: () => window.location.assign('/studio-next'),
+    onSwitchProject: () => window.location.assign('/studio'),
     onSaveProject: () => void projectFile.saveProject(),
     onSaveProjectAs: () => void projectFile.saveProjectAs(),
     // Бриф — не модалка, а первая зона конвейера: пункт меню просто ведёт туда.

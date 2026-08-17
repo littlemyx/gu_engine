@@ -369,7 +369,8 @@ const Studio = () => {
         onNewProject: () => openModal({ kind: 'newProject' }),
         onOpenProject: () => void projectFile.pickAndStageOpen(),
         // Студия без ?project= показывает пикер: там и живёт список проектов.
-        onSwitchProject: () => window.location.assign('/studio'),
+        // Легаси остаётся в легаси: пикер общий, но адрес свой.
+        onSwitchProject: () => window.location.assign('/studio-legacy'),
         onSaveProject: () => void projectFile.saveProject(),
         onSaveProjectAs: () => void projectFile.saveProjectAs(),
         projectBusy: projectFile.busy,

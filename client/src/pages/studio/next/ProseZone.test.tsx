@@ -33,7 +33,7 @@ describe('ProseZone, пустая лента', () => {
   it('честно называет, что прогона ещё не было, а не показывает пустое место', () => {
     render(<ProseZone />);
 
-    expect(screen.getByText('Генерация')).toBeTruthy();
+    // Шапку зоны рисует ZoneView: у вкладки «Прогон» своего заголовка нет.
     expect(screen.getByText('Лента пуста — прогон ещё не запускали.')).toBeTruthy();
     expect(screen.getByText('прогон не запущен')).toBeTruthy();
   });
