@@ -31,6 +31,11 @@ import type { ArtifactIndex, ArtifactKey, ArtifactMeta } from './types';
 
 export type ArtifactState = {
   index: ArtifactIndex;
+  /**
+   * Ревизия словаря owns, под которую записаны отпечатки индекса (см.
+   * presence.OWNS_REV). 0 — индекс из времён, когда ревизии не было.
+   */
+  ownsRev: number;
 
   /** Прогон сгенерировал артефакт. Запертое остаётся нетронутым. */
   generated: (key: ArtifactKey, info: GeneratedInfo) => void;
@@ -47,6 +52,8 @@ export type ArtifactState = {
   consumeNotes: (keys: ArtifactKey[]) => void;
   /** Заменить весь индекс — открытие проекта, миграция, откат. */
   replaceIndex: (index: ArtifactIndex) => void;
+  /** Отпечатки освежены под новую формулу owns. */
+  markOwnsRev: (rev: number) => void;
   reset: () => void;
 };
 
@@ -61,6 +68,7 @@ export const useArtifactStore = create<ArtifactState>()(
   persist(
     set => ({
       index: {},
+      ownsRev: 0,
 
       generated: (key, info) => set(s => ({ index: edit(s.index, key, m => onGenerated(m, info)) })),
       approve: key => set(s => ({ index: edit(s.index, key, onApprove) })),
@@ -78,12 +86,13 @@ export const useArtifactStore = create<ArtifactState>()(
         }),
 
       replaceIndex: index => set({ index }),
+      markOwnsRev: rev => set({ ownsRev: rev }),
       reset: () => set({ index: {} }),
     }),
     {
       name: storageKey('gu-artifacts'),
       version: 1,
-      partialize: s => ({ index: s.index }),
+      partialize: s => ({ index: s.index, ownsRev: s.ownsRev }),
     },
   ),
 );

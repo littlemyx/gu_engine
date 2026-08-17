@@ -4,8 +4,8 @@ import { useBriefStore } from '@/narrative/briefStore';
 import { useNarrativeStore } from '@/narrative/narrativeStore';
 
 import { useArtifactStore } from './artifactStore';
-import { reconcile } from './migrate';
-import { briefOwn, collectPresence } from './presence';
+import { reconcile, refreshFingerprints } from './migrate';
+import { collectPresence, OWNS_REV, ownsRev1, storyOwns } from './presence';
 
 import type { ArtifactIndex } from './types';
 
@@ -43,12 +43,21 @@ export function useArtifacts(): { index: ArtifactIndex; owns: Record<string, unk
     [brief, narrative],
   );
 
-  const owns = useMemo(() => briefOwn(brief), [brief]);
+  const owns = useMemo(() => storyOwns(brief, narrative.worldModel), [brief, narrative.worldModel]);
 
   useEffect(() => {
-    const next = reconcile(index, present, owns);
+    // Смена формулы owns: отпечатки в сторе записаны старой — освежаем один
+    // раз, ДО сверки, иначе вся история от мира вниз «протухла» бы апдейтом.
+    const store = useArtifactStore.getState();
+    let base = index;
+    if (store.ownsRev < OWNS_REV) {
+      base = refreshFingerprints(index, ownsRev1(brief), owns);
+      store.markOwnsRev(OWNS_REV);
+    }
+
+    const next = reconcile(base, present, owns);
     if (next !== index) replaceIndex(next);
-  }, [index, present, owns, replaceIndex]);
+  }, [index, present, owns, brief, replaceIndex]);
 
   return { index, owns };
 }

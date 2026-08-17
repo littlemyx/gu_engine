@@ -1,4 +1,3 @@
-import { briefOwn } from '@/artifacts/presence';
 import { consequencesOf } from '@/processes/callSheet';
 
 import type { Brief } from '@/narrative/types';
@@ -42,18 +41,19 @@ export function prefabConsequences(prefab: Prefab, brief: Brief, before: CallShe
 /** Вход сметы для мира, где префаб применён. `null` — вставка ничего не трогает. */
 function afterInput(prefab: Prefab, brief: Brief, before: CallSheetInput): CallSheetInput | null {
   if (prefab.kind === 'character') {
-    // Та же семантика, что addLoveInterestCard: свой id обновляется, чужой встаёт в конец.
+    // Та же семантика, что addLoveInterestCard: свой id обновляется, чужой
+    // встаёт в конец. Остальные owns (мир) не трогаем — правится только бриф.
     const exists = brief.loveInterests.some(li => li.id === prefab.payload.li.id);
     const loveInterests = exists
       ? brief.loveInterests.map(li => (li.id === prefab.payload.li.id ? prefab.payload.li : li))
       : [...brief.loveInterests, prefab.payload.li];
-    return { ...before, owns: briefOwn({ ...brief, loveInterests }) };
+    return { ...before, owns: { ...before.owns, 'brief/': { ...brief, loveInterests } } };
   }
 
   if (prefab.kind === 'world') {
-    // Собственная суть мира в учёте не хранится (owns несёт только бриф),
-    // поэтому подмена модели мира выражается добавлением own: отпечаток
-    // `world/` меняется, и всё, что стоит на мире, честно протухает.
+    // Подмена собственной сути мира — ровно то, что сделает настоящая
+    // вставка: отпечаток `world/` изменится, и всё, что стоит на мире,
+    // протухнет. Превью и ведомость считают одной формулой (storyOwns).
     return { ...before, owns: { ...before.owns, 'world/': prefab.payload.worldModel } };
   }
 

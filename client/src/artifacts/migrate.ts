@@ -69,6 +69,38 @@ export function reconcile(
   return { ...index, ...migrateExisting(missing, owns) };
 }
 
+/**
+ * Одноразовое освежение отпечатков при смене словаря owns (см. OWNS_REV).
+ *
+ * Отпечатки в сторе записаны старой формулой; после её смены сравнение со
+ * свежепосчитанными врало бы «всё протухло», хотя не менялось ничего. Правило
+ * то же, что у миграции: оплаченное не протухает от апдейта кода. Освежается
+ * только то, что было свежим ПО СТАРОЙ формуле; протухшее по ней остаётся
+ * протухшим — реальную устарелость миграция не амнистирует. Владение и дубли
+ * не трогаются: это перезапись бухгалтерской записи, а не работа.
+ */
+export function refreshFingerprints(
+  index: ArtifactIndex,
+  oldOwns: Record<string, unknown>,
+  newOwns: Record<string, unknown>,
+): ArtifactIndex {
+  const order = topoOrder();
+  const wasCurrent = recomputeAll(index, order, oldOwns);
+  const nowCurrent = recomputeAll(index, order, newOwns);
+
+  let changed = false;
+  const next: ArtifactIndex = { ...index };
+
+  for (const [key, meta] of Object.entries(index)) {
+    if (meta.fingerprint === null || meta.fingerprint !== wasCurrent[key]) continue;
+    if (wasCurrent[key] === nowCurrent[key]) continue;
+    next[key] = { ...meta, fingerprint: nowCurrent[key] };
+    changed = true;
+  }
+
+  return changed ? next : index;
+}
+
 /** Артефакты, которых в сторах больше нет: их учёт — сироты. */
 export function orphans(index: ArtifactIndex, present: PresentItems): ArtifactKey[] {
   const alive = new Set<string>();

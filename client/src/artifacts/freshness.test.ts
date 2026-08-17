@@ -67,6 +67,22 @@ describe('каскад протухания', () => {
 
     expect(Object.values(again).every(f => f === 'fresh')).toBe(true);
   });
+
+  // Мир — тоже own: world-префаб подставляет модель целиком, минуя генерацию,
+  // и без собственной сути подмена мира не протухала бы календарь и хребет.
+  it('подмена модели мира протухает мир и всё, что на нём стоит', () => {
+    const owns = { 'brief/': { logline: 'лето' }, 'world/': { locations: ['кампус'] } };
+    const index = generate(CHAIN, owns);
+    const after = deriveAllFreshness(index, topoOrder(), { ...owns, 'world/': { locations: ['космопорт'] } });
+
+    expect(after['world/']).toBe('stale');
+    expect(after['calendar/']).toBe('stale');
+    expect(after['spine/']).toBe('stale');
+    expect(after['dialogue_units/']).toBe('stale');
+    // Бриф и каст на мире не стоят — они свежие.
+    expect(after['brief/']).toBe('fresh');
+    expect(after['cast/']).toBe('fresh');
+  });
 });
 
 describe('stableString', () => {

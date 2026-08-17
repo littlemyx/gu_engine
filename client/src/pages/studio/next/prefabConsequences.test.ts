@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { migrateExisting } from '@/artifacts/migrate';
-import { briefOwn } from '@/artifacts/presence';
+import { storyOwns } from '@/artifacts/presence';
 import { newLoveInterest } from '@/narrative/loveInterestCard';
 import { blankBrief } from '@/narrative/briefStore';
 
@@ -52,7 +52,8 @@ const audioSet = (): Prefab => ({
 });
 
 function freshInput(brief: Brief) {
-  const owns = briefOwn(brief);
+  // Мир в owns — как в бою (storyOwns): вставка world-префаба меняет именно его.
+  const owns = storyOwns(brief, { locations: ['кампус'], anchorLocations: {} });
   return { index: migrateExisting(STORY, owns), owns, cost: COST };
 }
 

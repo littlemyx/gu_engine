@@ -4,7 +4,7 @@ import { useNarrativeStore } from '@/narrative/narrativeStore';
 import { useArtifactStore } from './artifactStore';
 import { recomputeAll } from './fingerprint';
 import { reconcile } from './migrate';
-import { briefOwn, collectPresence } from './presence';
+import { collectPresence, storyOwns } from './presence';
 import { topoOrder } from './stageGraph';
 import { onGenerated, onKeepOwn } from './transitions';
 
@@ -49,7 +49,7 @@ export function recordRunCommit(runId: string, spent?: number, keepFresh: string
     audioTracks: n.audioBase ? ['base'] : [],
   });
 
-  const owns = briefOwn(brief);
+  const owns = storyOwns(brief, n.worldModel);
   const store = useArtifactStore.getState();
 
   // Сначала завести то, что прогон создал впервые, потом обновить отпечатки.

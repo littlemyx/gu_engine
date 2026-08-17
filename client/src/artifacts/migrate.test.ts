@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { deriveAllFreshness } from './freshness';
-import { migrateExisting, orphans, reconcile } from './migrate';
+import { migrateExisting, orphans, reconcile, refreshFingerprints } from './migrate';
 import { topoOrder } from './stageGraph';
 import { onLock, onUserEdit } from './transitions';
 
@@ -99,5 +99,48 @@ describe('сироты', () => {
 
   it('на полной истории сирот нет', () => {
     expect(orphans(migrateExisting(STORY, OWNS), STORY)).toEqual([]);
+  });
+});
+
+describe('освежение отпечатков при смене формулы owns', () => {
+  const OLD = OWNS;
+  const NEW = { ...OWNS, 'world/': { locations: ['кампус'] } };
+
+  it('свежее по старой формуле остаётся свежим по новой', () => {
+    const index = migrateExisting(STORY, OLD);
+
+    const refreshed = refreshFingerprints(index, OLD, NEW);
+    const after = deriveAllFreshness(refreshed, topoOrder(), NEW);
+
+    expect(Object.values(after).every(f => f === 'fresh')).toBe(true);
+  });
+
+  it('протухшее по старой формуле не амнистируется', () => {
+    const index = migrateExisting(STORY, { 'brief/': { logline: 'зима' } });
+
+    const refreshed = refreshFingerprints(index, OLD, NEW);
+    const after = deriveAllFreshness(refreshed, topoOrder(), NEW);
+
+    // Бриф правился до апдейта: он и его потомки протухли по-настоящему.
+    expect(after['brief/']).toBe('stale');
+    expect(after['spine/']).toBe('stale');
+  });
+
+  it('владение и дубли не трогает — это перезапись записи, а не работа', () => {
+    const index = migrateExisting(STORY, OLD);
+    index['spine/'] = onLock(index['spine/']);
+
+    const refreshed = refreshFingerprints(index, OLD, NEW);
+
+    expect(refreshed['spine/'].ownership).toBe('locked');
+    expect(refreshed['spine/'].takes).toEqual(index['spine/'].takes);
+    // Запертый тоже освежается: иначе замок превратился бы в конфликт на пустом месте.
+    const after = deriveAllFreshness(refreshed, topoOrder(), NEW);
+    expect(after['spine/']).toBe('fresh');
+  });
+
+  it('одинаковые формулы — тот же объект', () => {
+    const index = migrateExisting(STORY, OLD);
+    expect(refreshFingerprints(index, OLD, OLD)).toBe(index);
   });
 });
