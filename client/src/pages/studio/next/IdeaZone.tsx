@@ -1,24 +1,32 @@
 import React, { useMemo, useState } from 'react';
 
 import { useNarrativeStore } from '@/narrative/narrativeStore';
+import { useBriefGeneration } from '@/narrative/useBriefGeneration';
 import { blankPrefab } from '@/prefabs/blankPrefab';
 import { usePrefabStore } from '@/prefabs/prefabStore';
+import BriefFieldCard from '@/ui/kit/molecules/BriefFieldCard';
 import HintNote from '@/ui/kit/molecules/HintNote';
 import Input from '@/ui/kit/atoms/Input';
 import MutedText from '@/ui/kit/atoms/MutedText';
 import OutlineButton from '@/ui/kit/atoms/OutlineButton';
 import PrefabCard from '@/ui/kit/molecules/PrefabCard';
+import ReadinessRow from '@/ui/kit/molecules/ReadinessRow';
 import RoleCard from '@/ui/kit/molecules/RoleCard';
 import SearchField from '@/ui/kit/molecules/SearchField';
 
 import { useStudioProjectStore } from '../studioProjectStore';
+import BriefCardEditor from './BriefCardEditor';
+import BriefGenSection from './BriefGenSection';
+import { deriveBriefZone } from './briefZoneModel';
 import { acceptsKind, deriveCasting, roleGapPrefix } from './castingModel';
 import { useRoleGeneration } from './useRoleGeneration';
 
 import styles from './shell.module.css';
 import casting from './casting.module.css';
+import briefCss from './briefZone.module.css';
 
 import type { Brief } from '@/narrative/types';
+import type { BriefCardId } from './briefZoneModel';
 import type { CastingRole } from './castingModel';
 import type { PrefabKind } from '@/prefabs/prefabTypes';
 
@@ -35,15 +43,17 @@ export interface IdeaZoneProps {
 }
 
 /**
- * Зона 0 «Замысел»: кастинг-стол и библиотека.
+ * Зона 0 «Замысел»: бриф + кастинг-стол.
  *
- * Роль закрывается кликом — выбрали слот, выбрали префаб. Перетаскивание
- * добавится позже: клик работает и с клавиатуры, и на узком экране, поэтому
- * он остаётся основным способом, а не запасным.
+ * Бриф — не форма-простыня в модалке, а первая зона конвейера: чек-лист
+ * готовности, панель генерации (заполняет только пробелы) и карточки полей;
+ * клик по карточке раскрывает плашку правки — попапов во вьюпорте нет.
  *
- * Библиотекой дело не ограничивается: пустая роль — это тупик, если закрыть её
- * нечем, поэтому рядом с «закастовать» стоят три других выхода — завести
- * префаб руками, сгенерировать роль сейчас и отдать её генератору на потом.
+ * Кастинг-стол ниже: роль закрывается кликом — выбрали слот, выбрали префаб.
+ * Перетаскивание добавится позже: клик работает и с клавиатуры, и на узком
+ * экране, поэтому он остаётся основным способом, а не запасным. Рядом с
+ * «закастовать» — три других выхода: завести префаб руками, сгенерировать
+ * роль сейчас и отдать её генератору на потом.
  */
 const IdeaZone = ({ brief }: IdeaZoneProps) => {
   const castSlots = useStudioProjectStore(s => s.castSlots);
@@ -58,10 +68,14 @@ const IdeaZone = ({ brief }: IdeaZoneProps) => {
   const [creating, setCreating] = useState<CastingRole | null>(null);
   const [draftName, setDraftName] = useState('');
   const [query, setQuery] = useState('');
+  // Раскрытая плашка правки карточки брифа; повторный клик сворачивает.
+  const [editingCard, setEditingCard] = useState<BriefCardId | null>(null);
 
   const generation = useRoleGeneration();
+  const briefGen = useBriefGeneration();
 
   const model = useMemo(() => deriveCasting({ brief, castSlots, castIntent }), [brief, castSlots, castIntent]);
+  const briefZone = useMemo(() => deriveBriefZone({ brief, generating: briefGen.running }), [brief, briefGen.running]);
 
   const offered = useMemo(() => {
     if (!picking) return [];
@@ -102,10 +116,57 @@ const IdeaZone = ({ brief }: IdeaZoneProps) => {
 
   return (
     <div className={styles.zoneBody}>
-      <h1 className={styles.zoneHeading}>Кастинг-стол</h1>
+      <h1 className={styles.zoneHeading}>Замысел</h1>
       <p className={styles.zoneHint}>
-        роли из брифа · закрыто {model.assigned} из {model.roles.length}
+        бриф и роли · пустых полей: {briefZone.gapCount} · ролей закрыто {model.assigned} из {model.roles.length}
       </p>
+
+      <div className={styles.section}>
+        <div className={styles.kicker}>Готовность зоны</div>
+        {briefZone.readiness.map(row => (
+          <ReadinessRow key={row.text} text={row.text} state={row.state} onDark={false} />
+        ))}
+        <ReadinessRow
+          text={`роли · ${model.assigned}/${model.roles.length}`}
+          state={model.assigned === model.roles.length ? 'done' : 'waiting'}
+          onDark={false}
+        />
+      </div>
+
+      <div className={styles.section}>
+        <BriefGenSection brief={brief} gen={briefGen} />
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.kicker}>Бриф</div>
+        <div className={briefCss.cardsGrid}>
+          {briefZone.cards.map(card => (
+            <button
+              key={card.id}
+              type="button"
+              className={briefCss.cardButton}
+              onClick={() => setEditingCard(editingCard === card.id ? null : card.id)}
+            >
+              <BriefFieldCard
+                kicker={card.kicker}
+                state={card.state}
+                value={card.value}
+                hint={editingCard === card.id ? `${card.hint} · правка ниже` : card.hint}
+                width="fill"
+              />
+            </button>
+          ))}
+        </div>
+        {editingCard && (
+          <BriefCardEditor key={editingCard} card={editingCard} brief={brief} onClose={() => setEditingCard(null)} />
+        )}
+      </div>
+
+      <div className={styles.section}>
+        <div className={styles.kicker}>
+          Кастинг-стол · закрыто {model.assigned} из {model.roles.length}
+        </div>
+      </div>
 
       <div className={casting.grid}>
         {model.roles.map(role => {

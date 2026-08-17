@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import React from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import BriefGenPanel, { type BriefGenPhase } from './BriefGenPanel';
@@ -74,9 +74,11 @@ describe('BriefGenPanel, фаза ретрай (retry)', () => {
 
 describe('BriefGenPanel, фаза готово (done)', () => {
   it('кнопка генерации сменяется на «Откатить»', () => {
-    render(<BriefGenPanel phase="done" notes={NOTES} gaps={9} onRollback={vi.fn()} />);
+    // Счётчик готовности — сколько РЕАЛЬНО заполнилось, а не сколько было
+    // пробелов: генератор мог закрыть не всё.
+    render(<BriefGenPanel phase="done" notes={NOTES} gaps={9} filled={7} onRollback={vi.fn()} />);
 
-    expect(screen.getByText('✓ заполнено 9 полей — проверьте и поправьте')).toBeTruthy();
+    expect(screen.getByText('✓ заполнено 7 полей — проверьте и поправьте')).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Заполнить|Заполняем|Разбор|Попытка/ })).toBeNull();
     expect(button('Откатить')).toBeTruthy();
   });
@@ -101,6 +103,46 @@ describe('BriefGenPanel, подробность', () => {
     render(<BriefGenPanel phase="idle" notes={NOTES} verbosity={9} />);
 
     expect(screen.getByText('5/5')).toBeTruthy();
+  });
+});
+
+describe('BriefGenPanel, живой режим', () => {
+  it('с onNotesChange заметки — textarea, ввод уходит в колбэк', () => {
+    const onNotesChange = vi.fn();
+    render(<BriefGenPanel phase="idle" notes="" onNotesChange={onNotesChange} />);
+
+    const area = screen.getByPlaceholderText('пусто — генератор придумает сам') as HTMLTextAreaElement;
+    fireEvent.change(area, { target: { value: 'маяк и городок' } });
+    expect(onNotesChange).toHaveBeenCalledWith('маяк и городок');
+  });
+
+  it('во время генерации заметки снова витринные: править их поздно', () => {
+    render(<BriefGenPanel phase="filling" notes={NOTES} onNotesChange={vi.fn()} />);
+
+    expect(screen.queryByPlaceholderText('пусто — генератор придумает сам')).toBeNull();
+    expect(screen.getByText(NOTES)).toBeTruthy();
+  });
+
+  it('клик по тику меняет подробность', () => {
+    const onVerbosityChange = vi.fn();
+    render(<BriefGenPanel phase="idle" notes={NOTES} verbosity={3} onVerbosityChange={onVerbosityChange} />);
+
+    screen.getByRole('button', { name: 'подробность 5' }).click();
+    expect(onVerbosityChange).toHaveBeenCalledWith(5);
+  });
+
+  it('во время генерации показывает «Отмена»', () => {
+    const onCancel = vi.fn();
+    render(<BriefGenPanel phase="filling" notes={NOTES} onCancel={onCancel} />);
+
+    button('Отмена').click();
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('generateDisabled запирает кнопку и на idle', () => {
+    render(<BriefGenPanel phase="idle" notes={NOTES} generateDisabled />);
+
+    expect(button('Заполнить пробелы').disabled).toBe(true);
   });
 });
 

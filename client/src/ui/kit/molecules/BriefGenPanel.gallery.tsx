@@ -34,7 +34,7 @@ export const cases: GalleryCase[] = [
   },
   {
     title: 'готово (done)',
-    node: <BriefGenPanel phase="done" notes={NOTES} directives={DIRECTIVES} gaps={9} />,
+    node: <BriefGenPanel phase="done" notes={NOTES} directives={DIRECTIVES} gaps={9} filled={9} />,
   },
   {
     title: 'ретрай (retry)',

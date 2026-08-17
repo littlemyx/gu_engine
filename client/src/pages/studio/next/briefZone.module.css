@@ -1,0 +1,102 @@
+/* Бриф-половина зоны «Замысел»: сетка карточек полей и плашка правки. */
+
+.cardsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--space-4);
+  align-items: start;
+  margin-bottom: var(--space-4);
+}
+
+/* Карточка кликабельна целиком: кнопка-обёртка ничего не рисует поверх. */
+.cardButton {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.cardButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/*
+ * Плашка правки — светлый «чертёжный» блок, как панель генерации: зона стоит
+ * на светлом канвасе, тёмная .plate здесь выглядела бы дырой.
+ */
+.editor {
+  border: 1px solid var(--gu-line);
+  background: var(--gu-paper);
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 720px;
+}
+
+.editorHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.fieldRow {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.fieldLabel {
+  font-size: 9px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--gu-muted);
+}
+
+.select {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--color-text);
+  border: 1px solid var(--gu-line);
+  border-radius: 0;
+  background: var(--gu-fill-soft, #fbfbfc);
+  padding: 4px 6px;
+  max-width: 240px;
+}
+
+.select:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+.checkRow {
+  display: flex;
+  gap: var(--space-4);
+  align-items: center;
+}
+
+/* Строка карточки LI в редакторе каста: имя · возраст · архетип · снять. */
+.liRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px 160px auto;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.genError {
+  font-size: 10.5px;
+  color: #a4392f;
+}
+
+.footnote {
+  font-size: 9px;
+  color: var(--gu-muted);
+}

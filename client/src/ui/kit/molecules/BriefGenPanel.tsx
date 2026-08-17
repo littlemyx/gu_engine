@@ -33,10 +33,18 @@ export interface BriefGenPanelProps {
   /** «2/3» — номер попытки ретрая из максимума. */
   attempt?: string;
   price?: string;
-  /** Фиксированная ширина панели, px. Без пропа растягивается на 100%. */
-  width?: number;
+  /** Ширина панели: px либо `fill` — на всю ширину ячейки. */
+  width?: number | 'fill';
+  /** Кнопка генерации заперта и на idle — например, пробелов нет. */
+  generateDisabled?: boolean;
   onGenerate?: () => void;
   onRollback?: () => void;
+  /** Живая панель: заметки превращаются в textarea. Без колбэка — витрина. */
+  onNotesChange?: (value: string) => void;
+  /** Живая панель: тики подробности кликабельны. */
+  onVerbosityChange?: (value: number) => void;
+  /** Показывает «Отмена» во время генерации. */
+  onCancel?: () => void;
 }
 
 const STATUS_CLASS: Record<'idle' | 'running' | 'retry', string> = {
@@ -72,13 +80,17 @@ const BriefGenPanel = ({
   directives = [],
   droppedCount = '',
   verbosity = 3,
-  gaps = 9,
-  filled = 6,
-  attempt = '2/3',
+  gaps = 0,
+  filled = 0,
+  attempt = '',
   price = '',
   width = 640,
+  generateDisabled = false,
   onGenerate,
   onRollback,
+  onNotesChange,
+  onVerbosityChange,
+  onCancel,
 }: BriefGenPanelProps) => {
   const idle = phase === 'idle';
   const parsing = phase === 'parsing';
@@ -98,7 +110,7 @@ const BriefGenPanel = ({
     : filling
     ? `фаза 2/2 · заполнение · ${filled} из ${gaps} полей`
     : done
-    ? `✓ заполнено ${gaps} полей — проверьте и поправьте`
+    ? `✓ заполнено ${filled} полей — проверьте и поправьте`
     : `попытка ${attempt} · ошибки проверки уехали в фидбек`;
   const statusTone: 'idle' | 'running' | 'retry' = idle ? 'idle' : retry ? 'retry' : 'running';
 
@@ -128,7 +140,7 @@ const BriefGenPanel = ({
         className={[styles.panel, running ? styles.panelRunning : done ? styles.panelDone : '']
           .filter(Boolean)
           .join(' ')}
-        style={{ width: `${width}px` }}
+        style={{ width: width === 'fill' ? '100%' : `${width}px` }}
       >
         <div className={styles.headerRow}>
           <Kicker text="ГЕНЕРАЦИЯ БРИФА · ЗАПОЛНЯЕТ ТОЛЬКО ПРОБЕЛЫ" tone="neutral" size={9} />
@@ -148,10 +160,20 @@ const BriefGenPanel = ({
             tone="neutral"
             size={9}
           />
-          <div className={`${styles.notesBox} ${idle ? styles.notesIdle : styles.notesRunning}`}>
-            {notes}
-            {idle && <Cursor tone="accent" size={11} />}
-          </div>
+          {onNotesChange && idle ? (
+            <textarea
+              className={`${styles.notesBox} ${styles.notesInput}`}
+              value={notes}
+              placeholder="пусто — генератор придумает сам"
+              rows={3}
+              onChange={e => onNotesChange(e.target.value)}
+            />
+          ) : (
+            <div className={`${styles.notesBox} ${idle ? styles.notesIdle : styles.notesRunning}`}>
+              {notes}
+              {idle && !onNotesChange && <Cursor tone="accent" size={11} />}
+            </div>
+          )}
         </div>
 
         {hasDirectives && (
@@ -168,21 +190,35 @@ const BriefGenPanel = ({
           <div className={styles.verbosityGroup}>
             <Kicker text="ПОДРОБНОСТЬ" tone="neutral" size={9} />
             <span className={styles.ticks}>
-              {[1, 2, 3, 4, 5].map(i => (
-                <span key={i} className={`${styles.tick} ${i <= v ? styles.tickActive : ''}`} />
-              ))}
+              {[1, 2, 3, 4, 5].map(i =>
+                onVerbosityChange ? (
+                  <button
+                    key={i}
+                    type="button"
+                    className={styles.tickButton}
+                    aria-label={`подробность ${i}`}
+                    disabled={running}
+                    onClick={() => onVerbosityChange(i)}
+                  >
+                    <span className={`${styles.tick} ${i <= v ? styles.tickActive : ''}`} />
+                  </button>
+                ) : (
+                  <span key={i} className={`${styles.tick} ${i <= v ? styles.tickActive : ''}`} />
+                ),
+              )}
             </span>
             <span className={styles.verbosityValue}>{v}/5</span>
             <span className={styles.verbosityHint}>объём прозы полей · структуру не трогает</span>
           </div>
           <div className={styles.actions}>
             {done && <OutlineButton label="Откатить" tone="accent" size="compact" onClick={onRollback} />}
+            {running && onCancel && <OutlineButton label="Отмена" size="compact" onClick={onCancel} />}
             {!done && (
               <PrimaryButton
                 label={buttonLabel}
                 price={idle ? price : ''}
                 size="compact"
-                disabled={running}
+                disabled={running || generateDisabled}
                 onClick={onGenerate}
               />
             )}

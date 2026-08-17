@@ -217,7 +217,8 @@ const StudioNext = () => {
     onSwitchProject: () => window.location.assign('/studio-next'),
     onSaveProject: () => void projectFile.saveProject(),
     onSaveProjectAs: () => void projectFile.saveProjectAs(),
-    onOpenBrief: () => openModal({ kind: 'brief' }),
+    // Бриф — не модалка, а первая зона конвейера: пункт меню просто ведёт туда.
+    onOpenBrief: () => setZone('idea'),
     onImportBrief: () => openModal({ kind: 'importBrief' }),
     onDiscardDraft: () => openModal({ kind: 'resetDraft' }),
     onExport: () => (exportGate.ok ? exportBundle() : openModal({ kind: 'exportBlocked' })),

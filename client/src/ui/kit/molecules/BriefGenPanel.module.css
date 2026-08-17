@@ -75,6 +75,20 @@
   color: var(--color-text);
 }
 
+/* Живой вариант заметок: та же рамка и типографика, что у витринного бокса. */
+.notesInput {
+  font-family: var(--font-body);
+  color: var(--color-text);
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.notesInput:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
 .notesRunning {
   color: var(--gu-muted);
 }
@@ -120,6 +134,25 @@
 .tickActive {
   border-color: var(--color-accent-700);
   background: var(--color-accent);
+}
+
+/* Кликабельный тик: кнопка-обёртка не добавляет ничего поверх самого тика. */
+.tickButton {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.tickButton:disabled {
+  cursor: default;
+}
+
+.tickButton:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
 }
 
 .verbosityValue {

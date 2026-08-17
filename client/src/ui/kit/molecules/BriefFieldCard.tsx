@@ -30,8 +30,8 @@ export interface BriefFieldCardProps {
   parts?: number;
   onDaysChange?: (value: number) => void;
   onPartsChange?: (value: number) => void;
-  /** px, 220–560 в макете. */
-  width?: number;
+  /** px, 220–560 в макете; `fill` — на всю ширину ячейки сетки. */
+  width?: number | 'fill';
 }
 
 const STATE_LABEL: Record<BriefFieldCardState, string> = {
@@ -89,7 +89,7 @@ const BriefFieldCard = ({
 
   return (
     <CornerMarks tone="plain">
-      <div className={cardClass} style={{ width: `${width}px` }}>
+      <div className={cardClass} style={{ width: width === 'fill' ? '100%' : `${width}px` }}>
         <div className={styles.headRow}>
           <Kicker text={`${kicker} · ${STATE_LABEL[state]}`} tone={kickerTone} />
           {done && <CheckGlyph tone="ok" />}
