@@ -794,9 +794,14 @@ async function runPipeline(): Promise<void> {
     }
     try {
       const basePayload = buildSpineRequestPayload(brief, worldModel, calendar, tagMap ?? null);
-      let best: { plan: SpinePlan; errorCount: number; errors: string[] } | null =
+      // errorCount сида — только ошибки валидатора: затравки QA и фидбек
+      // планировщика инвалидируют кэш и едут в промпт, но структурно чистый
+      // кэш не должен валить стадию, если ретраи не дали лучшего. Флаг seeded
+      // отличает кэш от свежей попытки: при равном счёте свежая побеждает —
+      // кэш-то инвалидирован, иначе петля фидбека никогда бы не перегенерила.
+      let best: { plan: SpinePlan; errorCount: number; errors: string[]; seeded?: boolean } | null =
         cachedSpine && cachedSpineFeedback.length > 0
-          ? { plan: cachedSpine, errorCount: cachedSpineFeedback.length, errors: cachedSpineFeedback }
+          ? { plan: cachedSpine, errorCount: cachedSpineErrors.length, errors: cachedSpineFeedback, seeded: true }
           : null;
       let lastAttemptError: unknown = null;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
@@ -822,7 +827,9 @@ async function runPipeline(): Promise<void> {
           // reachability и расписание используют сохранённый хребет.
           const plan = normalizeSpineWindows(rawPlan, calendar);
           const errors = spineErrors(plan);
-          if (!best || errors.length < best.errorCount) best = { plan, errorCount: errors.length, errors };
+          if (!best || errors.length < best.errorCount || (best.seeded && errors.length === best.errorCount)) {
+            best = { plan, errorCount: errors.length, errors };
+          }
           if (errors.length === 0) break;
         } catch (attemptErr) {
           rethrowIfStopped(attemptErr);
@@ -1143,9 +1150,13 @@ async function runPipeline(): Promise<void> {
 
       try {
         const basePayload = buildEventPoolRequestPayload(brief, li, castPlan, schedule, spine, calendar);
+        // errorCount сида — ТОЛЬКО настоящие ошибки валидатора: замечания и
+        // затравки едут фидбеком, но приёмку не решают. Иначе кэш с одним
+        // warning (живой случай: пул раздуло до 21 юнита) валил стадию, когда
+        // ретраи не дали идеала, — non-blocking замечание становилось блокером.
         let best: { units: EventUnit[]; errorCount: number; errors: string[] } | null =
           cachedPool.length > 0
-            ? { units: cachedPool, errorCount: cachedPoolFeedback.length, errors: cachedPoolFeedback }
+            ? { units: cachedPool, errorCount: poolErrors(cachedPool).length, errors: cachedPoolFeedback }
             : null;
         let lastAttemptError: unknown = null;
         for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
