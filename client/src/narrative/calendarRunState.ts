@@ -169,6 +169,12 @@ export type CalendarRunState = {
   dirtyStages: CalendarCascadeStage[];
   draft: CalendarDraft;
   pendingBatch: CalendarPendingBatch | null;
+  /**
+   * Живые батчи параллельных стадий (диалоги, пулы): reattach после reload
+   * должен знать их все. Одиночное поле выше осталось для чтения старых
+   * персистов и для последовательных стадий.
+   */
+  pendingBatches?: CalendarPendingBatch[];
   startedAt: number;
   /** Диагностика (в т.ч. мультивкладочности) — в логике не участвует. */
   runId: string;

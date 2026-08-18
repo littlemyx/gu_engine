@@ -176,6 +176,7 @@ type NarrativeState = {
       progress: { completed: number; total: number };
       subProgress: { label: string; completed: number; total: number } | null;
       pendingBatch: CalendarPendingBatch | null;
+      pendingBatches: CalendarPendingBatch[];
       dirtyStages: CalendarCascadeStage[];
       softIssues: Record<string, string[]>;
     }>,

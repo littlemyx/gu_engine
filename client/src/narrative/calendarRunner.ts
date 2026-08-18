@@ -1,4 +1,5 @@
 import { resolveScale } from './briefDefaults';
+import { runPool } from './runPool';
 import {
   generateAnchorBeat,
   generateAnchorTransition,
@@ -88,6 +89,7 @@ import {
   type BulkCalendarRunOptions,
   type CalendarCascadeStage,
   type CalendarDraft,
+  type CalendarPendingBatch,
   type CalendarRunState,
   type CommittedStack,
   type DraftMapField,
@@ -139,6 +141,11 @@ const MAX_ATTEMPTS = 3;
 const MAX_SCHEDULE_ROUNDS = 2;
 /** Подряд идущих сетевых сбоев опроса, после которых батч считается недоступным. */
 const MAX_POLL_FAILURES = 3;
+/**
+ * Одновременных батчей на параллельных стадиях. Диалоги и пулы независимы
+ * поэлементно; 4 — компромисс между временем стадии и нагрузкой на батч-сервер.
+ */
+const STAGE_CONCURRENCY = 4;
 const BRACKETS: DialogueVariantBracket[] = ['positive', 'neutral', 'negative'];
 
 /** Батч не найден на сервере (404): терминально для батча, элемент считается заново. */
@@ -503,8 +510,29 @@ async function runPipeline(): Promise<void> {
       attemptsSeen.set(seenKey, n);
       return n;
     };
-    const pending = runNow().pendingBatch;
-    if (pending && matchPendingBatch(pending, phase, itemKey)) {
+    // Живые батчи — списком: параллельные стадии держат несколько разом, и
+    // одиночное поле затиралось бы соседом. Старое поле читается ради
+    // персистов прошлых версий.
+    const livePendings = (): CalendarPendingBatch[] => {
+      const run = runNow();
+      return [...(run.pendingBatches ?? []), ...(run.pendingBatch ? [run.pendingBatch] : [])];
+    };
+    const trackPending = (batch: CalendarPendingBatch) => {
+      store().patchCalendarRun({
+        phase,
+        pendingBatch: null,
+        pendingBatches: [...livePendings().filter(p => p.batchId !== batch.batchId), batch],
+      });
+    };
+    const untrackPending = (batchId: string) => {
+      store().patchCalendarRun({
+        pendingBatch: null,
+        pendingBatches: livePendings().filter(p => p.batchId !== batchId),
+      });
+    };
+
+    const pending = livePendings().find(p => matchPendingBatch(p, phase, itemKey));
+    if (pending) {
       try {
         appendRunLog('pending', `${label} · переподключение к батчу`);
         // Реаттач денег не стоит: за этот батч заплатила прошлая жизнь вкладки.
@@ -513,11 +541,11 @@ async function runPipeline(): Promise<void> {
           message: `${label} · переподключение к батчу`,
         });
         const result = await pollBatchResult(pending.batchId, parse);
-        store().patchCalendarRun({ pendingBatch: null });
+        untrackPending(pending.batchId);
         appendRunLog('ok', `${label} ✓`);
         return result;
       } catch (e) {
-        store().patchCalendarRun({ pendingBatch: null });
+        untrackPending(pending.batchId);
         // Батч потерян (сервер перезапущен) — считаем элемент заново.
         if (!(e instanceof BatchNotFoundError)) throw e;
         appendRunLog('info', `${label} · батч потерян, считаем заново`);
@@ -526,7 +554,7 @@ async function runPipeline(): Promise<void> {
     const { batchId } = await start();
     addRunCost(phase);
     emitRun('attempt', phase, itemKey, { attempt: bumpAttempt(), cost: STAGE_COST_EST[phase] ?? 0 });
-    store().patchCalendarRun({ phase, pendingBatch: { phase, itemKey, batchId } });
+    trackPending({ phase, itemKey, batchId });
     try {
       const result = await pollBatchResult(batchId, parse);
       appendRunLog('ok', `${label} ✓`);
@@ -535,7 +563,7 @@ async function runPipeline(): Promise<void> {
       appendRunLog('error', `✗ ${label} · ${e instanceof Error ? e.message : String(e)}`);
       throw e;
     } finally {
-      store().patchCalendarRun({ pendingBatch: null });
+      untrackPending(batchId);
     }
   };
 
@@ -1123,7 +1151,12 @@ async function runPipeline(): Promise<void> {
       }
     };
 
-    for (const li of brief.loveInterests) {
+    // Пулы разных LI независимы — считаются пулом воркеров; результат
+    // складывается per-LI и склеивается в порядке каста, чтобы порядок юнитов
+    // не зависел от того, чей батч финишировал первым.
+    const unitsByLi = new Map<string, EventUnit[]>();
+
+    const processLi = async (li: typeof brief.loveInterests[number]): Promise<void> => {
       // Пул этого LI: сначала черновик прогона, иначе committed-кэш. Смешивать
       // нельзя — иначе к свежему пулу приклеятся юниты прошлого прогона.
       const draftPool = Object.values(runNow().draft.eventUnits ?? {}).filter(u => u.participants[0] === li.id);
@@ -1139,13 +1172,13 @@ async function runPipeline(): Promise<void> {
       const cachedPoolErrors = cachedPool.length > 0 ? poolFeedback(cachedPool) : [];
       const cachedPoolFeedback = [...cachedPoolErrors, ...liSeeds];
       if (cachedPool.length > 0 && cachedPoolFeedback.length === 0 && !forcedLis.has(li.id)) {
-        finalUnits.push(...cachedPool);
+        unitsByLi.set(li.id, cachedPool);
         putDraft({ eventUnits: Object.fromEntries(cachedPool.map(u => [u.id, u])) });
         // Адреса «позиция = один LI» в учёте нет (там ключ — юнит), поэтому
         // событие едет без artifactKey, но с человеческой подписью.
         report('skip', 'event_pool', li.id, { message: `пропущено: пул ${li.id} — кэш свеж` });
         keepUnits(keptUnitsOf(li.id));
-        continue;
+        return;
       }
 
       try {
@@ -1205,7 +1238,7 @@ async function runPipeline(): Promise<void> {
           }
         }
         if (best && best.errorCount === 0) {
-          finalUnits.push(...best.units);
+          unitsByLi.set(li.id, best.units);
           putDraft({ eventUnits: Object.fromEntries(best.units.map(u => [u.id, u])) });
           report('done', 'event_pool', li.id, { message: `готово: пул ${li.id} · юнитов ${best.units.length}` });
           keepUnits(keptUnitsOf(li.id));
@@ -1218,7 +1251,10 @@ async function runPipeline(): Promise<void> {
         rethrowIfStopped(e);
         stageIssues.push(`${li.id}: ${e instanceof Error ? e.message : String(e)}`);
       }
-    }
+    };
+
+    await runPool(brief.loveInterests, STAGE_CONCURRENCY, processLi);
+    for (const li of brief.loveInterests) finalUnits.push(...(unitsByLi.get(li.id) ?? []));
 
     if (stageIssues.length > 0) {
       fail('event_pool', `пул событий не собран полностью (${stageIssues.length} проблем)`, stageIssues);
@@ -1281,19 +1317,22 @@ async function runPipeline(): Promise<void> {
     const scaleWarned = new Set<string>();
     const rekindWarned = new Set<string>();
 
-    const plannedUnits = eventUnits.filter(
+    // Юниты независимы (контекст промпта юнита других юнитов не включает) —
+    // гоним пулом воркеров, а не по одному: 40+ юнитов × 3 брекета × ретраи
+    // последовательно — это час-полтора чистого ожидания.
+    const unitsToProcess = eventUnits.filter(
       u => reachable.has(u.id) && u.kind === 'dialogue' && liById.has(u.participants[0] ?? ''),
-    ).length;
-    let unitsSeen = 0;
+    );
+    const plannedUnits = unitsToProcess.length;
+    let unitsDone = 0;
+    publishSub('юниты диалогов', 0, plannedUnits);
 
-    for (const unit of eventUnits) {
-      if (!reachable.has(unit.id) || unit.kind !== 'dialogue') continue;
+    const processUnit = async (unit: EventUnit): Promise<void> => {
       const li = liById.get(unit.participants[0] ?? '');
-      if (!li) continue;
-
-      // Счётчик — до работы над юнитом: «сколько закрыто» из скольких.
-      publishSub('юниты диалогов', unitsSeen, plannedUnits);
-      unitsSeen += 1;
+      if (!li) return;
+      // Проблемы юнита копятся локально: соседний воркер не должен влиять на
+      // вердикт «готово» этого юнита.
+      const unitIssues: string[] = [];
 
       const unitKey = unit.id;
       // Запертая проза встречи не переписывается — мимо кэша и каскада.
@@ -1301,7 +1340,7 @@ async function runPipeline(): Promise<void> {
       if (keptProse && keptProse.length > 0) {
         putDraft({ unitProse: { [unit.id]: keptProse } });
         report('skip', 'dialogue_units', unit.id, { reason: 'заперто автором' });
-        continue;
+        return;
       }
 
       const unitErrors = (u: DialogueUnit): string[] =>
@@ -1360,11 +1399,9 @@ async function runPipeline(): Promise<void> {
       if (cachedComplete) {
         putDraft({ unitProse: { [unitKey]: cached } });
         report('skip', 'dialogue_units', unitKey, { reason: 'кэш свеж' });
-        continue;
+        return;
       }
 
-      // Позиция плана — юнит целиком, а не брекет: в учёте у него один адрес.
-      const issuesBefore = stageIssues.length;
       const units: DialogueUnit[] = [];
       for (const bracket of BRACKETS) {
         // Холодная проза для ступени, вход на которую требует тепла выше
@@ -1516,7 +1553,7 @@ async function runPipeline(): Promise<void> {
           units.push(best.unit);
           putDraft({ unitProse: { [unitKey]: [...units] } });
           if (hardErrors.length > 0) {
-            stageIssues.push(`${unitKey}/${bracket}: сохранён с ошибками: ${hardErrors.slice(0, 2).join('; ')}`);
+            unitIssues.push(`${unitKey}/${bracket}: сохранён с ошибками: ${hardErrors.slice(0, 2).join('; ')}`);
           } else if (unitSeeds.length > 0 && best.retryCount > 0) {
             // Warning-затравка не закрылась за MAX_ATTEMPTS — юнит принят,
             // автору честное предупреждение вместо тихого «исправлено».
@@ -1529,11 +1566,18 @@ async function runPipeline(): Promise<void> {
           }
         } catch (e) {
           rethrowIfStopped(e);
-          stageIssues.push(`${unitKey}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
+          unitIssues.push(`${unitKey}/${bracket}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
-      if (stageIssues.length === issuesBefore) report('done', 'dialogue_units', unitKey);
-    }
+      if (unitIssues.length === 0) report('done', 'dialogue_units', unitKey);
+      else stageIssues.push(...unitIssues);
+    };
+
+    await runPool(unitsToProcess, STAGE_CONCURRENCY, async unit => {
+      await processUnit(unit);
+      unitsDone += 1;
+      publishSub('юниты диалогов', unitsDone, plannedUnits);
+    });
 
     if (stageIssues.length > 0) {
       fail('dialogue_units', `диалоговые юниты не собраны полностью (${stageIssues.length} проблем)`, stageIssues);
